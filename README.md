@@ -48,6 +48,9 @@ Example harness config:
 }
 ```
 
+Release bundles also include a standalone `spready-mcp` executable and a `spready.mcp.json`
+template you can import into a harness after extracting the archive.
+
 ### Checks
 
 ```sh

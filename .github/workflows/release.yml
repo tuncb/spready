@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build ${{ matrix.asset_id }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+            arch: x64
+            asset_id: windows-x64
+            archive_ext: zip
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            asset_id: linux-x64
+            archive_ext: tar.gz
+          - os: macos-15
+            platform: darwin
+            arch: arm64
+            asset_id: macos-arm64
+            archive_ext: tar.gz
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag commit is on main
+        shell: pwsh
+        run: |
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$env:GITHUB_SHA" "origin/main"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Tag commit $env:GITHUB_SHA is not contained in origin/main."
+          }
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          cache: npm
+          node-version: 25
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package application
+        run: npm run package -- --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
+
+      - name: Build MCP CLI
+        run: npm run build:mcp:cli -- --platform=${{ matrix.platform }} --arch=${{ matrix.arch }}
+
+      - name: Ad-hoc sign macOS MCP CLI
+        if: matrix.platform == 'darwin'
+        run: codesign --force --sign - out/mcp/${{ matrix.platform }}-${{ matrix.arch }}/spready-mcp
+
+      - name: Prepare release bundle
+        run: npm run prepare:release -- --platform=${{ matrix.platform }} --arch=${{ matrix.arch }} --version=${{ github.ref_name }}
+
+      - name: Create archive (Windows)
+        if: matrix.platform == 'win32'
+        shell: pwsh
+        run: |
+          $bundle = "out/release/spready-${{ matrix.asset_id }}-${{ github.ref_name }}"
+          $archive = "$bundle.zip"
+          if (Test-Path $archive) {
+            Remove-Item $archive -Force
+          }
+          Compress-Archive -Path $bundle -DestinationPath $archive -Force
+
+      - name: Create archive (Unix)
+        if: matrix.platform != 'win32'
+        shell: bash
+        run: |
+          bundle="spready-${{ matrix.asset_id }}-${{ github.ref_name }}"
+          tar -czf "out/release/${bundle}.tar.gz" -C out/release "$bundle"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spready-${{ matrix.asset_id }}-${{ github.ref_name }}.${{ matrix.archive_ext }}
+          path: out/release/spready-${{ matrix.asset_id }}-${{ github.ref_name }}.${{ matrix.archive_ext }}
+          retention-days: 1
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Determine prerelease flag
+        id: prerelease
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ steps.prerelease.outputs.is_prerelease == 'true' }}
+          files: |
+            ./artifacts/**/*.zip
+            ./artifacts/**/*.tar.gz
