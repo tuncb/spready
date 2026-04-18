@@ -9,7 +9,7 @@
     "start": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make",
-    "lint": "eslint --ext .ts .",
+    "lint": "eslint --ext .ts,.tsx .",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -19,8 +19,11 @@
     "@electron-forge/maker-squirrel": "^7.11.1",
     "@electron-forge/plugin-vite": "^7.11.1",
     "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/react": "^18.3.28",
+    "@types/react-dom": "^18.3.7",
     "@typescript-eslint/eslint-plugin": "^8.58.2",
     "@typescript-eslint/parser": "^8.58.2",
+    "@vitejs/plugin-react": "^4.7.0",
     "electron": "41.2.1",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
@@ -28,6 +31,12 @@
     "vite": "^5.4.21"
   },
   "dependencies": {
-    "electron-squirrel-startup": "^1.0.1"
+    "@glideapps/glide-data-grid": "^6.0.3",
+    "electron-squirrel-startup": "^1.0.1",
+    "lodash": "^4.18.1",
+    "marked": "^4.3.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-responsive-carousel": "^3.2.23"
   }
 }
