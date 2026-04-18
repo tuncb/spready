@@ -29,7 +29,6 @@ import {
   type SheetRangeResult,
   type WorkbookSummary,
 } from "./workbook-core";
-import { getFormulaBarPreview } from "./formula-bar";
 
 const DEFAULT_COLUMN_WIDTH = 140;
 const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
@@ -876,8 +875,6 @@ export default function App() {
     });
   }, [addColumn, addRow, addSheet, deleteSheet, handleExport, handleImport]);
 
-  const formulaBarPreview = getFormulaBarPreview(selectedCellData);
-
   return (
     <main className="app-shell">
       {errorMessage ? (
@@ -908,12 +905,6 @@ export default function App() {
             }
             value={selectedCell ? formulaInputValue : ""}
           />
-        </div>
-        <div
-          className="formula-bar__preview"
-          title={formulaBarPreview || undefined}
-        >
-          {formulaBarPreview}
         </div>
       </section>
 

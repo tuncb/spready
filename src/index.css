@@ -159,10 +159,7 @@ select {
   --formula-bar-side-width: 80px;
   grid-row: 1;
   display: grid;
-  grid-template-columns:
-    var(--formula-bar-side-width)
-    minmax(0, 1fr)
-    var(--formula-bar-side-width);
+  grid-template-columns: var(--formula-bar-side-width) minmax(0, 1fr);
   gap: 8px;
   align-items: stretch;
   padding: 6px 10px;
@@ -215,25 +212,6 @@ select {
 
 .formula-bar__input::placeholder {
   color: var(--color-text-muted);
-}
-
-.formula-bar__preview {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--formula-bar-side-width);
-  min-width: var(--formula-bar-side-width);
-  max-width: var(--formula-bar-side-width);
-  min-height: 34px;
-  padding: 6px 10px;
-  border-radius: 0;
-  color: var(--color-text-medium);
-  background: var(--color-neutral-header);
-  font-size: 12px;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .app-shell__status-bar {
