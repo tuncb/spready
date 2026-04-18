@@ -111,7 +111,10 @@ export class SpreadyControlClient extends EventEmitter {
 
     socket.on('error', (error) => {
       this.#rejectAllPending(error);
-      this.emit('error', error);
+
+      if (this.listenerCount('error') > 0) {
+        this.emit('error', error);
+      }
     });
 
     socket.on('close', () => {
