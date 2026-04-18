@@ -40,9 +40,9 @@ select {
 .app-shell {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  gap: 10px;
+  gap: 8px;
   height: 100%;
-  padding: 12px;
+  padding: 8px;
   background:
     radial-gradient(
       circle at right top,
@@ -55,7 +55,7 @@ select {
 .app-shell__meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
 }
 
@@ -69,15 +69,19 @@ select {
 
 .app-shell__select {
   min-width: 152px;
+  height: 34px;
   border: 1px solid rgba(20, 32, 51, 0.12);
   border-radius: 0;
-  padding: 7px 12px;
+  padding: 0 10px;
   color: #142033;
   background: rgba(255, 255, 255, 0.88);
 }
 
 .app-shell__control {
-  padding: 7px 12px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
   border-radius: 0;
   color: #0f3fb5;
   background: rgba(30, 94, 255, 0.08);
@@ -88,25 +92,28 @@ select {
 .app-shell__stats {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: rgba(20, 32, 51, 0.72);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .app-shell__stats span {
-  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
   border-radius: 0;
   background: rgba(72, 96, 121, 0.08);
 }
 
 .app-shell__error {
   grid-row: 2;
-  padding: 12px 16px;
+  padding: 8px 12px;
   border: 1px solid rgba(177, 74, 47, 0.16);
   border-radius: 0;
   color: #8f2f17;
   background: rgba(255, 241, 236, 0.92);
-  box-shadow: 0 12px 28px rgba(143, 47, 23, 0.08);
+  box-shadow: 0 8px 20px rgba(143, 47, 23, 0.06);
 }
 
 .sheet-surface {
@@ -121,20 +128,20 @@ select {
 }
 
 .formula-bar {
-  --formula-bar-side-width: 88px;
+  --formula-bar-side-width: 80px;
   grid-row: 1;
   display: grid;
   grid-template-columns:
     var(--formula-bar-side-width)
     minmax(0, 1fr)
     var(--formula-bar-side-width);
-  gap: 12px;
+  gap: 8px;
   align-items: stretch;
-  padding: 10px 14px;
+  padding: 6px 10px;
   border: 1px solid rgba(20, 32, 51, 0.1);
   border-radius: 0;
   background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 14px 40px rgba(20, 32, 51, 0.06);
+  box-shadow: 0 8px 22px rgba(20, 32, 51, 0.05);
   backdrop-filter: blur(18px);
 }
 
@@ -145,8 +152,8 @@ select {
   width: var(--formula-bar-side-width);
   min-width: var(--formula-bar-side-width);
   max-width: var(--formula-bar-side-width);
-  min-height: 44px;
-  padding: 10px 12px;
+  min-height: 34px;
+  padding: 6px 10px;
   border-radius: 0;
   color: #0f3fb5;
   background: rgba(30, 94, 255, 0.08);
@@ -165,8 +172,8 @@ select {
 .formula-bar__input {
   width: 100%;
   min-width: 0;
-  min-height: 44px;
-  padding: 10px 14px;
+  min-height: 34px;
+  padding: 6px 10px;
   border: 1px solid rgba(20, 32, 51, 0.12);
   border-radius: 0;
   color: #142033;
@@ -185,8 +192,8 @@ select {
   width: var(--formula-bar-side-width);
   min-width: var(--formula-bar-side-width);
   max-width: var(--formula-bar-side-width);
-  min-height: 44px;
-  padding: 10px 12px;
+  min-height: 34px;
+  padding: 6px 10px;
   border-radius: 0;
   color: rgba(20, 32, 51, 0.7);
   background: rgba(72, 96, 121, 0.08);
@@ -202,25 +209,25 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
-  padding: 10px 14px;
+  padding: 6px 10px;
   border: 1px solid rgba(20, 32, 51, 0.1);
   border-radius: 0;
   background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 14px 40px rgba(20, 32, 51, 0.08);
+  box-shadow: 0 8px 22px rgba(20, 32, 51, 0.05);
   backdrop-filter: blur(18px);
 }
 
 @media (max-width: 900px) {
   .app-shell {
-    padding: 10px;
+    padding: 8px;
   }
 
   .app-shell__status-bar {
     flex-wrap: wrap;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 6px 8px;
   }
 
   .app-shell__stats {
@@ -230,7 +237,7 @@ select {
   }
 
   .formula-bar {
-    --formula-bar-side-width: 72px;
-    gap: 8px;
+    --formula-bar-side-width: 68px;
+    gap: 6px;
   }
 }
