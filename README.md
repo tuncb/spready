@@ -26,7 +26,7 @@ Start the Electron app first, then run:
 npm run mcp:stdio
 ```
 
-The wrapper connects to the running app over the local control server and exposes MCP tools over stdio for external harnesses.
+The wrapper connects to the running app over the local control server and exposes MCP tools, resources, and prompts over stdio for external harnesses.
 
 Connection discovery order:
 
@@ -151,12 +151,24 @@ Supported transaction operations currently include:
 - `replaceSheetFromCsv`
 - `setSheetSourceFile`
 
-## MCP tools
+## MCP surface
 
 The stdio MCP wrapper currently exposes:
 
+### Tools
+
+- `describe_capabilities`
 - `get_workbook_summary`
 - `get_used_range`
 - `get_sheet_range`
 - `get_sheet_csv`
 - `apply_transaction`
+
+### Resources
+
+- `spready://guide`
+- `spready://workbook/summary`
+
+### Prompts
+
+- `spready_workbook_task`

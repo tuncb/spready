@@ -143,6 +143,268 @@ const applyTransactionResultSchema = z.object({
 });
 
 const WORKBOOK_SUMMARY_RESOURCE_URI = 'spready://workbook/summary';
+const SERVER_GUIDE_RESOURCE_URI = 'spready://guide';
+const WORKBOOK_TASK_PROMPT_NAME = 'spready_workbook_task';
+
+const transactionOperations = [
+  {
+    type: 'addSheet',
+    description: 'Add a new sheet, optionally naming it, sizing it, and making it active.',
+  },
+  {
+    type: 'clearRange',
+    description: 'Clear a rectangular range without resizing the sheet.',
+  },
+  {
+    type: 'deleteColumns',
+    description: 'Delete one or more columns starting at a zero-based column index.',
+  },
+  {
+    type: 'deleteRows',
+    description: 'Delete one or more rows starting at a zero-based row index.',
+  },
+  {
+    type: 'deleteSheet',
+    description: 'Delete a sheet by id and optionally choose which sheet becomes active next.',
+  },
+  {
+    type: 'insertColumns',
+    description: 'Insert one or more blank columns at a zero-based column index.',
+  },
+  {
+    type: 'insertRows',
+    description: 'Insert one or more blank rows at a zero-based row index.',
+  },
+  {
+    type: 'renameSheet',
+    description: 'Rename an existing sheet.',
+  },
+  {
+    type: 'replaceSheet',
+    description: 'Replace an entire sheet from an in-memory 2D string array.',
+  },
+  {
+    type: 'replaceSheetFromCsv',
+    description: 'Replace an entire sheet from CSV content.',
+  },
+  {
+    type: 'resizeSheet',
+    description: 'Set the row and column counts for a sheet.',
+  },
+  {
+    type: 'setActiveSheet',
+    description: 'Make a specific sheet active.',
+  },
+  {
+    type: 'setSheetSourceFile',
+    description: 'Attach or clear the source file path metadata for a sheet.',
+  },
+  {
+    type: 'setCell',
+    description: 'Write a single string value to one cell.',
+  },
+  {
+    type: 'setRange',
+    description: 'Write a rectangular 2D string array starting at a zero-based row and column.',
+  },
+] as const;
+
+const guideResourceSchema = z.object({
+  prompt: z.object({
+    description: z.string(),
+    name: z.string(),
+  }),
+  resources: z.array(
+    z.object({
+      description: z.string(),
+      mimeType: z.string(),
+      name: z.string(),
+      uri: z.string(),
+    }),
+  ),
+  startupRequirement: z.string(),
+  tools: z.array(
+    z.object({
+      defaultsToActiveSheet: z.boolean(),
+      description: z.string(),
+      name: z.string(),
+      readOnly: z.boolean(),
+    }),
+  ),
+  transactionOperations: z.array(
+    z.object({
+      description: z.string(),
+      type: z.string(),
+    }),
+  ),
+  usageConventions: z.array(z.string()),
+  workflow: z.array(z.string()),
+});
+
+const guideResource = {
+  prompt: {
+    description: 'Prompt template for planning or executing one workbook task with Spready.',
+    name: WORKBOOK_TASK_PROMPT_NAME,
+  },
+  resources: [
+    {
+      description: 'Current workbook summary for the connected Spready app.',
+      mimeType: 'application/json',
+      name: 'workbook-summary',
+      uri: WORKBOOK_SUMMARY_RESOURCE_URI,
+    },
+    {
+      description: 'Usage guide for third-party harnesses integrating with Spready.',
+      mimeType: 'text/markdown',
+      name: 'server-guide',
+      uri: SERVER_GUIDE_RESOURCE_URI,
+    },
+  ],
+  startupRequirement:
+    'The Spready desktop app must already be running before this MCP wrapper can connect.',
+  tools: [
+    {
+      defaultsToActiveSheet: false,
+      description: 'Return workbook metadata including active sheet, version, and sheet sizes.',
+      name: 'get_workbook_summary',
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: true,
+      description: 'Return the used range bounds for a sheet.',
+      name: 'get_used_range',
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: true,
+      description: 'Read a rectangular range from a sheet.',
+      name: 'get_sheet_range',
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: true,
+      description: 'Return the sheet as CSV text trimmed to its used range.',
+      name: 'get_sheet_csv',
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: true,
+      description: 'Apply one atomic batch of workbook mutations.',
+      name: 'apply_transaction',
+      readOnly: false,
+    },
+  ],
+  transactionOperations: transactionOperations.map((operation) => ({
+    description: operation.description,
+    type: operation.type,
+  })),
+  usageConventions: [
+    'Rows and columns are zero-based.',
+    'Read tools default to the active sheet when sheetId is omitted.',
+    'Many transaction operations also default to the active sheet when sheetId is omitted.',
+    'Use get_workbook_summary before large edits so you know which sheet ids and sizes exist.',
+    'Use get_used_range or get_sheet_range instead of reading an entire large sheet.',
+    'Prefer one apply_transaction call with batched operations over repeated single-cell writes.',
+    'Use dryRun on apply_transaction to validate risky changes before mutating the workbook.',
+  ],
+  workflow: [
+    'Inspect the workbook with get_workbook_summary.',
+    'Narrow the target area with get_used_range or get_sheet_range.',
+    'Read only the rows or columns needed for the task.',
+    'Validate planned edits with apply_transaction dryRun when the change is risky or destructive.',
+    'Apply the final mutation in one batched apply_transaction call.',
+  ],
+} satisfies z.infer<typeof guideResourceSchema>;
+
+const guideMarkdown = `# Spready MCP Guide
+
+## Startup requirement
+
+${guideResource.startupRequirement}
+
+## Recommended workflow
+
+1. ${guideResource.workflow[0]}
+2. ${guideResource.workflow[1]}
+3. ${guideResource.workflow[2]}
+4. ${guideResource.workflow[3]}
+5. ${guideResource.workflow[4]}
+
+## Usage conventions
+
+- ${guideResource.usageConventions.join('\n- ')}
+
+## Tools
+
+- get_workbook_summary: Return workbook metadata including active sheet, version, and sheet sizes.
+- get_used_range: Return the used range bounds for a sheet. Omitting sheetId uses the active sheet.
+- get_sheet_range: Read one rectangular range. Prefer this over loading a large sheet.
+- get_sheet_csv: Return trimmed CSV for one sheet. Omitting sheetId uses the active sheet.
+- apply_transaction: Apply one atomic batch of workbook mutations. Supports dryRun.
+
+## Transaction operation types
+
+- ${transactionOperations
+  .map((operation) => `${operation.type}: ${operation.description}`)
+  .join('\n- ')}
+
+## Example read request
+
+\`\`\`json
+{
+  "startRow": 0,
+  "startColumn": 0,
+  "rowCount": 20,
+  "columnCount": 5
+}
+\`\`\`
+
+## Example dry-run transaction
+
+\`\`\`json
+{
+  "dryRun": true,
+  "operations": [
+    {
+      "type": "setRange",
+      "startRow": 0,
+      "startColumn": 0,
+      "values": [
+        ["Region", "Revenue"],
+        ["North", "1200"],
+        ["South", "980"]
+      ]
+    }
+  ]
+}
+\`\`\`
+
+## Prompt
+
+- ${WORKBOOK_TASK_PROMPT_NAME}: Prompt template for planning or executing one workbook task with Spready.
+`;
+
+const describeCapabilitiesResultSchema = z.object({
+  overview: z.string(),
+  prompt: z.object({
+    description: z.string(),
+    name: z.string(),
+  }),
+  resources: guideResourceSchema.shape.resources,
+  startupRequirement: z.string(),
+  tools: z.array(
+    z.object({
+      defaultsToActiveSheet: z.boolean(),
+      description: z.string(),
+      name: z.string(),
+      readOnly: z.boolean(),
+      useWhen: z.string(),
+    }),
+  ),
+  transactionOperations: guideResourceSchema.shape.transactionOperations,
+  usageConventions: z.array(z.string()),
+  workflow: z.array(z.string()),
+});
 
 function createTextResult<Result extends object>(payload: Result) {
   return {
@@ -213,7 +475,7 @@ async function main() {
         },
       },
       instructions:
-        'Use get_workbook_summary before large edits, inspect only the ranges you need, and prefer apply_transaction with batched operations over repeated single-cell writes.',
+        'Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, inspect with get_workbook_summary before large edits, use zero-based indexes, and prefer apply_transaction with batched operations plus dryRun for risky changes.',
     },
   );
 
@@ -250,6 +512,27 @@ async function main() {
     },
   );
 
+  server.registerResource(
+    'server-guide',
+    SERVER_GUIDE_RESOURCE_URI,
+    {
+      description: 'Usage guide for third-party harnesses integrating with Spready.',
+      mimeType: 'text/markdown',
+      title: 'Spready MCP Guide',
+    },
+    async () => {
+      return {
+        contents: [
+          {
+            mimeType: 'text/markdown',
+            text: guideMarkdown,
+            uri: SERVER_GUIDE_RESOURCE_URI,
+          },
+        ],
+      };
+    },
+  );
+
   server.registerTool(
     'get_workbook_summary',
     {
@@ -261,6 +544,67 @@ async function main() {
       outputSchema: workbookSummarySchema,
     },
     async () => createTextResult(await controlClient.getWorkbookSummary()),
+  );
+
+  server.registerTool(
+    'describe_capabilities',
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description:
+        'Describe the Spready MCP server, recommended workflow, usage conventions, and supported transaction operations.',
+      outputSchema: describeCapabilitiesResultSchema,
+    },
+    async () =>
+      createTextResult({
+        overview:
+          'Spready is a spreadsheet-focused MCP server. Read the workbook first, then apply batched transactions for edits.',
+        prompt: guideResource.prompt,
+        resources: guideResource.resources,
+        startupRequirement: guideResource.startupRequirement,
+        tools: [
+          {
+            defaultsToActiveSheet: false,
+            description: 'Return workbook metadata including active sheet, version, and sheet sizes.',
+            name: 'get_workbook_summary',
+            readOnly: true,
+            useWhen: 'Always use this first before exploring or editing a workbook.',
+          },
+          {
+            defaultsToActiveSheet: true,
+            description: 'Return the used range bounds for a sheet.',
+            name: 'get_used_range',
+            readOnly: true,
+            useWhen: 'Use this to find the populated area before reading a range or exporting CSV.',
+          },
+          {
+            defaultsToActiveSheet: true,
+            description: 'Read a rectangular range from a sheet.',
+            name: 'get_sheet_range',
+            readOnly: true,
+            useWhen: 'Use this for targeted inspection of a subset of rows and columns.',
+          },
+          {
+            defaultsToActiveSheet: true,
+            description: 'Return the sheet as CSV text trimmed to its used range.',
+            name: 'get_sheet_csv',
+            readOnly: true,
+            useWhen: 'Use this when you need the full used range in one text payload.',
+          },
+          {
+            defaultsToActiveSheet: true,
+            description: 'Apply one atomic batch of workbook mutations.',
+            name: 'apply_transaction',
+            readOnly: false,
+            useWhen: 'Use this for all writes, preferably in one batched request with dryRun first.',
+          },
+        ],
+        transactionOperations: guideResource.transactionOperations,
+        usageConventions: guideResource.usageConventions,
+        workflow: guideResource.workflow,
+      }),
   );
 
   server.registerTool(
@@ -372,6 +716,37 @@ async function main() {
       outputSchema: applyTransactionResultSchema,
     },
     async (args) => createTextResult(await controlClient.applyTransaction(args)),
+  );
+
+  server.registerPrompt(
+    WORKBOOK_TASK_PROMPT_NAME,
+    {
+      description: 'Template prompt for planning or executing one workbook task with Spready.',
+      argsSchema: {
+        goal: z.string().min(1).describe('The workbook task to accomplish.'),
+      },
+    },
+    async ({ goal }) => {
+      return {
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text:
+                `Use the Spready MCP server to accomplish this workbook task: ${goal}\n\n` +
+                'Workflow:\n' +
+                '- Start with get_workbook_summary.\n' +
+                '- Use zero-based row and column indexes.\n' +
+                '- Read only the ranges you need with get_used_range or get_sheet_range.\n' +
+                '- Use apply_transaction for writes, preferably as one batched request.\n' +
+                '- Use dryRun before risky or destructive mutations.\n' +
+                `- If you need server details, call describe_capabilities or read ${SERVER_GUIDE_RESOURCE_URI}.`,
+            },
+          },
+        ],
+      };
+    },
   );
 
   const transport = new StdioServerTransport();
