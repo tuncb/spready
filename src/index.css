@@ -39,7 +39,7 @@ select {
 
 .app-shell {
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto auto 1fr auto;
   gap: 10px;
   height: 100%;
   padding: 12px;
@@ -50,27 +50,6 @@ select {
       transparent 22%
     ),
     linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.18));
-}
-
-.app-shell__toolbar {
-  grid-row: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 14px;
-  border: 1px solid rgba(20, 32, 51, 0.1);
-  border-radius: 0;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 14px 40px rgba(20, 32, 51, 0.08);
-  backdrop-filter: blur(18px);
-}
-
-.app-shell__brand {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
 }
 
 .app-shell__meta {
@@ -120,7 +99,7 @@ select {
   background: rgba(72, 96, 121, 0.08);
 }
 
-.app-shell__status {
+.app-shell__error {
   grid-row: 2;
   padding: 12px 16px;
   border: 1px solid rgba(177, 74, 47, 0.16);
@@ -131,7 +110,7 @@ select {
 }
 
 .sheet-surface {
-  grid-row: 4;
+  grid-row: 3;
   min-width: 0;
   min-height: 0;
   border: 1px solid rgba(20, 32, 51, 0.1);
@@ -143,7 +122,7 @@ select {
 
 .formula-bar {
   --formula-bar-side-width: 88px;
-  grid-row: 3;
+  grid-row: 1;
   display: grid;
   grid-template-columns:
     var(--formula-bar-side-width)
@@ -218,12 +197,27 @@ select {
   text-overflow: ellipsis;
 }
 
+.app-shell__status-bar {
+  grid-row: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(20, 32, 51, 0.1);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 14px 40px rgba(20, 32, 51, 0.08);
+  backdrop-filter: blur(18px);
+}
+
 @media (max-width: 900px) {
   .app-shell {
     padding: 10px;
   }
 
-  .app-shell__toolbar {
+  .app-shell__status-bar {
     flex-wrap: wrap;
     gap: 10px;
     padding: 10px 12px;

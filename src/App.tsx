@@ -850,41 +850,8 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <header className="app-shell__toolbar">
-        <div className="app-shell__brand">
-          <div className="app-shell__meta">
-            <label className="app-shell__selector">
-              <select
-                aria-label="Active sheet"
-                className="app-shell__select"
-                onChange={handleActiveSheetChange}
-                value={activeSheet?.id ?? ""}
-              >
-                {(sheetSummary?.sheets ?? []).map((sheet) => (
-                  <option key={sheet.id} value={sheet.id}>
-                    {sheet.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {controlInfo ? (
-              <span className="app-shell__control">
-                tcp://{controlInfo.host}:{controlInfo.port}
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="app-shell__stats" aria-label="Workbook state">
-          <span>{rowCount} rows</span>
-          <span>{columnCount} columns</span>
-          <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
-        </div>
-      </header>
-
       {errorMessage ? (
-        <div className="app-shell__status" role="status">
+        <div className="app-shell__error" role="status">
           {errorMessage}
         </div>
       ) : null}
@@ -950,6 +917,37 @@ export default function App() {
           width="100%"
         />
       </section>
+
+      <footer className="app-shell__status-bar" aria-label="Workbook status">
+        <div className="app-shell__meta">
+          <label className="app-shell__selector">
+            <select
+              aria-label="Active sheet"
+              className="app-shell__select"
+              onChange={handleActiveSheetChange}
+              value={activeSheet?.id ?? ""}
+            >
+              {(sheetSummary?.sheets ?? []).map((sheet) => (
+                <option key={sheet.id} value={sheet.id}>
+                  {sheet.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {controlInfo ? (
+            <span className="app-shell__control">
+              tcp://{controlInfo.host}:{controlInfo.port}
+            </span>
+          ) : null}
+        </div>
+
+        <div className="app-shell__stats" aria-label="Workbook state">
+          <span>{rowCount} rows</span>
+          <span>{columnCount} columns</span>
+          <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
+        </div>
+      </footer>
     </main>
   );
 }
