@@ -5,7 +5,7 @@ import DataEditor, {
   type GridColumn,
   type Item,
 } from '@glideapps/glide-data-grid';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const INITIAL_ROWS = 200;
 const INITIAL_COLUMNS = 50;
@@ -13,6 +13,119 @@ const DEFAULT_COLUMN_WIDTH = 140;
 
 function createSheet(rowCount: number, columnCount: number): string[][] {
   return Array.from({ length: rowCount }, () => Array(columnCount).fill(''));
+}
+
+function normalizeSheet(rows: string[][]): string[][] {
+  const rowCount = Math.max(rows.length, 1);
+  const columnCount = Math.max(1, ...rows.map((row) => row.length));
+
+  return Array.from({ length: rowCount }, (_, rowIndex) => {
+    const sourceRow = rows[rowIndex] ?? [];
+
+    return Array.from({ length: columnCount }, (_, columnIndex) => sourceRow[columnIndex] ?? '');
+  });
+}
+
+function parseCsv(content: string): string[][] {
+  if (content.length === 0) {
+    return normalizeSheet([]);
+  }
+
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentValue = '';
+  let isQuoted = false;
+
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index];
+
+    if (isQuoted) {
+      if (character === '"') {
+        if (content[index + 1] === '"') {
+          currentValue += '"';
+          index += 1;
+        } else {
+          isQuoted = false;
+        }
+      } else {
+        currentValue += character;
+      }
+
+      continue;
+    }
+
+    if (character === '"') {
+      isQuoted = true;
+      continue;
+    }
+
+    if (character === ',') {
+      currentRow.push(currentValue);
+      currentValue = '';
+      continue;
+    }
+
+    if (character === '\n' || character === '\r') {
+      if (character === '\r' && content[index + 1] === '\n') {
+        index += 1;
+      }
+
+      currentRow.push(currentValue);
+      rows.push(currentRow);
+      currentRow = [];
+      currentValue = '';
+      continue;
+    }
+
+    currentValue += character;
+  }
+
+  if (currentRow.length > 0 || currentValue.length > 0) {
+    currentRow.push(currentValue);
+    rows.push(currentRow);
+  }
+
+  return normalizeSheet(rows);
+}
+
+function getUsedSheetRange(sheet: string[][]): string[][] {
+  let lastRowIndex = -1;
+  let lastColumnIndex = -1;
+
+  for (let rowIndex = 0; rowIndex < sheet.length; rowIndex += 1) {
+    const row = sheet[rowIndex];
+
+    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+      if (row[columnIndex] === '') {
+        continue;
+      }
+
+      lastRowIndex = rowIndex;
+      lastColumnIndex = Math.max(lastColumnIndex, columnIndex);
+    }
+  }
+
+  if (lastRowIndex < 0 || lastColumnIndex < 0) {
+    return [];
+  }
+
+  return sheet
+    .slice(0, lastRowIndex + 1)
+    .map((row) => row.slice(0, lastColumnIndex + 1));
+}
+
+function escapeCsvValue(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replaceAll('"', '""')}"`;
+  }
+
+  return value;
+}
+
+function serializeCsv(sheet: string[][]): string {
+  const usedRange = getUsedSheetRange(sheet);
+
+  return usedRange.map((row) => row.map(escapeCsvValue).join(',')).join('\r\n');
 }
 
 function getColumnTitle(index: number): string {
@@ -72,6 +185,7 @@ function applyTextCellEdit(
 export default function App() {
   const [sheet, setSheet] = useState(() => createSheet(INITIAL_ROWS, INITIAL_COLUMNS));
   const sheetRef = useRef(sheet);
+  const filePathRef = useRef<string>();
 
   sheetRef.current = sheet;
 
@@ -161,6 +275,40 @@ export default function App() {
   const addColumn = useCallback(() => {
     setSheet((previousSheet) => previousSheet.map((row) => [...row, '']));
   }, []);
+
+  const handleImport = useCallback(async () => {
+    const result = await window.appShell.openCsvFile();
+
+    if (result.canceled) {
+      return;
+    }
+
+    setSheet(parseCsv(result.content));
+    filePathRef.current = result.filePath;
+  }, []);
+
+  const handleExport = useCallback(async () => {
+    const defaultPath = filePathRef.current ?? 'Sheet1.csv';
+    const result = await window.appShell.saveCsvFile(
+      serializeCsv(sheetRef.current),
+      defaultPath,
+    );
+
+    if (!result.canceled) {
+      filePathRef.current = result.filePath;
+    }
+  }, []);
+
+  useEffect(() => {
+    return window.appShell.onMenuAction((action) => {
+      if (action === 'import') {
+        void handleImport();
+        return;
+      }
+
+      void handleExport();
+    });
+  }, [handleExport, handleImport]);
 
   return (
     <main className="app-shell">
