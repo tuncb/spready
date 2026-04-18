@@ -13,8 +13,25 @@ import {
 } from 'electron';
 import started from 'electron-squirrel-startup';
 
+import { SpreadyControlServer } from './control-server';
+import { WorkbookController } from './workbook-controller';
+import type { ApplyTransactionRequest, SheetRangeRequest } from './workbook-core';
+
 const APP_DISPLAY_NAME = 'Spready';
 const DEFAULT_EXPORT_FILE_NAME = 'Sheet1.csv';
+const DEFAULT_CONTROL_HOST = '127.0.0.1';
+const DEFAULT_CONTROL_PORT = 45731;
+
+const workbookController = new WorkbookController();
+const configuredControlPort = Number.parseInt(
+  process.env.SPREADY_CONTROL_PORT ?? `${DEFAULT_CONTROL_PORT}`,
+  10,
+);
+const controlServer = new SpreadyControlServer(
+  workbookController,
+  DEFAULT_CONTROL_HOST,
+  Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
+);
 
 if (started) {
   app.quit();
@@ -40,6 +57,14 @@ function getTargetWindow(browserWindow?: BrowserWindow | null): BrowserWindow | 
 
 function sendMenuAction(action: AppMenuAction, browserWindow?: BrowserWindow | null) {
   getTargetWindow(browserWindow)?.webContents.send('app-menu:action', action);
+}
+
+function broadcastWorkbookChanged() {
+  const summary = workbookController.getSummary();
+
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    browserWindow.webContents.send('workbook:changed', summary);
+  }
 }
 
 async function showAboutDialog(browserWindow?: BrowserWindow | null) {
@@ -208,7 +233,47 @@ ipcMain.handle('dialog:save-csv-file', async (event, args: SaveCsvFileArgs) => {
   }
 });
 
+ipcMain.handle('control:get-info', () => controlServer.getInfo());
+
+ipcMain.handle('workbook:apply-transaction', (_event, args: ApplyTransactionRequest) =>
+  workbookController.applyTransaction(args),
+);
+
+ipcMain.handle('workbook:get-range', (_event, args: SheetRangeRequest) =>
+  workbookController.getSheetRange(args),
+);
+
+ipcMain.handle('workbook:get-sheet-csv', (_event, args?: { sheetId?: string }) =>
+  workbookController.getSheetCsv(args?.sheetId),
+);
+
+ipcMain.handle('workbook:get-summary', () => workbookController.getSummary());
+
+ipcMain.handle('workbook:get-used-range', (_event, args?: { sheetId?: string }) =>
+  workbookController.getUsedRange(args?.sheetId),
+);
+
+workbookController.on('changed', () => {
+  broadcastWorkbookChanged();
+});
+
 app.whenReady().then(() => {
+  void controlServer
+    .start()
+    .then(() => {
+      const controlInfo = controlServer.getInfo();
+      console.log(
+        `${APP_DISPLAY_NAME} control server listening on tcp://${controlInfo.host}:${controlInfo.port}`,
+      );
+    })
+    .catch((error) => {
+      console.error(
+        `${APP_DISPLAY_NAME} control server failed to start: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    });
+
   createWindow();
   buildAppMenu();
 
@@ -223,4 +288,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  void controlServer.stop();
 });

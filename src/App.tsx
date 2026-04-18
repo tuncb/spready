@@ -5,139 +5,57 @@ import DataEditor, {
   type GridColumn,
   type Item,
 } from '@glideapps/glide-data-grid';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-const INITIAL_ROWS = 200;
-const INITIAL_COLUMNS = 50;
+import {
+  getColumnTitle,
+  type ControlServerInfo,
+  type SheetRangeRequest,
+  type SheetRangeResult,
+  type WorkbookSummary,
+} from './workbook-core';
+
 const DEFAULT_COLUMN_WIDTH = 140;
+const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
+const DEFAULT_VISIBLE_ROW_COUNT = 36;
+const VISIBLE_COLUMN_PADDING = 4;
+const VISIBLE_ROW_PADDING = 24;
 
-function createSheet(rowCount: number, columnCount: number): string[][] {
-  return Array.from({ length: rowCount }, () => Array(columnCount).fill(''));
-}
+type VisibleRegion = {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+};
 
-function normalizeSheet(rows: string[][]): string[][] {
-  const rowCount = Math.max(rows.length, 1);
-  const columnCount = Math.max(1, ...rows.map((row) => row.length));
+function buildRangeRequest(
+  activeSheetId: string,
+  columnCount: number,
+  rowCount: number,
+  region: VisibleRegion | null,
+): SheetRangeRequest {
+  const targetRegion = region ?? {
+    height: Math.min(rowCount, DEFAULT_VISIBLE_ROW_COUNT),
+    width: Math.min(columnCount, DEFAULT_VISIBLE_COLUMN_COUNT),
+    x: 0,
+    y: 0,
+  };
+  const startColumn = Math.max(0, targetRegion.x - VISIBLE_COLUMN_PADDING);
+  const startRow = Math.max(0, targetRegion.y - VISIBLE_ROW_PADDING);
 
-  return Array.from({ length: rowCount }, (_, rowIndex) => {
-    const sourceRow = rows[rowIndex] ?? [];
-
-    return Array.from({ length: columnCount }, (_, columnIndex) => sourceRow[columnIndex] ?? '');
-  });
-}
-
-function parseCsv(content: string): string[][] {
-  if (content.length === 0) {
-    return normalizeSheet([]);
-  }
-
-  const rows: string[][] = [];
-  let currentRow: string[] = [];
-  let currentValue = '';
-  let isQuoted = false;
-
-  for (let index = 0; index < content.length; index += 1) {
-    const character = content[index];
-
-    if (isQuoted) {
-      if (character === '"') {
-        if (content[index + 1] === '"') {
-          currentValue += '"';
-          index += 1;
-        } else {
-          isQuoted = false;
-        }
-      } else {
-        currentValue += character;
-      }
-
-      continue;
-    }
-
-    if (character === '"') {
-      isQuoted = true;
-      continue;
-    }
-
-    if (character === ',') {
-      currentRow.push(currentValue);
-      currentValue = '';
-      continue;
-    }
-
-    if (character === '\n' || character === '\r') {
-      if (character === '\r' && content[index + 1] === '\n') {
-        index += 1;
-      }
-
-      currentRow.push(currentValue);
-      rows.push(currentRow);
-      currentRow = [];
-      currentValue = '';
-      continue;
-    }
-
-    currentValue += character;
-  }
-
-  if (currentRow.length > 0 || currentValue.length > 0) {
-    currentRow.push(currentValue);
-    rows.push(currentRow);
-  }
-
-  return normalizeSheet(rows);
-}
-
-function getUsedSheetRange(sheet: string[][]): string[][] {
-  let lastRowIndex = -1;
-  let lastColumnIndex = -1;
-
-  for (let rowIndex = 0; rowIndex < sheet.length; rowIndex += 1) {
-    const row = sheet[rowIndex];
-
-    for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
-      if (row[columnIndex] === '') {
-        continue;
-      }
-
-      lastRowIndex = rowIndex;
-      lastColumnIndex = Math.max(lastColumnIndex, columnIndex);
-    }
-  }
-
-  if (lastRowIndex < 0 || lastColumnIndex < 0) {
-    return [];
-  }
-
-  return sheet
-    .slice(0, lastRowIndex + 1)
-    .map((row) => row.slice(0, lastColumnIndex + 1));
-}
-
-function escapeCsvValue(value: string): string {
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replaceAll('"', '""')}"`;
-  }
-
-  return value;
-}
-
-function serializeCsv(sheet: string[][]): string {
-  const usedRange = getUsedSheetRange(sheet);
-
-  return usedRange.map((row) => row.map(escapeCsvValue).join(',')).join('\r\n');
-}
-
-function getColumnTitle(index: number): string {
-  let current = index;
-  let label = '';
-
-  do {
-    label = String.fromCharCode(65 + (current % 26)) + label;
-    current = Math.floor(current / 26) - 1;
-  } while (current >= 0);
-
-  return label;
+  return {
+    columnCount: Math.max(
+      1,
+      Math.min(columnCount - startColumn, targetRegion.width + VISIBLE_COLUMN_PADDING * 2),
+    ),
+    rowCount: Math.max(
+      1,
+      Math.min(rowCount - startRow, targetRegion.height + VISIBLE_ROW_PADDING * 2),
+    ),
+    sheetId: activeSheetId,
+    startColumn,
+    startRow,
+  };
 }
 
 function createColumns(columnCount: number): GridColumn[] {
@@ -148,156 +66,415 @@ function createColumns(columnCount: number): GridColumn[] {
   }));
 }
 
-function createTextCell(value: string): GridCell {
+function createLoadingCell(): GridCell {
   return {
-    kind: GridCellKind.Text,
-    allowOverlay: true,
-    data: value,
-    displayData: value,
+    allowOverlay: false,
+    kind: GridCellKind.Loading,
   };
 }
 
-function applyTextCellEdit(
-  previousSheet: string[][],
-  rowIndex: number,
+function createTextCell(value: string): GridCell {
+  return {
+    allowOverlay: true,
+    data: value,
+    displayData: value,
+    kind: GridCellKind.Text,
+  };
+}
+
+function getCachedCellValue(
+  cache: SheetRangeResult | null,
   columnIndex: number,
+  rowIndex: number,
+  sheetId?: string,
+): string | undefined {
+  if (!cache || cache.sheetId !== sheetId) {
+    return undefined;
+  }
+
+  if (rowIndex < cache.startRow || columnIndex < cache.startColumn) {
+    return undefined;
+  }
+
+  const rowOffset = rowIndex - cache.startRow;
+  const columnOffset = columnIndex - cache.startColumn;
+
+  if (rowOffset >= cache.rowCount || columnOffset >= cache.columnCount) {
+    return undefined;
+  }
+
+  return cache.values[rowOffset]?.[columnOffset];
+}
+
+function setCachedCellValue(
+  cache: SheetRangeResult | null,
+  columnIndex: number,
+  rowIndex: number,
+  sheetId: string,
   value: string,
-): string[][] {
-  const currentRow = previousSheet[rowIndex];
-
-  if (!currentRow || columnIndex < 0 || columnIndex >= currentRow.length) {
-    return previousSheet;
+): SheetRangeResult | null {
+  if (!cache || cache.sheetId !== sheetId) {
+    return cache;
   }
 
-  if (currentRow[columnIndex] === value) {
-    return previousSheet;
+  if (
+    rowIndex < cache.startRow ||
+    columnIndex < cache.startColumn ||
+    rowIndex >= cache.startRow + cache.rowCount ||
+    columnIndex >= cache.startColumn + cache.columnCount
+  ) {
+    return cache;
   }
 
-  const nextSheet = [...previousSheet];
-  const nextRow = [...currentRow];
+  const rowOffset = rowIndex - cache.startRow;
+  const columnOffset = columnIndex - cache.startColumn;
+  const nextValues = [...cache.values];
+  const nextRow = [...(nextValues[rowOffset] ?? [])];
 
-  nextRow[columnIndex] = value;
-  nextSheet[rowIndex] = nextRow;
+  nextRow[columnOffset] = value;
+  nextValues[rowOffset] = nextRow;
 
-  return nextSheet;
+  return {
+    ...cache,
+    values: nextValues,
+  };
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
 }
 
 export default function App() {
-  const [sheet, setSheet] = useState(() => createSheet(INITIAL_ROWS, INITIAL_COLUMNS));
-  const sheetRef = useRef(sheet);
-  const filePathRef = useRef<string>();
+  const [controlInfo, setControlInfo] = useState<ControlServerInfo | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(null);
+  const [viewNonce, setViewNonce] = useState(0);
 
-  sheetRef.current = sheet;
+  const exportPathRef = useRef<string>();
+  const lastVisibleRegionRef = useRef<VisibleRegion | null>(null);
+  const pendingRangeRequestIdRef = useRef(0);
+  const rangeCacheRef = useRef<SheetRangeResult | null>(null);
 
-  const rowCount = sheet.length;
-  const columnCount = sheet[0]?.length ?? 0;
+  const activeSheet = useMemo(
+    () => sheetSummary?.sheets.find((sheet) => sheet.id === sheetSummary.activeSheetId) ?? null,
+    [sheetSummary],
+  );
+
+  const rowCount = activeSheet?.rowCount ?? 1;
+  const columnCount = activeSheet?.columnCount ?? 1;
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
 
-  const getCellContent = useCallback((cell: Item): GridCell => {
-    const [columnIndex, rowIndex] = cell;
-    const value = sheetRef.current[rowIndex]?.[columnIndex] ?? '';
+  const applyTransaction = useCallback(
+    async (operations: Parameters<typeof window.appShell.applyTransaction>[0]['operations']) => {
+      const result = await window.appShell.applyTransaction({ operations });
 
-    return createTextCell(value);
-  }, []);
+      setSheetSummary(result.summary);
+      setErrorMessage(null);
 
-  const handleCellEdited = useCallback((cell: Item, newValue: EditableGridCell) => {
-    if (newValue.kind !== GridCellKind.Text) {
-      return;
-    }
+      return result;
+    },
+    [],
+  );
 
-    const [columnIndex, rowIndex] = cell;
+  const loadVisibleRange = useCallback(
+    async (region: VisibleRegion | null) => {
+      if (!activeSheet) {
+        return;
+      }
 
-    setSheet((previousSheet) =>
-      applyTextCellEdit(previousSheet, rowIndex, columnIndex, newValue.data),
-    );
-  }, []);
+      const request = buildRangeRequest(activeSheet.id, activeSheet.columnCount, activeSheet.rowCount, region);
+      const requestId = pendingRangeRequestIdRef.current + 1;
 
-  const handlePaste = useCallback((target: Item, values: readonly (readonly string[])[]) => {
-    if (values.length === 0) {
-      return false;
-    }
+      pendingRangeRequestIdRef.current = requestId;
 
-    const [startColumnIndex, startRowIndex] = target;
+      try {
+        const result = await window.appShell.getSheetRange(request);
 
-    setSheet((previousSheet) => {
-      const maxColumnCount = previousSheet[0]?.length ?? 0;
-      const nextSheet = [...previousSheet];
-      let changed = false;
-
-      for (let rowOffset = 0; rowOffset < values.length; rowOffset += 1) {
-        const rowIndex = startRowIndex + rowOffset;
-
-        if (rowIndex < 0 || rowIndex >= previousSheet.length) {
-          continue;
+        if (pendingRangeRequestIdRef.current !== requestId) {
+          return;
         }
 
-        const sourceRow = values[rowOffset];
-        let nextRow = nextSheet[rowIndex];
-        let rowCloned = false;
+        rangeCacheRef.current = result;
+        setViewNonce((current) => current + 1);
+      } catch (error) {
+        setErrorMessage(getErrorMessage(error));
+      }
+    },
+    [activeSheet],
+  );
 
-        for (let columnOffset = 0; columnOffset < sourceRow.length; columnOffset += 1) {
-          const columnIndex = startColumnIndex + columnOffset;
+  const getCellContent = useCallback(
+    (cell: Item): GridCell => {
+      const [columnIndex, rowIndex] = cell;
+      const cachedValue = getCachedCellValue(
+        rangeCacheRef.current,
+        columnIndex,
+        rowIndex,
+        activeSheet?.id,
+      );
 
-          if (columnIndex < 0 || columnIndex >= maxColumnCount) {
-            continue;
-          }
+      if (cachedValue === undefined) {
+        return createLoadingCell();
+      }
 
-          const pastedValue = sourceRow[columnOffset] ?? '';
+      return createTextCell(cachedValue);
+    },
+    [activeSheet?.id, viewNonce],
+  );
 
-          if (nextRow[columnIndex] === pastedValue) {
-            continue;
-          }
+  const getCellsForSelection = useCallback(
+    (selection: VisibleRegion) => {
+      return async () => {
+        if (!activeSheet) {
+          return [];
+        }
 
-          if (!rowCloned) {
-            nextRow = [...nextRow];
-            nextSheet[rowIndex] = nextRow;
-            rowCloned = true;
-          }
+        const range = await window.appShell.getSheetRange({
+          columnCount: selection.width,
+          rowCount: selection.height,
+          sheetId: activeSheet.id,
+          startColumn: selection.x,
+          startRow: selection.y,
+        });
 
-          nextRow[columnIndex] = pastedValue;
-          changed = true;
+        return range.values.map((row) => row.map(createTextCell));
+      };
+    },
+    [activeSheet],
+  );
+
+  const handleCellEdited = useCallback(
+    (cell: Item, newValue: EditableGridCell) => {
+      if (newValue.kind !== GridCellKind.Text || !activeSheet) {
+        return;
+      }
+
+      const [columnIndex, rowIndex] = cell;
+
+      rangeCacheRef.current = setCachedCellValue(
+        rangeCacheRef.current,
+        columnIndex,
+        rowIndex,
+        activeSheet.id,
+        newValue.data,
+      );
+      setViewNonce((current) => current + 1);
+
+      void applyTransaction([
+        {
+          columnIndex,
+          rowIndex,
+          type: 'setCell',
+          value: newValue.data,
+        },
+      ]).catch((error) => {
+        setErrorMessage(getErrorMessage(error));
+      });
+    },
+    [activeSheet, applyTransaction],
+  );
+
+  const handlePaste = useCallback(
+    (target: Item, values: readonly (readonly string[])[]) => {
+      if (!activeSheet || values.length === 0) {
+        return false;
+      }
+
+      const [startColumn, startRow] = target;
+      const nextValues = values.map((row) => [...row]);
+
+      for (let rowOffset = 0; rowOffset < nextValues.length; rowOffset += 1) {
+        for (let columnOffset = 0; columnOffset < nextValues[rowOffset].length; columnOffset += 1) {
+          rangeCacheRef.current = setCachedCellValue(
+            rangeCacheRef.current,
+            startColumn + columnOffset,
+            startRow + rowOffset,
+            activeSheet.id,
+            nextValues[rowOffset][columnOffset] ?? '',
+          );
         }
       }
 
-      return changed ? nextSheet : previousSheet;
-    });
+      setViewNonce((current) => current + 1);
 
-    return true;
-  }, []);
+      void applyTransaction([
+        {
+          startColumn,
+          startRow,
+          type: 'setRange',
+          values: nextValues,
+        },
+      ]).catch((error) => {
+        setErrorMessage(getErrorMessage(error));
+      });
 
-  const addRow = useCallback(() => {
-    setSheet((previousSheet) => [
-      ...previousSheet,
-      Array(previousSheet[0]?.length ?? 0).fill(''),
-    ]);
-  }, []);
+      return true;
+    },
+    [activeSheet, applyTransaction],
+  );
 
   const addColumn = useCallback(() => {
-    setSheet((previousSheet) => previousSheet.map((row) => [...row, '']));
-  }, []);
-
-  const handleImport = useCallback(async () => {
-    const result = await window.appShell.openCsvFile();
-
-    if (result.canceled) {
+    if (!activeSheet) {
       return;
     }
 
-    setSheet(parseCsv(result.content));
-    filePathRef.current = result.filePath;
-  }, []);
+    void applyTransaction([
+      {
+        columnIndex: activeSheet.columnCount,
+        count: 1,
+        type: 'insertColumns',
+      },
+    ]).catch((error) => {
+      setErrorMessage(getErrorMessage(error));
+    });
+  }, [activeSheet, applyTransaction]);
+
+  const addRow = useCallback(() => {
+    if (!activeSheet) {
+      return;
+    }
+
+    void applyTransaction([
+      {
+        count: 1,
+        rowIndex: activeSheet.rowCount,
+        type: 'insertRows',
+      },
+    ]).catch((error) => {
+      setErrorMessage(getErrorMessage(error));
+    });
+  }, [activeSheet, applyTransaction]);
+
+  const addSheet = useCallback(() => {
+    void applyTransaction([
+      {
+        activate: true,
+        type: 'addSheet',
+      },
+    ]).catch((error) => {
+      setErrorMessage(getErrorMessage(error));
+    });
+  }, [applyTransaction]);
+
+  const handleActiveSheetChange = useCallback(
+    (event: ChangeEvent<HTMLSelectElement>) => {
+      void applyTransaction([
+        {
+          sheetId: event.target.value,
+          type: 'setActiveSheet',
+        },
+      ]).catch((error) => {
+        setErrorMessage(getErrorMessage(error));
+      });
+    },
+    [applyTransaction],
+  );
+
+  const handleImport = useCallback(async () => {
+    try {
+      const result = await window.appShell.openCsvFile();
+
+      if (result.canceled) {
+        return;
+      }
+
+      exportPathRef.current = result.filePath;
+
+      await applyTransaction([
+        {
+          content: result.content,
+          sourceFilePath: result.filePath,
+          type: 'replaceSheetFromCsv',
+        },
+      ]);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, [applyTransaction]);
 
   const handleExport = useCallback(async () => {
-    const defaultPath = filePathRef.current ?? 'Sheet1.csv';
-    const result = await window.appShell.saveCsvFile(
-      serializeCsv(sheetRef.current),
-      defaultPath,
-    );
-
-    if (!result.canceled) {
-      filePathRef.current = result.filePath;
+    if (!activeSheet) {
+      return;
     }
+
+    try {
+      const csv = await window.appShell.getSheetCsv(activeSheet.id);
+      const defaultPath =
+        exportPathRef.current ??
+        activeSheet.sourceFilePath ??
+        `${activeSheet.name.replaceAll(/\s+/g, '-') || 'Sheet'}.csv`;
+      const result = await window.appShell.saveCsvFile(csv, defaultPath);
+
+      if (result.canceled) {
+        return;
+      }
+
+      exportPathRef.current = result.filePath;
+
+      await applyTransaction([
+        {
+          sourceFilePath: result.filePath,
+          type: 'setSheetSourceFile',
+        },
+      ]);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, [activeSheet, applyTransaction]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void Promise.all([window.appShell.getWorkbookSummary(), window.appShell.getControlInfo()])
+      .then(([summary, nextControlInfo]) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setSheetSummary(summary);
+        setControlInfo(nextControlInfo);
+        setErrorMessage(null);
+      })
+      .catch((error) => {
+        if (!isMounted) {
+          return;
+        }
+
+        setErrorMessage(getErrorMessage(error));
+      });
+
+    const unsubscribeWorkbook = window.appShell.onWorkbookChanged((summary) => {
+      setSheetSummary(summary);
+      setErrorMessage(null);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribeWorkbook();
+    };
   }, []);
+
+  useEffect(() => {
+    if (!activeSheet) {
+      return;
+    }
+
+    rangeCacheRef.current = null;
+    setViewNonce((current) => current + 1);
+
+    if (activeSheet.sourceFilePath) {
+      exportPathRef.current = activeSheet.sourceFilePath;
+    }
+
+    void loadVisibleRange(lastVisibleRegionRef.current);
+  }, [
+    activeSheet?.columnCount,
+    activeSheet?.id,
+    activeSheet?.rowCount,
+    activeSheet?.sourceFilePath,
+    loadVisibleRange,
+    sheetSummary?.version,
+  ]);
 
   useEffect(() => {
     return window.appShell.onMenuAction((action) => {
@@ -315,12 +492,36 @@ export default function App() {
       <header className="app-shell__toolbar">
         <div className="app-shell__brand">
           <p className="app-shell__eyebrow">{window.appShell.name}</p>
-          <h1 className="app-shell__title">Sheet 1</h1>
+          <h1 className="app-shell__title">{activeSheet?.name ?? 'Loading workbook'}</h1>
+          <div className="app-shell__meta">
+            <label className="app-shell__selector">
+              <span>Active Sheet</span>
+              <select
+                className="app-shell__select"
+                onChange={handleActiveSheetChange}
+                value={activeSheet?.id ?? ''}
+              >
+                {(sheetSummary?.sheets ?? []).map((sheet) => (
+                  <option key={sheet.id} value={sheet.id}>
+                    {sheet.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {controlInfo ? (
+              <span className="app-shell__control">
+                tcp://{controlInfo.host}:{controlInfo.port}
+              </span>
+            ) : null}
+          </div>
         </div>
 
-        <div className="app-shell__stats" aria-label="Sheet size">
+        <div className="app-shell__stats" aria-label="Workbook state">
           <span>{rowCount} rows</span>
           <span>{columnCount} columns</span>
+          <span>{sheetSummary?.sheets.length ?? 0} sheets</span>
+          <span>{sheetSummary ? `v${sheetSummary.version}` : 'syncing'}</span>
         </div>
 
         <div className="app-shell__actions">
@@ -334,17 +535,40 @@ export default function App() {
           >
             Add Column
           </button>
+          <button
+            className="app-shell__button app-shell__button--secondary"
+            type="button"
+            onClick={addSheet}
+          >
+            New Sheet
+          </button>
         </div>
       </header>
+
+      {errorMessage ? (
+        <div className="app-shell__status" role="status">
+          {errorMessage}
+        </div>
+      ) : null}
 
       <section className="sheet-surface" aria-label="Spreadsheet surface">
         <DataEditor
           columns={columns}
           getCellContent={getCellContent}
-          getCellsForSelection
+          getCellsForSelection={getCellsForSelection}
           height="100%"
           onCellEdited={handleCellEdited}
           onPaste={handlePaste}
+          onVisibleRegionChanged={(region) => {
+            lastVisibleRegionRef.current = {
+              height: region.height,
+              width: region.width,
+              x: region.x,
+              y: region.y,
+            };
+
+            void loadVisibleRange(lastVisibleRegionRef.current);
+          }}
           rowMarkers={{ kind: 'number', startIndex: 1, width: 60 }}
           rows={rowCount}
           smoothScrollX

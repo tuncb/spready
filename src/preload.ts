@@ -1,5 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+import type {
+  ApplyTransactionRequest,
+  ApplyTransactionResult,
+  ControlServerInfo,
+  SheetRangeRequest,
+  SheetRangeResult,
+  UsedRangeResult,
+  WorkbookSummary,
+} from './workbook-core';
+
 type AppMenuAction = 'import' | 'export';
 
 type OpenCsvFileResult =
@@ -22,6 +32,16 @@ type SaveCsvFileResult =
     };
 
 contextBridge.exposeInMainWorld('appShell', {
+  applyTransaction: (request: ApplyTransactionRequest) =>
+    ipcRenderer.invoke('workbook:apply-transaction', request) as Promise<ApplyTransactionResult>,
+  getControlInfo: () => ipcRenderer.invoke('control:get-info') as Promise<ControlServerInfo>,
+  getSheetCsv: (sheetId?: string) =>
+    ipcRenderer.invoke('workbook:get-sheet-csv', { sheetId }) as Promise<string>,
+  getSheetRange: (request: SheetRangeRequest) =>
+    ipcRenderer.invoke('workbook:get-range', request) as Promise<SheetRangeResult>,
+  getUsedRange: (sheetId?: string) =>
+    ipcRenderer.invoke('workbook:get-used-range', { sheetId }) as Promise<UsedRangeResult>,
+  getWorkbookSummary: () => ipcRenderer.invoke('workbook:get-summary') as Promise<WorkbookSummary>,
   name: 'Spready',
   onMenuAction: (listener: (action: AppMenuAction) => void) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, action: AppMenuAction) => {
@@ -32,6 +52,17 @@ contextBridge.exposeInMainWorld('appShell', {
 
     return () => {
       ipcRenderer.off('app-menu:action', wrappedListener);
+    };
+  },
+  onWorkbookChanged: (listener: (summary: WorkbookSummary) => void) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, summary: WorkbookSummary) => {
+      listener(summary);
+    };
+
+    ipcRenderer.on('workbook:changed', wrappedListener);
+
+    return () => {
+      ipcRenderer.off('workbook:changed', wrappedListener);
     };
   },
   openCsvFile: () => ipcRenderer.invoke('dialog:open-csv-file') as Promise<OpenCsvFileResult>,
