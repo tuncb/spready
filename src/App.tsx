@@ -6,6 +6,7 @@ import DataEditor, {
   type GridColumn,
   type GridSelection,
   type Item,
+  type Theme,
 } from "@glideapps/glide-data-grid";
 import {
   type ChangeEvent,
@@ -35,6 +36,35 @@ const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
 const DEFAULT_VISIBLE_ROW_COUNT = 36;
 const VISIBLE_COLUMN_PADDING = 4;
 const VISIBLE_ROW_PADDING = 24;
+
+const GRID_THEME: Partial<Theme> = {
+  accentColor: "#2563eb",
+  accentFg: "#ffffff",
+  accentLight: "rgba(37, 99, 235, 0.16)",
+  bgCell: "#ffffff",
+  bgCellMedium: "#f8fafc",
+  bgHeader: "#f3f6fb",
+  bgHeaderHasFocus: "#eaf1ff",
+  bgHeaderHovered: "#eef4ff",
+  bgBubble: "#eaf1ff",
+  bgBubbleSelected: "#2563eb",
+  bgIconHeader: "#e2e8f0",
+  bgSearchResult: "#dbeafe",
+  borderColor: "#cbd5e1",
+  drilldownBorder: "#cbd5e1",
+  fgIconHeader: "#475569",
+  headerBottomBorderColor: "#cbd5e1",
+  horizontalBorderColor: "#e2e8f0",
+  linkColor: "#2563eb",
+  resizeIndicatorColor: "#2563eb",
+  roundingRadius: 0,
+  textBubble: "#0f172a",
+  textDark: "#0f172a",
+  textHeader: "#334155",
+  textHeaderSelected: "#0f172a",
+  textLight: "#94a3b8",
+  textMedium: "#475569",
+};
 
 type VisibleRegion = {
   height: number;
@@ -914,6 +944,7 @@ export default function App() {
           rows={rowCount}
           smoothScrollX
           smoothScrollY
+          theme={GRID_THEME}
           width="100%"
         />
       </section>
