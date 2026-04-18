@@ -73,7 +73,7 @@ npm run make
 ### Tests
 
 ```sh
-# No automated test command is configured yet.
+npm test
 ```
 
 ## Control API

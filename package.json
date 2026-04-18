@@ -11,6 +11,8 @@
     "make": "electron-forge make",
     "build:mcp:cli": "node scripts/build-mcp-cli.mjs",
     "prepare:release": "node scripts/prepare-release-bundle.mjs",
+    "test": "node --import tsx --test src/**/*.test.ts",
+    "test:watch": "node --import tsx --test --watch src/**/*.test.ts",
     "lint": "eslint --ext .ts,.tsx .",
     "typecheck": "tsc --noEmit",
     "mcp:stdio": "tsx src/mcp-stdio.ts"
