@@ -1,0 +1,60 @@
+:root {
+  color: #1f1f17;
+  background:
+    radial-gradient(circle at top, #fff8ee 0%, #f5efe5 48%, #ece4d6 100%);
+  font-family: Aptos, 'Segoe UI Variable', 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
+
+#app {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.shell {
+  width: min(100%, 560px);
+  padding: 36px;
+  border: 1px solid rgba(31, 31, 23, 0.12);
+  border-radius: 24px;
+  background: rgba(255, 252, 246, 0.82);
+  box-shadow: 0 24px 80px rgba(76, 57, 24, 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.shell__eyebrow {
+  margin: 0 0 14px;
+  color: #72562a;
+  font-family: Consolas, 'SFMono-Regular', monospace;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.shell__title {
+  margin: 0;
+  font-size: clamp(40px, 8vw, 64px);
+  line-height: 0.95;
+}
+
+.shell__body {
+  margin: 18px 0 0;
+  max-width: 32ch;
+  color: rgba(31, 31, 23, 0.74);
+  font-size: 16px;
+  line-height: 1.6;
+}
