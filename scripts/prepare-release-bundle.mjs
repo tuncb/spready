@@ -21,6 +21,20 @@ function parseArgs(argv) {
       continue;
     }
 
+    const separatorIndex = token.indexOf('=');
+
+    if (separatorIndex !== -1) {
+      const key = token.slice(2, separatorIndex);
+      const value = token.slice(separatorIndex + 1);
+
+      if (!value) {
+        throw new Error(`Missing value for --${key}.`);
+      }
+
+      args.set(key, value);
+      continue;
+    }
+
     const key = token.slice(2);
     const value = argv[index + 1];
 
