@@ -854,8 +854,8 @@ export default function App() {
         <div className="app-shell__brand">
           <div className="app-shell__meta">
             <label className="app-shell__selector">
-              <span>Active Sheet</span>
               <select
+                aria-label="Active sheet"
                 className="app-shell__select"
                 onChange={handleActiveSheetChange}
                 value={activeSheet?.id ?? ""}
