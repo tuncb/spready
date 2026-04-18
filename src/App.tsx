@@ -4,16 +4,24 @@ import DataEditor, {
   type GridCell,
   type GridColumn,
   type Item,
-} from '@glideapps/glide-data-grid';
-import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+} from "@glideapps/glide-data-grid";
+import {
+  type ChangeEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
+import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
 import {
   getColumnTitle,
   type ControlServerInfo,
   type SheetRangeRequest,
   type SheetRangeResult,
   type WorkbookSummary,
-} from './workbook-core';
+} from "./workbook-core";
 
 const DEFAULT_COLUMN_WIDTH = 140;
 const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
@@ -46,11 +54,17 @@ function buildRangeRequest(
   return {
     columnCount: Math.max(
       1,
-      Math.min(columnCount - startColumn, targetRegion.width + VISIBLE_COLUMN_PADDING * 2),
+      Math.min(
+        columnCount - startColumn,
+        targetRegion.width + VISIBLE_COLUMN_PADDING * 2,
+      ),
     ),
     rowCount: Math.max(
       1,
-      Math.min(rowCount - startRow, targetRegion.height + VISIBLE_ROW_PADDING * 2),
+      Math.min(
+        rowCount - startRow,
+        targetRegion.height + VISIBLE_ROW_PADDING * 2,
+      ),
     ),
     sheetId: activeSheetId,
     startColumn,
@@ -141,13 +155,17 @@ function setCachedCellValue(
 }
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Unknown error';
+  return error instanceof Error ? error.message : "Unknown error";
 }
 
 export default function App() {
-  const [controlInfo, setControlInfo] = useState<ControlServerInfo | null>(null);
+  const [controlInfo, setControlInfo] = useState<ControlServerInfo | null>(
+    null,
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(null);
+  const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(
+    null,
+  );
   const [viewNonce, setViewNonce] = useState(0);
 
   const exportPathRef = useRef<string>();
@@ -156,7 +174,10 @@ export default function App() {
   const rangeCacheRef = useRef<SheetRangeResult | null>(null);
 
   const activeSheet = useMemo(
-    () => sheetSummary?.sheets.find((sheet) => sheet.id === sheetSummary.activeSheetId) ?? null,
+    () =>
+      sheetSummary?.sheets.find(
+        (sheet) => sheet.id === sheetSummary.activeSheetId,
+      ) ?? null,
     [sheetSummary],
   );
 
@@ -165,7 +186,11 @@ export default function App() {
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
 
   const applyTransaction = useCallback(
-    async (operations: Parameters<typeof window.appShell.applyTransaction>[0]['operations']) => {
+    async (
+      operations: Parameters<
+        typeof window.appShell.applyTransaction
+      >[0]["operations"],
+    ) => {
       const result = await window.appShell.applyTransaction({ operations });
 
       setSheetSummary(result.summary);
@@ -182,7 +207,12 @@ export default function App() {
         return;
       }
 
-      const request = buildRangeRequest(activeSheet.id, activeSheet.columnCount, activeSheet.rowCount, region);
+      const request = buildRangeRequest(
+        activeSheet.id,
+        activeSheet.columnCount,
+        activeSheet.rowCount,
+        region,
+      );
       const requestId = pendingRangeRequestIdRef.current + 1;
 
       pendingRangeRequestIdRef.current = requestId;
@@ -264,7 +294,7 @@ export default function App() {
         {
           columnIndex,
           rowIndex,
-          type: 'setCell',
+          type: "setCell",
           value: newValue.data,
         },
       ]).catch((error) => {
@@ -284,13 +314,17 @@ export default function App() {
       const nextValues = values.map((row) => [...row]);
 
       for (let rowOffset = 0; rowOffset < nextValues.length; rowOffset += 1) {
-        for (let columnOffset = 0; columnOffset < nextValues[rowOffset].length; columnOffset += 1) {
+        for (
+          let columnOffset = 0;
+          columnOffset < nextValues[rowOffset].length;
+          columnOffset += 1
+        ) {
           rangeCacheRef.current = setCachedCellValue(
             rangeCacheRef.current,
             startColumn + columnOffset,
             startRow + rowOffset,
             activeSheet.id,
-            nextValues[rowOffset][columnOffset] ?? '',
+            nextValues[rowOffset][columnOffset] ?? "",
           );
         }
       }
@@ -301,7 +335,7 @@ export default function App() {
         {
           startColumn,
           startRow,
-          type: 'setRange',
+          type: "setRange",
           values: nextValues,
         },
       ]).catch((error) => {
@@ -322,7 +356,7 @@ export default function App() {
       {
         columnIndex: activeSheet.columnCount,
         count: 1,
-        type: 'insertColumns',
+        type: "insertColumns",
       },
     ]).catch((error) => {
       setErrorMessage(getErrorMessage(error));
@@ -338,7 +372,7 @@ export default function App() {
       {
         count: 1,
         rowIndex: activeSheet.rowCount,
-        type: 'insertRows',
+        type: "insertRows",
       },
     ]).catch((error) => {
       setErrorMessage(getErrorMessage(error));
@@ -349,19 +383,34 @@ export default function App() {
     void applyTransaction([
       {
         activate: true,
-        type: 'addSheet',
+        type: "addSheet",
       },
     ]).catch((error) => {
       setErrorMessage(getErrorMessage(error));
     });
   }, [applyTransaction]);
 
+  const deleteSheet = useCallback(() => {
+    if (!activeSheet) {
+      return;
+    }
+
+    void applyTransaction([
+      {
+        sheetId: activeSheet.id,
+        type: "deleteSheet",
+      },
+    ]).catch((error) => {
+      setErrorMessage(getErrorMessage(error));
+    });
+  }, [activeSheet, applyTransaction]);
+
   const handleActiveSheetChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
       void applyTransaction([
         {
           sheetId: event.target.value,
-          type: 'setActiveSheet',
+          type: "setActiveSheet",
         },
       ]).catch((error) => {
         setErrorMessage(getErrorMessage(error));
@@ -384,7 +433,7 @@ export default function App() {
         {
           content: result.content,
           sourceFilePath: result.filePath,
-          type: 'replaceSheetFromCsv',
+          type: "replaceSheetFromCsv",
         },
       ]);
     } catch (error) {
@@ -402,7 +451,7 @@ export default function App() {
       const defaultPath =
         exportPathRef.current ??
         activeSheet.sourceFilePath ??
-        `${activeSheet.name.replaceAll(/\s+/g, '-') || 'Sheet'}.csv`;
+        `${activeSheet.name.replaceAll(/\s+/g, "-") || "Sheet"}.csv`;
       const result = await window.appShell.saveCsvFile(csv, defaultPath);
 
       if (result.canceled) {
@@ -414,7 +463,7 @@ export default function App() {
       await applyTransaction([
         {
           sourceFilePath: result.filePath,
-          type: 'setSheetSourceFile',
+          type: "setSheetSourceFile",
         },
       ]);
     } catch (error) {
@@ -425,7 +474,10 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    void Promise.all([window.appShell.getWorkbookSummary(), window.appShell.getControlInfo()])
+    void Promise.all([
+      window.appShell.getWorkbookSummary(),
+      window.appShell.getControlInfo(),
+    ])
       .then(([summary, nextControlInfo]) => {
         if (!isMounted) {
           return;
@@ -478,14 +530,31 @@ export default function App() {
 
   useEffect(() => {
     return window.appShell.onMenuAction((action) => {
-      if (action === 'import') {
-        void handleImport();
-        return;
-      }
+      const handleMenuAction = (nextAction: AppMenuAction) => {
+        switch (nextAction) {
+          case APP_MENU_ACTIONS.import:
+            void handleImport();
+            return;
+          case APP_MENU_ACTIONS.export:
+            void handleExport();
+            return;
+          case APP_MENU_ACTIONS.addRow:
+            addRow();
+            return;
+          case APP_MENU_ACTIONS.addColumn:
+            addColumn();
+            return;
+          case APP_MENU_ACTIONS.newSheet:
+            addSheet();
+            return;
+          case APP_MENU_ACTIONS.deleteSheet:
+            deleteSheet();
+        }
+      };
 
-      void handleExport();
+      handleMenuAction(action);
     });
-  }, [handleExport, handleImport]);
+  }, [addColumn, addRow, addSheet, deleteSheet, handleExport, handleImport]);
 
   return (
     <main className="app-shell">
@@ -497,7 +566,7 @@ export default function App() {
               <select
                 className="app-shell__select"
                 onChange={handleActiveSheetChange}
-                value={activeSheet?.id ?? ''}
+                value={activeSheet?.id ?? ""}
               >
                 {(sheetSummary?.sheets ?? []).map((sheet) => (
                   <option key={sheet.id} value={sheet.id}>
@@ -519,27 +588,7 @@ export default function App() {
           <span>{rowCount} rows</span>
           <span>{columnCount} columns</span>
           <span>{sheetSummary?.sheets.length ?? 0} sheets</span>
-          <span>{sheetSummary ? `v${sheetSummary.version}` : 'syncing'}</span>
-        </div>
-
-        <div className="app-shell__actions">
-          <button className="app-shell__button" type="button" onClick={addRow}>
-            Add Row
-          </button>
-          <button
-            className="app-shell__button app-shell__button--secondary"
-            type="button"
-            onClick={addColumn}
-          >
-            Add Column
-          </button>
-          <button
-            className="app-shell__button app-shell__button--secondary"
-            type="button"
-            onClick={addSheet}
-          >
-            New Sheet
-          </button>
+          <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
         </div>
       </header>
 
@@ -567,7 +616,7 @@ export default function App() {
 
             void loadVisibleRange(lastVisibleRegionRef.current);
           }}
-          rowMarkers={{ kind: 'number', startIndex: 1, width: 60 }}
+          rowMarkers={{ kind: "number", startIndex: 1, width: 60 }}
           rows={rowCount}
           smoothScrollX
           smoothScrollY

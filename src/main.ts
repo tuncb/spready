@@ -1,5 +1,5 @@
-import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { promises as fs } from "node:fs";
+import path from "node:path";
 
 import {
   app,
@@ -10,17 +10,24 @@ import {
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
   type SaveDialogOptions,
-} from 'electron';
-import started from 'electron-squirrel-startup';
+} from "electron";
+import started from "electron-squirrel-startup";
 
-import { SpreadyControlServer } from './control-server';
-import { clearDiscoveredControlInfo, writeDiscoveredControlInfo } from './control-discovery';
-import { WorkbookController } from './workbook-controller';
-import type { ApplyTransactionRequest, SheetRangeRequest } from './workbook-core';
+import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
+import { SpreadyControlServer } from "./control-server";
+import {
+  clearDiscoveredControlInfo,
+  writeDiscoveredControlInfo,
+} from "./control-discovery";
+import { WorkbookController } from "./workbook-controller";
+import type {
+  ApplyTransactionRequest,
+  SheetRangeRequest,
+} from "./workbook-core";
 
-const APP_DISPLAY_NAME = 'Spready';
-const DEFAULT_EXPORT_FILE_NAME = 'Sheet1.csv';
-const DEFAULT_CONTROL_HOST = '127.0.0.1';
+const APP_DISPLAY_NAME = "Spready";
+const DEFAULT_EXPORT_FILE_NAME = "Sheet1.csv";
+const DEFAULT_CONTROL_HOST = "127.0.0.1";
 const DEFAULT_CONTROL_PORT = 45731;
 
 const workbookController = new WorkbookController();
@@ -31,7 +38,9 @@ const configuredControlPort = Number.parseInt(
 const controlServer = new SpreadyControlServer(
   workbookController,
   DEFAULT_CONTROL_HOST,
-  Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
+  Number.isNaN(configuredControlPort)
+    ? DEFAULT_CONTROL_PORT
+    : configuredControlPort,
 );
 
 if (started) {
@@ -40,14 +49,14 @@ if (started) {
 
 app.setName(APP_DISPLAY_NAME);
 
-type AppMenuAction = 'import' | 'export';
-
 type SaveCsvFileArgs = {
   content: string;
   defaultPath?: string;
 };
 
-function getTargetWindow(browserWindow?: BrowserWindow | null): BrowserWindow | null {
+function getTargetWindow(
+  browserWindow?: BrowserWindow | null,
+): BrowserWindow | null {
   return (
     browserWindow ??
     BrowserWindow.getAllWindows().find((window) => window.isFocused()) ??
@@ -56,23 +65,26 @@ function getTargetWindow(browserWindow?: BrowserWindow | null): BrowserWindow | 
   );
 }
 
-function sendMenuAction(action: AppMenuAction, browserWindow?: BrowserWindow | null) {
-  getTargetWindow(browserWindow)?.webContents.send('app-menu:action', action);
+function sendMenuAction(
+  action: AppMenuAction,
+  browserWindow?: BrowserWindow | null,
+) {
+  getTargetWindow(browserWindow)?.webContents.send("app-menu:action", action);
 }
 
 function broadcastWorkbookChanged() {
   const summary = workbookController.getSummary();
 
   for (const browserWindow of BrowserWindow.getAllWindows()) {
-    browserWindow.webContents.send('workbook:changed', summary);
+    browserWindow.webContents.send("workbook:changed", summary);
   }
 }
 
 async function showAboutDialog(browserWindow?: BrowserWindow | null) {
   const targetWindow = getTargetWindow(browserWindow);
   const options = {
-    type: 'info' as const,
-    buttons: ['OK'],
+    type: "info" as const,
+    buttons: ["OK"],
     title: `About ${APP_DISPLAY_NAME}`,
     message: APP_DISPLAY_NAME,
     detail: `Version ${app.getVersion()}`,
@@ -89,26 +101,26 @@ async function showAboutDialog(browserWindow?: BrowserWindow | null) {
 function buildAppMenu() {
   const template: MenuItemConstructorOptions[] = [
     {
-      label: 'File',
+      label: "File",
       submenu: [
         {
-          label: 'Import',
-          accelerator: 'CmdOrCtrl+O',
+          label: "Import",
+          accelerator: "CmdOrCtrl+O",
           click: () => {
-            sendMenuAction('import');
+            sendMenuAction(APP_MENU_ACTIONS.import);
           },
         },
         {
-          label: 'Export',
-          accelerator: 'CmdOrCtrl+Shift+S',
+          label: "Export",
+          accelerator: "CmdOrCtrl+Shift+S",
           click: () => {
-            sendMenuAction('export');
+            sendMenuAction(APP_MENU_ACTIONS.export);
           },
         },
-        { type: 'separator' },
+        { type: "separator" },
         {
-          label: 'Exit',
-          accelerator: 'Alt+F4',
+          label: "Exit",
+          accelerator: "Alt+F4",
           click: () => {
             app.quit();
           },
@@ -116,10 +128,41 @@ function buildAppMenu() {
       ],
     },
     {
-      label: 'Help',
+      label: "Sheet",
       submenu: [
         {
-          label: 'About',
+          label: "Add Row",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.addRow);
+          },
+        },
+        {
+          label: "Add Column",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.addColumn);
+          },
+        },
+        { type: "separator" },
+        {
+          label: "New Sheet",
+          accelerator: "CmdOrCtrl+Shift+N",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.newSheet);
+          },
+        },
+        {
+          label: "Delete Sheet",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.deleteSheet);
+          },
+        },
+      ],
+    },
+    {
+      label: "Help",
+      submenu: [
+        {
+          label: "About",
           click: () => {
             void showAboutDialog();
           },
@@ -139,9 +182,9 @@ const createWindow = () => {
     minHeight: 480,
     show: false,
     autoHideMenuBar: false,
-    backgroundColor: '#f3efe8',
+    backgroundColor: "#f3efe8",
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       sandbox: true,
     },
@@ -155,21 +198,21 @@ const createWindow = () => {
     );
   }
 
-  mainWindow.once('ready-to-show', () => {
+  mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });
 
   return mainWindow;
 };
 
-ipcMain.handle('dialog:open-csv-file', async (event) => {
+ipcMain.handle("dialog:open-csv-file", async (event) => {
   try {
     const browserWindow = BrowserWindow.fromWebContents(event.sender);
     const targetWindow = getTargetWindow(browserWindow);
     const dialogOptions: OpenDialogOptions = {
-      title: 'Import CSV',
-      properties: ['openFile'],
-      filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+      title: "Import CSV",
+      properties: ["openFile"],
+      filters: [{ name: "CSV Files", extensions: ["csv"] }],
     };
     const result = targetWindow
       ? await dialog.showOpenDialog(targetWindow, dialogOptions)
@@ -180,7 +223,7 @@ ipcMain.handle('dialog:open-csv-file', async (event) => {
     }
 
     const filePath = result.filePaths[0];
-    const content = await fs.readFile(filePath, 'utf8');
+    const content = await fs.readFile(filePath, "utf8");
 
     return {
       canceled: false as const,
@@ -189,22 +232,24 @@ ipcMain.handle('dialog:open-csv-file', async (event) => {
     };
   } catch (error) {
     dialog.showErrorBox(
-      'Import failed',
-      error instanceof Error ? error.message : 'The CSV file could not be opened.',
+      "Import failed",
+      error instanceof Error
+        ? error.message
+        : "The CSV file could not be opened.",
     );
 
     return { canceled: true as const };
   }
 });
 
-ipcMain.handle('dialog:save-csv-file', async (event, args: SaveCsvFileArgs) => {
+ipcMain.handle("dialog:save-csv-file", async (event, args: SaveCsvFileArgs) => {
   try {
     const browserWindow = BrowserWindow.fromWebContents(event.sender);
     const targetWindow = getTargetWindow(browserWindow);
     const dialogOptions: SaveDialogOptions = {
-      title: 'Export CSV',
+      title: "Export CSV",
       defaultPath: args.defaultPath ?? DEFAULT_EXPORT_FILE_NAME,
-      filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+      filters: [{ name: "CSV Files", extensions: ["csv"] }],
     };
     const saveDialogResult = targetWindow
       ? await dialog.showSaveDialog(targetWindow, dialogOptions)
@@ -214,11 +259,11 @@ ipcMain.handle('dialog:save-csv-file', async (event, args: SaveCsvFileArgs) => {
       return { canceled: true as const };
     }
 
-    const filePath = saveDialogResult.filePath.toLowerCase().endsWith('.csv')
+    const filePath = saveDialogResult.filePath.toLowerCase().endsWith(".csv")
       ? saveDialogResult.filePath
       : `${saveDialogResult.filePath}.csv`;
 
-    await fs.writeFile(filePath, args.content, 'utf8');
+    await fs.writeFile(filePath, args.content, "utf8");
 
     return {
       canceled: false as const,
@@ -226,35 +271,43 @@ ipcMain.handle('dialog:save-csv-file', async (event, args: SaveCsvFileArgs) => {
     };
   } catch (error) {
     dialog.showErrorBox(
-      'Export failed',
-      error instanceof Error ? error.message : 'The CSV file could not be saved.',
+      "Export failed",
+      error instanceof Error
+        ? error.message
+        : "The CSV file could not be saved.",
     );
 
     return { canceled: true as const };
   }
 });
 
-ipcMain.handle('control:get-info', () => controlServer.getInfo());
+ipcMain.handle("control:get-info", () => controlServer.getInfo());
 
-ipcMain.handle('workbook:apply-transaction', (_event, args: ApplyTransactionRequest) =>
-  workbookController.applyTransaction(args),
+ipcMain.handle(
+  "workbook:apply-transaction",
+  (_event, args: ApplyTransactionRequest) =>
+    workbookController.applyTransaction(args),
 );
 
-ipcMain.handle('workbook:get-range', (_event, args: SheetRangeRequest) =>
+ipcMain.handle("workbook:get-range", (_event, args: SheetRangeRequest) =>
   workbookController.getSheetRange(args),
 );
 
-ipcMain.handle('workbook:get-sheet-csv', (_event, args?: { sheetId?: string }) =>
-  workbookController.getSheetCsv(args?.sheetId),
+ipcMain.handle(
+  "workbook:get-sheet-csv",
+  (_event, args?: { sheetId?: string }) =>
+    workbookController.getSheetCsv(args?.sheetId),
 );
 
-ipcMain.handle('workbook:get-summary', () => workbookController.getSummary());
+ipcMain.handle("workbook:get-summary", () => workbookController.getSummary());
 
-ipcMain.handle('workbook:get-used-range', (_event, args?: { sheetId?: string }) =>
-  workbookController.getUsedRange(args?.sheetId),
+ipcMain.handle(
+  "workbook:get-used-range",
+  (_event, args?: { sheetId?: string }) =>
+    workbookController.getUsedRange(args?.sheetId),
 );
 
-workbookController.on('changed', () => {
+workbookController.on("changed", () => {
   broadcastWorkbookChanged();
 });
 
@@ -271,7 +324,7 @@ app.whenReady().then(() => {
     .catch((error) => {
       console.error(
         `${APP_DISPLAY_NAME} control server failed to start: ${
-          error instanceof Error ? error.message : 'unknown error'
+          error instanceof Error ? error.message : "unknown error"
         }`,
       );
     });
@@ -279,20 +332,20 @@ app.whenReady().then(() => {
   createWindow();
   buildAppMenu();
 
-  app.on('activate', () => {
+  app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
     app.quit();
   }
 });
 
-app.on('before-quit', () => {
+app.on("before-quit", () => {
   void clearDiscoveredControlInfo();
   void controlServer.stop();
 });

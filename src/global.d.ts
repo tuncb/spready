@@ -1,3 +1,4 @@
+import type { AppMenuAction } from "./app-menu";
 import type {
   ApplyTransactionRequest,
   ApplyTransactionResult,
@@ -6,9 +7,7 @@ import type {
   SheetRangeResult,
   UsedRangeResult,
   WorkbookSummary,
-} from './workbook-core';
-
-type AppMenuAction = 'import' | 'export';
+} from "./workbook-core";
 
 type OpenCsvFileResult =
   | {
@@ -32,7 +31,9 @@ type SaveCsvFileResult =
 declare global {
   interface Window {
     appShell: {
-      applyTransaction: (request: ApplyTransactionRequest) => Promise<ApplyTransactionResult>;
+      applyTransaction: (
+        request: ApplyTransactionRequest,
+      ) => Promise<ApplyTransactionResult>;
       getControlInfo: () => Promise<ControlServerInfo>;
       getSheetCsv: (sheetId?: string) => Promise<string>;
       getSheetRange: (request: SheetRangeRequest) => Promise<SheetRangeResult>;
@@ -40,9 +41,14 @@ declare global {
       getWorkbookSummary: () => Promise<WorkbookSummary>;
       name: string;
       onMenuAction: (listener: (action: AppMenuAction) => void) => () => void;
-      onWorkbookChanged: (listener: (summary: WorkbookSummary) => void) => () => void;
+      onWorkbookChanged: (
+        listener: (summary: WorkbookSummary) => void,
+      ) => () => void;
       openCsvFile: () => Promise<OpenCsvFileResult>;
-      saveCsvFile: (content: string, defaultPath?: string) => Promise<SaveCsvFileResult>;
+      saveCsvFile: (
+        content: string,
+        defaultPath?: string,
+      ) => Promise<SaveCsvFileResult>;
     };
   }
 }
