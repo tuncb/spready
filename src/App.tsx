@@ -28,6 +28,7 @@ import {
   type SheetRangeResult,
   type WorkbookSummary,
 } from "./workbook-core";
+import { getFormulaBarPreview } from "./formula-bar";
 
 const DEFAULT_COLUMN_WIDTH = 140;
 const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
@@ -845,6 +846,8 @@ export default function App() {
     });
   }, [addColumn, addRow, addSheet, deleteSheet, handleExport, handleImport]);
 
+  const formulaBarPreview = getFormulaBarPreview(selectedCellData);
+
   return (
     <main className="app-shell">
       <header className="app-shell__toolbar">
@@ -891,9 +894,9 @@ export default function App() {
         <div className="formula-bar__address">
           {selectedCellAddress || "Cell"}
         </div>
-        <label className="formula-bar__field" htmlFor="formula-input">
-          <span className="formula-bar__label">Formula</span>
+        <div className="formula-bar__field">
           <input
+            aria-label="Selected cell formula or value"
             className="formula-bar__input"
             disabled={!selectedCell}
             id="formula-input"
@@ -909,13 +912,12 @@ export default function App() {
             }
             value={selectedCell ? formulaInputValue : ""}
           />
-        </label>
-        <div className="formula-bar__preview">
-          {selectedCellData
-            ? selectedCellData.isFormula
-              ? selectedCellData.display
-              : "literal"
-            : "idle"}
+        </div>
+        <div
+          className="formula-bar__preview"
+          title={formulaBarPreview || undefined}
+        >
+          {formulaBarPreview}
         </div>
       </section>
 

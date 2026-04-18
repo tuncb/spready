@@ -142,11 +142,15 @@ select {
 }
 
 .formula-bar {
+  --formula-bar-side-width: 88px;
   grid-row: 3;
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 10px;
-  align-items: center;
+  grid-template-columns:
+    var(--formula-bar-side-width)
+    minmax(0, 1fr)
+    var(--formula-bar-side-width);
+  gap: 12px;
+  align-items: stretch;
   padding: 10px 14px;
   border: 1px solid rgba(20, 32, 51, 0.1);
   border-radius: 20px;
@@ -156,7 +160,13 @@ select {
 }
 
 .formula-bar__address {
-  min-width: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--formula-bar-side-width);
+  min-width: var(--formula-bar-side-width);
+  max-width: var(--formula-bar-side-width);
+  min-height: 44px;
   padding: 10px 12px;
   border-radius: 14px;
   color: #0f3fb5;
@@ -164,23 +174,20 @@ select {
   font-family: Consolas, "SFMono-Regular", monospace;
   font-size: 12px;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .formula-bar__field {
-  display: grid;
-  gap: 6px;
   min-width: 0;
-}
-
-.formula-bar__label {
-  color: #486079;
-  font-size: 12px;
 }
 
 .formula-bar__input {
   width: 100%;
   min-width: 0;
-  padding: 10px 12px;
+  min-height: 44px;
+  padding: 10px 14px;
   border: 1px solid rgba(20, 32, 51, 0.12);
   border-radius: 14px;
   color: #142033;
@@ -193,13 +200,22 @@ select {
 }
 
 .formula-bar__preview {
-  min-width: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--formula-bar-side-width);
+  min-width: var(--formula-bar-side-width);
+  max-width: var(--formula-bar-side-width);
+  min-height: 44px;
   padding: 10px 12px;
   border-radius: 14px;
   color: rgba(20, 32, 51, 0.7);
   background: rgba(72, 96, 121, 0.08);
   font-size: 12px;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 900px) {
@@ -220,11 +236,7 @@ select {
   }
 
   .formula-bar {
-    grid-template-columns: 1fr;
-  }
-
-  .formula-bar__address,
-  .formula-bar__preview {
-    min-width: 0;
+    --formula-bar-side-width: 72px;
+    gap: 8px;
   }
 }
