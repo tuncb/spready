@@ -83,12 +83,13 @@ function broadcastWorkbookChanged() {
 
 async function showAboutDialog(browserWindow?: BrowserWindow | null) {
   const targetWindow = getTargetWindow(browserWindow);
+  const controlInfo = controlServer.getInfo();
   const options = {
     type: "info" as const,
     buttons: ["OK"],
     title: `About ${APP_DISPLAY_NAME}`,
     message: APP_DISPLAY_NAME,
-    detail: `Version ${app.getVersion()}`,
+    detail: `Version ${app.getVersion()}\n\ntcp://${controlInfo.host}:${controlInfo.port}`,
   };
 
   if (targetWindow) {
@@ -281,8 +282,6 @@ ipcMain.handle("dialog:save-csv-file", async (event, args: SaveCsvFileArgs) => {
     return { canceled: true as const };
   }
 });
-
-ipcMain.handle("control:get-info", () => controlServer.getInfo());
 
 ipcMain.handle(
   "workbook:apply-transaction",

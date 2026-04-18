@@ -4,7 +4,6 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
-  ControlServerInfo,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
@@ -38,7 +37,6 @@ declare global {
         request: ApplyTransactionRequest,
       ) => Promise<ApplyTransactionResult>;
       getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
-      getControlInfo: () => Promise<ControlServerInfo>;
       getSheetCsv: (sheetId?: string) => Promise<string>;
       getSheetDisplayRange: (
         request: SheetRangeRequest,

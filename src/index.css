@@ -105,18 +105,6 @@ select {
   background: var(--color-neutral-surface);
 }
 
-.app-shell__control {
-  display: inline-flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 0 10px;
-  border-radius: 0;
-  color: var(--color-primary-strong);
-  background: var(--color-primary-soft);
-  font-family: Consolas, "SFMono-Regular", monospace;
-  font-size: 11px;
-}
-
 .app-shell__stats {
   display: flex;
   align-items: center;

@@ -23,7 +23,6 @@ import {
   getColumnTitle,
   isFormulaInput,
   type CellDataResult,
-  type ControlServerInfo,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
@@ -238,9 +237,6 @@ function getSelectedCellAddress(selectedCell: Item | null): string {
 }
 
 export default function App() {
-  const [controlInfo, setControlInfo] = useState<ControlServerInfo | null>(
-    null,
-  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formulaInputValue, setFormulaInputValue] = useState("");
   const [gridSelection, setGridSelection] = useState<GridSelection>(
@@ -771,17 +767,14 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
-    void Promise.all([
-      window.appShell.getWorkbookSummary(),
-      window.appShell.getControlInfo(),
-    ])
-      .then(([summary, nextControlInfo]) => {
+    void window.appShell
+      .getWorkbookSummary()
+      .then((summary) => {
         if (!isMounted) {
           return;
         }
 
         setSheetSummary(summary);
-        setControlInfo(nextControlInfo);
         setErrorMessage(null);
       })
       .catch((error) => {
@@ -956,12 +949,6 @@ export default function App() {
               ))}
             </select>
           </label>
-
-          {controlInfo ? (
-            <span className="app-shell__control">
-              tcp://{controlInfo.host}:{controlInfo.port}
-            </span>
-          ) : null}
         </div>
 
         <div className="app-shell__stats" aria-label="Workbook state">

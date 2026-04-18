@@ -6,7 +6,6 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
-  ControlServerInfo,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
@@ -44,8 +43,6 @@ contextBridge.exposeInMainWorld("appShell", {
       "workbook:get-cell-data",
       request,
     ) as Promise<CellDataResult>,
-  getControlInfo: () =>
-    ipcRenderer.invoke("control:get-info") as Promise<ControlServerInfo>,
   getSheetCsv: (sheetId?: string) =>
     ipcRenderer.invoke("workbook:get-sheet-csv", {
       sheetId,
