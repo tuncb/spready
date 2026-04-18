@@ -40,9 +40,9 @@ select {
 .app-shell {
   display: grid;
   grid-template-rows: auto auto 1fr;
-  gap: 14px;
+  gap: 10px;
   height: 100%;
-  padding: 16px;
+  padding: 12px;
   background:
     radial-gradient(circle at right top, rgba(35, 93, 255, 0.12), transparent 22%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.18));
@@ -53,10 +53,10 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
+  gap: 12px;
+  padding: 10px 14px;
   border: 1px solid rgba(20, 32, 51, 0.1);
-  border-radius: 22px;
+  border-radius: 20px;
   background: rgba(255, 255, 255, 0.78);
   box-shadow: 0 14px 40px rgba(20, 32, 51, 0.08);
   backdrop-filter: blur(18px);
@@ -65,81 +65,66 @@ select {
 .app-shell__brand {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
-}
-
-.app-shell__eyebrow {
-  margin: 0 0 4px;
-  color: #486079;
-  font-family: Consolas, 'SFMono-Regular', monospace;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.app-shell__title {
-  margin: 0;
-  font-size: clamp(24px, 4vw, 36px);
-  line-height: 1;
 }
 
 .app-shell__meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .app-shell__selector {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: #486079;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .app-shell__select {
-  min-width: 160px;
+  min-width: 152px;
   border: 1px solid rgba(20, 32, 51, 0.12);
   border-radius: 999px;
-  padding: 8px 12px;
+  padding: 7px 12px;
   color: #142033;
   background: rgba(255, 255, 255, 0.88);
 }
 
 .app-shell__control {
-  padding: 8px 12px;
+  padding: 7px 12px;
   border-radius: 999px;
   color: #0f3fb5;
   background: rgba(30, 94, 255, 0.08);
   font-family: Consolas, 'SFMono-Regular', monospace;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .app-shell__stats {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: rgba(20, 32, 51, 0.72);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .app-shell__stats span {
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 999px;
   background: rgba(72, 96, 121, 0.08);
 }
 
 .app-shell__actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
 .app-shell__button {
   border: 0;
   border-radius: 999px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   color: #ffffff;
   background: linear-gradient(135deg, #1e5eff 0%, #0f3fb5 100%);
   font-weight: 600;
@@ -188,11 +173,13 @@ select {
 
 @media (max-width: 900px) {
   .app-shell {
-    padding: 12px;
+    padding: 10px;
   }
 
   .app-shell__toolbar {
     flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px 12px;
   }
 
   .app-shell__stats {

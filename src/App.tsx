@@ -491,8 +491,6 @@ export default function App() {
     <main className="app-shell">
       <header className="app-shell__toolbar">
         <div className="app-shell__brand">
-          <p className="app-shell__eyebrow">{window.appShell.name}</p>
-          <h1 className="app-shell__title">{activeSheet?.name ?? 'Loading workbook'}</h1>
           <div className="app-shell__meta">
             <label className="app-shell__selector">
               <span>Active Sheet</span>
