@@ -10,7 +10,8 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "lint": "eslint --ext .ts,.tsx .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "mcp:stdio": "tsx src/mcp-stdio.ts"
   },
   "keywords": [],
   "license": "MIT",
@@ -32,11 +33,14 @@
   },
   "dependencies": {
     "@glideapps/glide-data-grid": "^6.0.3",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "electron-squirrel-startup": "^1.0.1",
     "lodash": "^4.18.1",
     "marked": "^4.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-responsive-carousel": "^3.2.23"
+    "react-responsive-carousel": "^3.2.23",
+    "tsx": "^4.21.0",
+    "zod": "^4.3.6"
   }
 }

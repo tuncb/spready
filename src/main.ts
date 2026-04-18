@@ -14,6 +14,7 @@ import {
 import started from 'electron-squirrel-startup';
 
 import { SpreadyControlServer } from './control-server';
+import { clearDiscoveredControlInfo, writeDiscoveredControlInfo } from './control-discovery';
 import { WorkbookController } from './workbook-controller';
 import type { ApplyTransactionRequest, SheetRangeRequest } from './workbook-core';
 
@@ -262,6 +263,7 @@ app.whenReady().then(() => {
     .start()
     .then(() => {
       const controlInfo = controlServer.getInfo();
+      void writeDiscoveredControlInfo(APP_DISPLAY_NAME, controlInfo);
       console.log(
         `${APP_DISPLAY_NAME} control server listening on tcp://${controlInfo.host}:${controlInfo.port}`,
       );
@@ -291,5 +293,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  void clearDiscoveredControlInfo();
   void controlServer.stop();
 });

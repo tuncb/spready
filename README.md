@@ -18,6 +18,36 @@ npm start
 
 When the app starts it also opens a local TCP control server on `127.0.0.1:45731` by default. If that port is busy it falls back to a random free local port and prints the chosen address in the Electron console. You can override the preferred port with `SPREADY_CONTROL_PORT`.
 
+### MCP stdio wrapper
+
+Start the Electron app first, then run:
+
+```sh
+npm run mcp:stdio
+```
+
+The wrapper connects to the running app over the local control server and exposes MCP tools over stdio for external harnesses.
+
+Connection discovery order:
+
+- `--host` / `--port`
+- `SPREADY_CONTROL_HOST` / `SPREADY_CONTROL_PORT`
+- temp discovery file at `os.tmpdir()/spready-control.json`
+- default `127.0.0.1:45731`
+
+Example harness config:
+
+```json
+{
+  "mcpServers": {
+    "spready": {
+      "command": "npm",
+      "args": ["run", "mcp:stdio"]
+    }
+  }
+}
+```
+
 ### Checks
 
 ```sh
@@ -117,3 +147,13 @@ Supported transaction operations currently include:
 - `replaceSheet`
 - `replaceSheetFromCsv`
 - `setSheetSourceFile`
+
+## MCP tools
+
+The stdio MCP wrapper currently exposes:
+
+- `get_workbook_summary`
+- `get_used_range`
+- `get_sheet_range`
+- `get_sheet_csv`
+- `apply_transaction`
