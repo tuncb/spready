@@ -1,4 +1,4 @@
-# Definition of done
+# Task Compilation Requirements
 
 This app should support all its functionality through the tcp connection and mcp server.
 Make sure to sync the feature changes with the tcp and mcp servers.
