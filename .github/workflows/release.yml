@@ -85,7 +85,7 @@ jobs:
           tar -czf "out/release/${bundle}.tar.gz" -C out/release "$bundle"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: spready-${{ matrix.asset_id }}-${{ github.ref_name }}.${{ matrix.archive_ext }}
           path: out/release/spready-${{ matrix.asset_id }}-${{ github.ref_name }}.${{ matrix.archive_ext }}
@@ -100,7 +100,7 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ./artifacts
 
@@ -115,7 +115,7 @@ jobs:
           fi
 
       - name: Create or update release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
