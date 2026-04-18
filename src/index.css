@@ -49,6 +49,7 @@ select {
 }
 
 .app-shell__toolbar {
+  grid-row: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -165,6 +166,7 @@ select {
 }
 
 .app-shell__status {
+  grid-row: 2;
   padding: 12px 16px;
   border: 1px solid rgba(177, 74, 47, 0.16);
   border-radius: 18px;
@@ -174,6 +176,8 @@ select {
 }
 
 .sheet-surface {
+  grid-row: 3;
+  min-width: 0;
   min-height: 0;
   border: 1px solid rgba(20, 32, 51, 0.1);
   border-radius: 24px;
