@@ -4,6 +4,8 @@ import type { WorkbookController } from './workbook-controller';
 import type {
   ApplyTransactionRequest,
   ControlServerInfo,
+  ExportCsvFileRequest,
+  ImportCsvFileRequest,
   SheetRangeRequest,
   WorkbookSummary,
 } from './workbook-core';
@@ -216,6 +218,8 @@ export class SpreadyControlServer {
     switch (method) {
       case 'applyTransaction':
         return this.#controller.applyTransaction(params as ApplyTransactionRequest);
+      case 'exportCsvFile':
+        return this.#controller.exportCsvFile(params as ExportCsvFileRequest);
       case 'getControlInfo':
         return this.getInfo();
       case 'getSheetCsv':
@@ -226,14 +230,18 @@ export class SpreadyControlServer {
         return this.#controller.getUsedRange((params as { sheetId?: string } | undefined)?.sheetId);
       case 'getWorkbookSummary':
         return this.#controller.getSummary();
+      case 'importCsvFile':
+        return this.#controller.importCsvFile(params as ImportCsvFileRequest);
       case 'listMethods':
         return [
           'applyTransaction',
+          'exportCsvFile',
           'getControlInfo',
           'getSheetCsv',
           'getSheetRange',
           'getUsedRange',
           'getWorkbookSummary',
+          'importCsvFile',
           'listMethods',
           'ping',
         ];

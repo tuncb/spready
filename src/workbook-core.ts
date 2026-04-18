@@ -170,6 +170,24 @@ export interface ApplyTransactionResult {
   version: number;
 }
 
+export interface ImportCsvFileRequest {
+  filePath: string;
+  name?: string;
+  sheetId?: string;
+}
+
+export interface ExportCsvFileRequest {
+  filePath: string;
+  sheetId?: string;
+}
+
+export interface CsvFileOperationResult {
+  changed: boolean;
+  filePath: string;
+  summary: WorkbookSummary;
+  version: number;
+}
+
 export interface WorkbookTransactionExecutionResult {
   changed: boolean;
   state: WorkbookState;

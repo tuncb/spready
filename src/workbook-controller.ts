@@ -1,14 +1,19 @@
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
 import {
   applyWorkbookTransaction,
   createWorkbookState,
+  type CsvFileOperationResult,
+  type ExportCsvFileRequest,
   getSheetCsv,
   getSheetRange,
   getSheetUsedRange,
   getWorkbookSummary,
   type ApplyTransactionRequest,
   type ApplyTransactionResult,
+  type ImportCsvFileRequest,
   type SheetRangeRequest,
   type SheetRangeResult,
   type UsedRangeResult,
@@ -51,4 +56,57 @@ export class WorkbookController extends EventEmitter {
       version: nextSummary.version,
     };
   }
+
+  async exportCsvFile(request: ExportCsvFileRequest): Promise<CsvFileOperationResult> {
+    const filePath = normalizeCsvFilePath(request.filePath);
+    const content = this.getSheetCsv(request.sheetId);
+
+    await fs.writeFile(filePath, content, 'utf8');
+
+    const result = this.applyTransaction({
+      operations: [
+        {
+          sheetId: request.sheetId,
+          sourceFilePath: filePath,
+          type: 'setSheetSourceFile',
+        },
+      ],
+    });
+
+    return {
+      ...result,
+      filePath,
+    };
+  }
+
+  async importCsvFile(request: ImportCsvFileRequest): Promise<CsvFileOperationResult> {
+    const filePath = path.resolve(request.filePath);
+    const content = await fs.readFile(filePath, 'utf8');
+    const result = this.applyTransaction({
+      operations: [
+        {
+          content,
+          name: request.name,
+          sheetId: request.sheetId,
+          sourceFilePath: filePath,
+          type: 'replaceSheetFromCsv',
+        },
+      ],
+    });
+
+    return {
+      ...result,
+      filePath,
+    };
+  }
+}
+
+function normalizeCsvFilePath(filePath: string): string {
+  const resolvedFilePath = path.resolve(filePath);
+
+  if (resolvedFilePath.toLowerCase().endsWith('.csv')) {
+    return resolvedFilePath;
+  }
+
+  return `${resolvedFilePath}.csv`;
 }

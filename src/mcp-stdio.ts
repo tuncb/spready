@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { SubscribeRequestSchema, UnsubscribeRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import * as z from 'zod/v4';
 
 import { CONTROL_DISCOVERY_FILE_PATH } from './control-discovery';
@@ -138,6 +139,13 @@ const transactionOperationSchema = z.discriminatedUnion('type', [
 
 const applyTransactionResultSchema = z.object({
   changed: z.boolean(),
+  summary: workbookSummarySchema,
+  version: z.int().min(0),
+});
+
+const csvFileOperationResultSchema = z.object({
+  changed: z.boolean(),
+  filePath: z.string(),
   summary: workbookSummarySchema,
   version: z.int().min(0),
 });
@@ -293,6 +301,18 @@ const guideResource = {
       name: 'apply_transaction',
       readOnly: false,
     },
+    {
+      defaultsToActiveSheet: true,
+      description: 'Import a local CSV file into a sheet and update its source file metadata.',
+      name: 'import_csv_file',
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: true,
+      description: 'Export one sheet as CSV to a local file and update its source file metadata.',
+      name: 'export_csv_file',
+      readOnly: false,
+    },
   ],
   transactionOperations: transactionOperations.map((operation) => ({
     description: operation.description,
@@ -306,6 +326,8 @@ const guideResource = {
     'Use get_used_range or get_sheet_range instead of reading an entire large sheet.',
     'Prefer one apply_transaction call with batched operations over repeated single-cell writes.',
     'Use dryRun on apply_transaction to validate risky changes before mutating the workbook.',
+    'CSV file paths are resolved on the same machine running the Spready desktop app and MCP wrapper.',
+    `Subscribe to ${WORKBOOK_SUMMARY_RESOURCE_URI} if your client supports live workbook summary updates.`,
   ],
   workflow: [
     'Inspect the workbook with get_workbook_summary.',
@@ -341,6 +363,8 @@ ${guideResource.startupRequirement}
 - get_sheet_range: Read one rectangular range. Prefer this over loading a large sheet.
 - get_sheet_csv: Return trimmed CSV for one sheet. Omitting sheetId uses the active sheet.
 - apply_transaction: Apply one atomic batch of workbook mutations. Supports dryRun.
+- import_csv_file: Load a local CSV file into a sheet. Omitting sheetId uses the active sheet.
+- export_csv_file: Save one sheet as a local CSV file. Omitting sheetId uses the active sheet.
 
 ## Transaction operation types
 
@@ -471,15 +495,21 @@ async function main() {
       capabilities: {
         logging: {},
         resources: {
-          subscribe: false,
+          subscribe: true,
         },
       },
       instructions:
         'Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, inspect with get_workbook_summary before large edits, use zero-based indexes, and prefer apply_transaction with batched operations plus dryRun for risky changes.',
     },
   );
+  const subscribedResourceUris = new Set<string>();
+  const knownResourceUris = new Set([SERVER_GUIDE_RESOURCE_URI, WORKBOOK_SUMMARY_RESOURCE_URI]);
 
   controlClient.on('workbookChanged', async () => {
+    if (!subscribedResourceUris.has(WORKBOOK_SUMMARY_RESOURCE_URI)) {
+      return;
+    }
+
     try {
       await server.server.sendResourceUpdated({
         uri: WORKBOOK_SUMMARY_RESOURCE_URI,
@@ -487,6 +517,22 @@ async function main() {
     } catch {
       // Ignore notification failures when the client does not consume resource updates.
     }
+  });
+
+  server.server.setRequestHandler(SubscribeRequestSchema, async (request) => {
+    const { uri } = request.params;
+
+    if (!knownResourceUris.has(uri)) {
+      throw new Error(`Unknown resource "${uri}".`);
+    }
+
+    subscribedResourceUris.add(uri);
+    return {};
+  });
+
+  server.server.setRequestHandler(UnsubscribeRequestSchema, async (request) => {
+    subscribedResourceUris.delete(request.params.uri);
+    return {};
   });
 
   server.registerResource(
@@ -600,6 +646,20 @@ async function main() {
             readOnly: false,
             useWhen: 'Use this for all writes, preferably in one batched request with dryRun first.',
           },
+          {
+            defaultsToActiveSheet: true,
+            description: 'Import a local CSV file into a sheet and update its source file metadata.',
+            name: 'import_csv_file',
+            readOnly: false,
+            useWhen: 'Use this when your task starts from a CSV file that already exists on disk.',
+          },
+          {
+            defaultsToActiveSheet: true,
+            description: 'Export one sheet as CSV to a local file and update its source file metadata.',
+            name: 'export_csv_file',
+            readOnly: false,
+            useWhen: 'Use this when the final result should be written to a CSV file on disk.',
+          },
         ],
         transactionOperations: guideResource.transactionOperations,
         usageConventions: guideResource.usageConventions,
@@ -690,6 +750,65 @@ async function main() {
 
       return createTextResult({ csv });
     },
+  );
+
+  server.registerTool(
+    'import_csv_file',
+    {
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        'Import a local CSV file into a sheet and update that sheet source file metadata.',
+      inputSchema: z.object({
+        filePath: z
+          .string()
+          .min(1)
+          .describe('Path to a local CSV file on the machine running Spready.'),
+        name: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Optional sheet name override to apply during import.'),
+        sheetId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Optional target sheet id. Defaults to the active sheet.'),
+      }),
+      outputSchema: csvFileOperationResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.importCsvFile(args)),
+  );
+
+  server.registerTool(
+    'export_csv_file',
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        'Export one sheet as CSV to a local file and update that sheet source file metadata.',
+      inputSchema: z.object({
+        filePath: z
+          .string()
+          .min(1)
+          .describe('Destination CSV path on the machine running Spready.'),
+        sheetId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe('Optional target sheet id. Defaults to the active sheet.'),
+      }),
+      outputSchema: csvFileOperationResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.exportCsvFile(args)),
   );
 
   server.registerTool(

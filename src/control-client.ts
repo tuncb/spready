@@ -6,6 +6,9 @@ import type {
   ApplyTransactionRequest,
   ApplyTransactionResult,
   ControlServerInfo,
+  CsvFileOperationResult,
+  ExportCsvFileRequest,
+  ImportCsvFileRequest,
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
@@ -142,6 +145,10 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<ApplyTransactionResult>('applyTransaction', request);
   }
 
+  async exportCsvFile(request: ExportCsvFileRequest) {
+    return this.call<CsvFileOperationResult>('exportCsvFile', request);
+  }
+
   async getSheetCsv(sheetId?: string) {
     return this.call<string>('getSheetCsv', { sheetId });
   }
@@ -156,6 +163,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async getWorkbookSummary() {
     return this.call<WorkbookSummary>('getWorkbookSummary');
+  }
+
+  async importCsvFile(request: ImportCsvFileRequest) {
+    return this.call<CsvFileOperationResult>('importCsvFile', request);
   }
 
   async call<Result>(method: string, params?: unknown): Promise<Result> {

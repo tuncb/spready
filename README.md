@@ -103,7 +103,40 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `getSheetRange`
 - `getUsedRange`
 - `getSheetCsv`
+- `importCsvFile`
+- `exportCsvFile`
 - `applyTransaction`
+
+For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, you can pass
+`sheetId` explicitly. If you omit `sheetId`, the active sheet is used.
+
+### CSV import/export examples
+
+Import a CSV file into a specific sheet without changing the active sheet:
+
+```json
+{
+  "id": 3,
+  "method": "importCsvFile",
+  "params": {
+    "filePath": "C:\\\\data\\\\quarterly.csv",
+    "sheetId": "sheet-2"
+  }
+}
+```
+
+Export a specific sheet to CSV without changing the active sheet:
+
+```json
+{
+  "id": 4,
+  "method": "exportCsvFile",
+  "params": {
+    "filePath": "C:\\\\exports\\\\quarterly.csv",
+    "sheetId": "sheet-2"
+  }
+}
+```
 
 ### Transaction example
 
@@ -162,12 +195,20 @@ The stdio MCP wrapper currently exposes:
 - `get_used_range`
 - `get_sheet_range`
 - `get_sheet_csv`
+- `import_csv_file`
+- `export_csv_file`
 - `apply_transaction`
+
+`import_csv_file` and `export_csv_file` both accept an optional `sheetId`. If omitted, they use
+the active sheet.
 
 ### Resources
 
 - `spready://guide`
 - `spready://workbook/summary`
+
+Clients that support MCP resource subscriptions can subscribe to `spready://workbook/summary`
+and receive live `resources/updated` notifications when the workbook changes.
 
 ### Prompts
 
