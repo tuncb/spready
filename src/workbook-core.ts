@@ -1,11 +1,11 @@
 export const DEFAULT_INITIAL_ROWS = 200;
 export const DEFAULT_INITIAL_COLUMNS = 50;
-export const DEFAULT_SHEET_NAME = 'Sheet 1';
+export const DEFAULT_SHEET_NAME = "Sheet 1";
 
 export interface ControlServerInfo {
   host: string;
   port: number;
-  protocol: 'jsonl';
+  protocol: "jsonl";
 }
 
 export interface WorkbookSheet {
@@ -45,6 +45,8 @@ export interface SheetRangeRequest {
   columnCount: number;
 }
 
+export type FormulaErrorCode = "PARSE" | "REF" | "DIV0" | "VALUE" | "CYCLE";
+
 export interface SheetRangeResult {
   sheetId: string;
   sheetName: string;
@@ -53,6 +55,33 @@ export interface SheetRangeResult {
   rowCount: number;
   columnCount: number;
   values: string[][];
+}
+
+export interface SheetDisplayRangeResult {
+  sheetId: string;
+  sheetName: string;
+  startRow: number;
+  startColumn: number;
+  rowCount: number;
+  columnCount: number;
+  values: string[][];
+}
+
+export interface CellDataRequest {
+  sheetId?: string;
+  rowIndex: number;
+  columnIndex: number;
+}
+
+export interface CellDataResult {
+  sheetId: string;
+  sheetName: string;
+  rowIndex: number;
+  columnIndex: number;
+  input: string;
+  display: string;
+  isFormula: boolean;
+  errorCode?: FormulaErrorCode;
 }
 
 export interface UsedRangeResult {
@@ -66,7 +95,7 @@ export interface UsedRangeResult {
 
 export type WorkbookTransactionOperation =
   | {
-      type: 'addSheet';
+      type: "addSheet";
       activate?: boolean;
       columnCount?: number;
       name?: string;
@@ -74,7 +103,7 @@ export type WorkbookTransactionOperation =
       sheetId?: string;
     }
   | {
-      type: 'clearRange';
+      type: "clearRange";
       columnCount: number;
       rowCount: number;
       sheetId?: string;
@@ -82,77 +111,77 @@ export type WorkbookTransactionOperation =
       startRow: number;
     }
   | {
-      type: 'deleteColumns';
+      type: "deleteColumns";
       columnIndex: number;
       count: number;
       sheetId?: string;
     }
   | {
-      type: 'deleteRows';
+      type: "deleteRows";
       count: number;
       rowIndex: number;
       sheetId?: string;
     }
   | {
-      type: 'deleteSheet';
+      type: "deleteSheet";
       nextActiveSheetId?: string;
       sheetId: string;
     }
   | {
-      type: 'insertColumns';
+      type: "insertColumns";
       columnIndex: number;
       count: number;
       sheetId?: string;
     }
   | {
-      type: 'insertRows';
+      type: "insertRows";
       count: number;
       rowIndex: number;
       sheetId?: string;
     }
   | {
-      type: 'renameSheet';
+      type: "renameSheet";
       name: string;
       sheetId?: string;
     }
   | {
-      type: 'replaceSheet';
+      type: "replaceSheet";
       name?: string;
       rows: string[][];
       sheetId?: string;
       sourceFilePath?: string;
     }
   | {
-      type: 'replaceSheetFromCsv';
+      type: "replaceSheetFromCsv";
       content: string;
       name?: string;
       sheetId?: string;
       sourceFilePath?: string;
     }
   | {
-      type: 'resizeSheet';
+      type: "resizeSheet";
       columnCount: number;
       rowCount: number;
       sheetId?: string;
     }
   | {
-      type: 'setActiveSheet';
+      type: "setActiveSheet";
       sheetId: string;
     }
   | {
-      type: 'setSheetSourceFile';
+      type: "setSheetSourceFile";
       sheetId?: string;
       sourceFilePath?: string;
     }
   | {
-      type: 'setCell';
+      type: "setCell";
       columnIndex: number;
       rowIndex: number;
       sheetId?: string;
       value: string;
     }
   | {
-      type: 'setRange';
+      type: "setRange";
       sheetId?: string;
       startColumn: number;
       startRow: number;
@@ -199,7 +228,9 @@ export function createSheet(rowCount: number, columnCount: number): string[][] {
   const normalizedRowCount = Math.max(1, Math.floor(rowCount));
   const normalizedColumnCount = Math.max(1, Math.floor(columnCount));
 
-  return Array.from({ length: normalizedRowCount }, () => Array(normalizedColumnCount).fill(''));
+  return Array.from({ length: normalizedRowCount }, () =>
+    Array(normalizedColumnCount).fill(""),
+  );
 }
 
 export function normalizeSheet(rows: string[][]): string[][] {
@@ -209,7 +240,10 @@ export function normalizeSheet(rows: string[][]): string[][] {
   return Array.from({ length: rowCount }, (_, rowIndex) => {
     const sourceRow = rows[rowIndex] ?? [];
 
-    return Array.from({ length: columnCount }, (_, columnIndex) => sourceRow[columnIndex] ?? '');
+    return Array.from(
+      { length: columnCount },
+      (_, columnIndex) => sourceRow[columnIndex] ?? "",
+    );
   });
 }
 
@@ -220,7 +254,7 @@ export function parseCsv(content: string): string[][] {
 
   const rows: string[][] = [];
   let currentRow: string[] = [];
-  let currentValue = '';
+  let currentValue = "";
   let isQuoted = false;
 
   for (let index = 0; index < content.length; index += 1) {
@@ -246,21 +280,21 @@ export function parseCsv(content: string): string[][] {
       continue;
     }
 
-    if (character === ',') {
+    if (character === ",") {
       currentRow.push(currentValue);
-      currentValue = '';
+      currentValue = "";
       continue;
     }
 
-    if (character === '\n' || character === '\r') {
-      if (character === '\r' && content[index + 1] === '\n') {
+    if (character === "\n" || character === "\r") {
+      if (character === "\r" && content[index + 1] === "\n") {
         index += 1;
       }
 
       currentRow.push(currentValue);
       rows.push(currentRow);
       currentRow = [];
-      currentValue = '';
+      currentValue = "";
       continue;
     }
 
@@ -283,7 +317,7 @@ export function getUsedRange(sheet: WorkbookSheet): UsedRangeResult {
     const row = sheet.cells[rowIndex];
 
     for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
-      if (row[columnIndex] === '') {
+      if (row[columnIndex] === "") {
         continue;
       }
 
@@ -314,18 +348,20 @@ export function serializeCsv(sheet: WorkbookSheet): string {
   const usedRange = getUsedRange(sheet);
 
   if (usedRange.rowCount === 0 || usedRange.columnCount === 0) {
-    return '';
+    return "";
   }
 
   return sheet.cells
     .slice(0, usedRange.rowCount)
-    .map((row) => row.slice(0, usedRange.columnCount).map(escapeCsvValue).join(','))
-    .join('\r\n');
+    .map((row) =>
+      row.slice(0, usedRange.columnCount).map(escapeCsvValue).join(","),
+    )
+    .join("\r\n");
 }
 
 export function getColumnTitle(index: number): string {
   let current = index;
-  let label = '';
+  let label = "";
 
   do {
     label = String.fromCharCode(65 + (current % 26)) + label;
@@ -336,7 +372,11 @@ export function getColumnTitle(index: number): string {
 }
 
 export function createWorkbookState(): WorkbookState {
-  const defaultSheet = createWorkbookSheet(DEFAULT_SHEET_NAME, DEFAULT_INITIAL_ROWS, DEFAULT_INITIAL_COLUMNS);
+  const defaultSheet = createWorkbookSheet(
+    DEFAULT_SHEET_NAME,
+    DEFAULT_INITIAL_ROWS,
+    DEFAULT_INITIAL_COLUMNS,
+  );
 
   return {
     activeSheetId: defaultSheet.id,
@@ -363,16 +403,28 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
   };
 }
 
-export function getSheetRange(workbook: WorkbookState, request: SheetRangeRequest): SheetRangeResult {
-  const sheet = getSheetById(workbook, request.sheetId ?? workbook.activeSheetId);
+export function getSheetRange(
+  workbook: WorkbookState,
+  request: SheetRangeRequest,
+): SheetRangeResult {
+  const sheet = getSheetById(
+    workbook,
+    request.sheetId ?? workbook.activeSheetId,
+  );
   const rowCount = getSheetRowCount(sheet);
   const columnCount = getSheetColumnCount(sheet);
   const startRow = clampToRange(request.startRow, 0, rowCount);
   const startColumn = clampToRange(request.startColumn, 0, columnCount);
   const requestedRowCount = Math.max(0, Math.floor(request.rowCount));
   const requestedColumnCount = Math.max(0, Math.floor(request.columnCount));
-  const boundedRowCount = Math.max(0, Math.min(requestedRowCount, rowCount - startRow));
-  const boundedColumnCount = Math.max(0, Math.min(requestedColumnCount, columnCount - startColumn));
+  const boundedRowCount = Math.max(
+    0,
+    Math.min(requestedRowCount, rowCount - startRow),
+  );
+  const boundedColumnCount = Math.max(
+    0,
+    Math.min(requestedColumnCount, columnCount - startColumn),
+  );
 
   return {
     columnCount: boundedColumnCount,
@@ -386,18 +438,59 @@ export function getSheetRange(workbook: WorkbookState, request: SheetRangeReques
 
       return Array.from(
         { length: boundedColumnCount },
-        (_, columnOffset) => row[startColumn + columnOffset] ?? '',
+        (_, columnOffset) => row[startColumn + columnOffset] ?? "",
       );
     }),
   };
 }
 
 export function getSheetCsv(workbook: WorkbookState, sheetId?: string): string {
-  return serializeCsv(getSheetById(workbook, sheetId ?? workbook.activeSheetId));
+  return serializeCsv(
+    getSheetById(workbook, sheetId ?? workbook.activeSheetId),
+  );
 }
 
-export function getSheetUsedRange(workbook: WorkbookState, sheetId?: string): UsedRangeResult {
-  return getUsedRange(getSheetById(workbook, sheetId ?? workbook.activeSheetId));
+export function getSheetUsedRange(
+  workbook: WorkbookState,
+  sheetId?: string,
+): UsedRangeResult {
+  return getUsedRange(
+    getSheetById(workbook, sheetId ?? workbook.activeSheetId),
+  );
+}
+
+export function getWorkbookSheet(
+  workbook: WorkbookState,
+  sheetId?: string,
+): WorkbookSheet {
+  return getSheetById(workbook, sheetId ?? workbook.activeSheetId);
+}
+
+export function isFormulaInput(value: string): boolean {
+  return value.startsWith("=");
+}
+
+export function parseCellReference(reference: string): {
+  rowIndex: number;
+  columnIndex: number;
+} {
+  const match = /^([A-Za-z]+)([1-9][0-9]*)$/.exec(reference);
+
+  if (!match) {
+    throw new Error(`Invalid cell reference "${reference}".`);
+  }
+
+  const [, columnLabel, rowLabel] = match;
+  let columnIndex = 0;
+
+  for (const character of columnLabel.toUpperCase()) {
+    columnIndex = columnIndex * 26 + (character.charCodeAt(0) - 64);
+  }
+
+  return {
+    columnIndex: columnIndex - 1,
+    rowIndex: Number.parseInt(rowLabel, 10) - 1,
+  };
 }
 
 export function applyWorkbookTransaction(
@@ -420,8 +513,9 @@ export function applyWorkbookTransaction(
 
   for (const operation of request.operations) {
     switch (operation.type) {
-      case 'addSheet': {
-        const sheetName = operation.name?.trim() || `Sheet ${nextState.nextSheetNumber}`;
+      case "addSheet": {
+        const sheetName =
+          operation.name?.trim() || `Sheet ${nextState.nextSheetNumber}`;
         const sheetId = operation.sheetId?.trim() || createSheetId();
 
         if (findSheetIndex(nextState, sheetId) >= 0) {
@@ -446,13 +540,20 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'clearRange': {
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+      case "clearRange": {
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
         const maxRow = getSheetRowCount(sheet);
         const maxColumn = getSheetColumnCount(sheet);
         const startRow = clampToRange(operation.startRow, 0, maxRow);
         const startColumn = clampToRange(operation.startColumn, 0, maxColumn);
-        const endRow = Math.min(maxRow, startRow + Math.max(0, Math.floor(operation.rowCount)));
+        const endRow = Math.min(
+          maxRow,
+          startRow + Math.max(0, Math.floor(operation.rowCount)),
+        );
         const endColumn = Math.min(
           maxColumn,
           startColumn + Math.max(0, Math.floor(operation.columnCount)),
@@ -461,12 +562,16 @@ export function applyWorkbookTransaction(
         for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
           const row = sheet.cells[rowIndex];
 
-          for (let columnIndex = startColumn; columnIndex < endColumn; columnIndex += 1) {
-            if (row[columnIndex] === '') {
+          for (
+            let columnIndex = startColumn;
+            columnIndex < endColumn;
+            columnIndex += 1
+          ) {
+            if (row[columnIndex] === "") {
               continue;
             }
 
-            row[columnIndex] = '';
+            row[columnIndex] = "";
             changed = true;
           }
         }
@@ -474,13 +579,24 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'deleteColumns': {
-        assertPositiveCount(operation.count, 'Column delete count');
+      case "deleteColumns": {
+        assertPositiveCount(operation.count, "Column delete count");
 
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
         const currentColumnCount = getSheetColumnCount(sheet);
-        const deleteStart = clampToRange(operation.columnIndex, 0, currentColumnCount);
-        const requestedDeleteCount = Math.min(operation.count, currentColumnCount - deleteStart);
+        const deleteStart = clampToRange(
+          operation.columnIndex,
+          0,
+          currentColumnCount,
+        );
+        const requestedDeleteCount = Math.min(
+          operation.count,
+          currentColumnCount - deleteStart,
+        );
 
         if (requestedDeleteCount === 0) {
           break;
@@ -488,7 +604,7 @@ export function applyWorkbookTransaction(
 
         if (requestedDeleteCount >= currentColumnCount) {
           for (const row of sheet.cells) {
-            row.splice(0, row.length, '');
+            row.splice(0, row.length, "");
           }
         } else {
           for (const row of sheet.cells) {
@@ -500,20 +616,35 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'deleteRows': {
-        assertPositiveCount(operation.count, 'Row delete count');
+      case "deleteRows": {
+        assertPositiveCount(operation.count, "Row delete count");
 
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
         const currentRowCount = getSheetRowCount(sheet);
-        const deleteStart = clampToRange(operation.rowIndex, 0, currentRowCount);
-        const requestedDeleteCount = Math.min(operation.count, currentRowCount - deleteStart);
+        const deleteStart = clampToRange(
+          operation.rowIndex,
+          0,
+          currentRowCount,
+        );
+        const requestedDeleteCount = Math.min(
+          operation.count,
+          currentRowCount - deleteStart,
+        );
 
         if (requestedDeleteCount === 0) {
           break;
         }
 
         if (requestedDeleteCount >= currentRowCount) {
-          sheet.cells.splice(0, sheet.cells.length, Array(getSheetColumnCount(sheet)).fill(''));
+          sheet.cells.splice(
+            0,
+            sheet.cells.length,
+            Array(getSheetColumnCount(sheet)).fill(""),
+          );
         } else {
           sheet.cells.splice(deleteStart, requestedDeleteCount);
         }
@@ -522,9 +653,9 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'deleteSheet': {
+      case "deleteSheet": {
         if (nextState.sheets.length === 1) {
-          throw new Error('The last sheet cannot be deleted.');
+          throw new Error("The last sheet cannot be deleted.");
         }
 
         const deleteIndex = findSheetIndex(nextState, operation.sheetId);
@@ -539,7 +670,9 @@ export function applyWorkbookTransaction(
         if (nextState.activeSheetId === deletedSheet.id) {
           const nextActiveSheet =
             (operation.nextActiveSheetId
-              ? nextState.sheets.find((sheet) => sheet.id === operation.nextActiveSheetId)
+              ? nextState.sheets.find(
+                  (sheet) => sheet.id === operation.nextActiveSheetId,
+                )
               : undefined) ?? nextState.sheets[Math.max(0, deleteIndex - 1)];
 
           nextState.activeSheetId = nextActiveSheet.id;
@@ -549,38 +682,60 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'insertColumns': {
-        assertPositiveCount(operation.count, 'Column insert count');
+      case "insertColumns": {
+        assertPositiveCount(operation.count, "Column insert count");
 
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
-        const insertAt = clampToRange(operation.columnIndex, 0, getSheetColumnCount(sheet));
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
+        const insertAt = clampToRange(
+          operation.columnIndex,
+          0,
+          getSheetColumnCount(sheet),
+        );
 
         for (const row of sheet.cells) {
-          row.splice(insertAt, 0, ...Array(operation.count).fill(''));
+          row.splice(insertAt, 0, ...Array(operation.count).fill(""));
         }
 
         changed = true;
         break;
       }
 
-      case 'insertRows': {
-        assertPositiveCount(operation.count, 'Row insert count');
+      case "insertRows": {
+        assertPositiveCount(operation.count, "Row insert count");
 
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
-        const insertAt = clampToRange(operation.rowIndex, 0, getSheetRowCount(sheet));
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
+        const insertAt = clampToRange(
+          operation.rowIndex,
+          0,
+          getSheetRowCount(sheet),
+        );
         const columnCount = getSheetColumnCount(sheet);
 
         sheet.cells.splice(
           insertAt,
           0,
-          ...Array.from({ length: operation.count }, () => Array(columnCount).fill('')),
+          ...Array.from({ length: operation.count }, () =>
+            Array(columnCount).fill(""),
+          ),
         );
         changed = true;
         break;
       }
 
-      case 'renameSheet': {
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+      case "renameSheet": {
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
         const nextName = operation.name.trim();
 
         if (nextName.length === 0 || sheet.name === nextName) {
@@ -592,8 +747,12 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'replaceSheet': {
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+      case "replaceSheet": {
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
         const nextCells = normalizeSheet(operation.rows);
 
         if (!matricesEqual(sheet.cells, nextCells)) {
@@ -614,8 +773,12 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'replaceSheetFromCsv': {
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+      case "replaceSheetFromCsv": {
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
         const nextCells = parseCsv(operation.content);
 
         if (!matricesEqual(sheet.cells, nextCells)) {
@@ -635,10 +798,17 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'resizeSheet': {
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+      case "resizeSheet": {
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
         const targetRowCount = Math.max(1, Math.floor(operation.rowCount));
-        const targetColumnCount = Math.max(1, Math.floor(operation.columnCount));
+        const targetColumnCount = Math.max(
+          1,
+          Math.floor(operation.columnCount),
+        );
 
         if (
           targetRowCount === getSheetRowCount(sheet) &&
@@ -647,12 +817,16 @@ export function applyWorkbookTransaction(
           break;
         }
 
-        sheet.cells = resizeMatrix(sheet.cells, targetRowCount, targetColumnCount);
+        sheet.cells = resizeMatrix(
+          sheet.cells,
+          targetRowCount,
+          targetColumnCount,
+        );
         changed = true;
         break;
       }
 
-      case 'setActiveSheet': {
+      case "setActiveSheet": {
         if (findSheetIndex(nextState, operation.sheetId) < 0) {
           throw new Error(`Sheet "${operation.sheetId}" was not found.`);
         }
@@ -666,8 +840,12 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'setSheetSourceFile': {
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+      case "setSheetSourceFile": {
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
 
         if (sheet.sourceFilePath === operation.sourceFilePath) {
           break;
@@ -678,32 +856,51 @@ export function applyWorkbookTransaction(
         break;
       }
 
-      case 'setCell': {
-        assertNonNegativeIndex(operation.rowIndex, 'Row index');
-        assertNonNegativeIndex(operation.columnIndex, 'Column index');
+      case "setCell": {
+        assertNonNegativeIndex(operation.rowIndex, "Row index");
+        assertNonNegativeIndex(operation.columnIndex, "Column index");
 
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
-        ensureSheetSize(sheet, operation.rowIndex + 1, operation.columnIndex + 1);
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
+        ensureSheetSize(
+          sheet,
+          operation.rowIndex + 1,
+          operation.columnIndex + 1,
+        );
 
-        if (sheet.cells[operation.rowIndex][operation.columnIndex] === operation.value) {
+        if (
+          sheet.cells[operation.rowIndex][operation.columnIndex] ===
+          operation.value
+        ) {
           break;
         }
 
-        sheet.cells[operation.rowIndex][operation.columnIndex] = operation.value;
+        sheet.cells[operation.rowIndex][operation.columnIndex] =
+          operation.value;
         changed = true;
         break;
       }
 
-      case 'setRange': {
+      case "setRange": {
         if (operation.values.length === 0) {
           break;
         }
 
-        assertNonNegativeIndex(operation.startRow, 'Start row');
-        assertNonNegativeIndex(operation.startColumn, 'Start column');
+        assertNonNegativeIndex(operation.startRow, "Start row");
+        assertNonNegativeIndex(operation.startColumn, "Start column");
 
-        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
-        const maxColumnCount = Math.max(0, ...operation.values.map((row) => row.length));
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
+        const maxColumnCount = Math.max(
+          0,
+          ...operation.values.map((row) => row.length),
+        );
 
         if (maxColumnCount === 0) {
           break;
@@ -715,12 +912,20 @@ export function applyWorkbookTransaction(
           operation.startColumn + maxColumnCount,
         );
 
-        for (let rowOffset = 0; rowOffset < operation.values.length; rowOffset += 1) {
+        for (
+          let rowOffset = 0;
+          rowOffset < operation.values.length;
+          rowOffset += 1
+        ) {
           const sourceRow = operation.values[rowOffset];
           const targetRow = sheet.cells[operation.startRow + rowOffset];
 
-          for (let columnOffset = 0; columnOffset < sourceRow.length; columnOffset += 1) {
-            const nextValue = sourceRow[columnOffset] ?? '';
+          for (
+            let columnOffset = 0;
+            columnOffset < sourceRow.length;
+            columnOffset += 1
+          ) {
+            const nextValue = sourceRow[columnOffset] ?? "";
             const targetColumn = operation.startColumn + columnOffset;
 
             if (targetRow[targetColumn] === nextValue) {
@@ -790,7 +995,11 @@ function createSheetId(): string {
   return sheetId;
 }
 
-function ensureSheetSize(sheet: WorkbookSheet, minimumRowCount: number, minimumColumnCount: number) {
+function ensureSheetSize(
+  sheet: WorkbookSheet,
+  minimumRowCount: number,
+  minimumColumnCount: number,
+) {
   const targetRowCount = Math.max(1, minimumRowCount);
   const targetColumnCount = Math.max(1, minimumColumnCount);
   const currentRowCount = getSheetRowCount(sheet);
@@ -798,14 +1007,14 @@ function ensureSheetSize(sheet: WorkbookSheet, minimumRowCount: number, minimumC
 
   if (currentColumnCount < targetColumnCount) {
     for (const row of sheet.cells) {
-      row.push(...Array(targetColumnCount - currentColumnCount).fill(''));
+      row.push(...Array(targetColumnCount - currentColumnCount).fill(""));
     }
   }
 
   if (currentRowCount < targetRowCount) {
     sheet.cells.push(
       ...Array.from({ length: targetRowCount - currentRowCount }, () =>
-        Array(Math.max(currentColumnCount, targetColumnCount)).fill(''),
+        Array(Math.max(currentColumnCount, targetColumnCount)).fill(""),
       ),
     );
   }
@@ -854,11 +1063,11 @@ function getSheetById(workbook: WorkbookState, sheetId: string): WorkbookSheet {
   return sheet;
 }
 
-function getSheetColumnCount(sheet: WorkbookSheet): number {
+export function getSheetColumnCount(sheet: WorkbookSheet): number {
   return Math.max(1, sheet.cells[0]?.length ?? 0);
 }
 
-function getSheetRowCount(sheet: WorkbookSheet): number {
+export function getSheetRowCount(sheet: WorkbookSheet): number {
   return Math.max(1, sheet.cells.length);
 }
 
@@ -885,13 +1094,20 @@ function matricesEqual(left: string[][], right: string[][]): boolean {
   return true;
 }
 
-function resizeMatrix(matrix: string[][], rowCount: number, columnCount: number): string[][] {
+function resizeMatrix(
+  matrix: string[][],
+  rowCount: number,
+  columnCount: number,
+): string[][] {
   const nextRows = Math.max(1, Math.floor(rowCount));
   const nextColumns = Math.max(1, Math.floor(columnCount));
 
   return Array.from({ length: nextRows }, (_, rowIndex) => {
     const sourceRow = matrix[rowIndex] ?? [];
 
-    return Array.from({ length: nextColumns }, (_, columnIndex) => sourceRow[columnIndex] ?? '');
+    return Array.from(
+      { length: nextColumns },
+      (_, columnIndex) => sourceRow[columnIndex] ?? "",
+    );
   });
 }

@@ -2,7 +2,10 @@ import type { AppMenuAction } from "./app-menu";
 import type {
   ApplyTransactionRequest,
   ApplyTransactionResult,
+  CellDataRequest,
+  CellDataResult,
   ControlServerInfo,
+  SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
@@ -34,8 +37,12 @@ declare global {
       applyTransaction: (
         request: ApplyTransactionRequest,
       ) => Promise<ApplyTransactionResult>;
+      getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
       getControlInfo: () => Promise<ControlServerInfo>;
       getSheetCsv: (sheetId?: string) => Promise<string>;
+      getSheetDisplayRange: (
+        request: SheetRangeRequest,
+      ) => Promise<SheetDisplayRangeResult>;
       getSheetRange: (request: SheetRangeRequest) => Promise<SheetRangeResult>;
       getUsedRange: (sheetId?: string) => Promise<UsedRangeResult>;
       getWorkbookSummary: () => Promise<WorkbookSummary>;

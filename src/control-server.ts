@@ -1,6 +1,6 @@
-import net, { type Socket } from 'node:net';
+import net, { type Socket } from "node:net";
 
-import type { WorkbookController } from './workbook-controller';
+import type { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
   ControlServerInfo,
@@ -8,7 +8,7 @@ import type {
   ImportCsvFileRequest,
   SheetRangeRequest,
   WorkbookSummary,
-} from './workbook-core';
+} from "./workbook-core";
 
 type ControlRequest = {
   id?: number | string | null;
@@ -33,7 +33,7 @@ type ControlEvent = {
   payload: unknown;
 };
 
-const CONTROL_PROTOCOL = 'spready-control-v1';
+const CONTROL_PROTOCOL = "spready-control-v1";
 
 export class SpreadyControlServer {
   #clients = new Set<Socket>();
@@ -51,12 +51,14 @@ export class SpreadyControlServer {
   getInfo(): ControlServerInfo {
     const address = this.#server?.address();
     const activePort =
-      typeof address === 'object' && address && 'port' in address ? address.port : this.#port;
+      typeof address === "object" && address && "port" in address
+        ? address.port
+        : this.#port;
 
     return {
       host: this.#host,
       port: activePort,
-      protocol: 'jsonl',
+      protocol: "jsonl",
     };
   }
 
@@ -64,18 +66,18 @@ export class SpreadyControlServer {
     try {
       await this.#listen(this.#port);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') {
+      if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") {
         throw error;
       }
 
       await this.#listen(0);
     }
 
-    this.#controller.on('changed', this.#handleWorkbookChanged);
+    this.#controller.on("changed", this.#handleWorkbookChanged);
   }
 
   async stop() {
-    this.#controller.off('changed', this.#handleWorkbookChanged);
+    this.#controller.off("changed", this.#handleWorkbookChanged);
 
     for (const socket of this.#clients) {
       socket.destroy();
@@ -101,12 +103,12 @@ export class SpreadyControlServer {
 
   #handleConnection = (socket: Socket) => {
     this.#clients.add(socket);
-    socket.setEncoding('utf8');
+    socket.setEncoding("utf8");
 
-    let buffer = '';
+    let buffer = "";
 
     this.#writeMessage(socket, {
-      event: 'hello',
+      event: "hello",
       payload: {
         control: this.getInfo(),
         protocol: CONTROL_PROTOCOL,
@@ -114,10 +116,10 @@ export class SpreadyControlServer {
       },
     } satisfies ControlEvent);
 
-    socket.on('data', (chunk: string) => {
+    socket.on("data", (chunk: string) => {
       buffer += chunk;
 
-      let newlineIndex = buffer.indexOf('\n');
+      let newlineIndex = buffer.indexOf("\n");
 
       while (newlineIndex >= 0) {
         const line = buffer.slice(0, newlineIndex).trim();
@@ -127,15 +129,15 @@ export class SpreadyControlServer {
           void this.#handleLine(socket, line);
         }
 
-        newlineIndex = buffer.indexOf('\n');
+        newlineIndex = buffer.indexOf("\n");
       }
     });
 
-    socket.on('close', () => {
+    socket.on("close", () => {
       this.#clients.delete(socket);
     });
 
-    socket.on('error', () => {
+    socket.on("error", () => {
       this.#clients.delete(socket);
     });
   };
@@ -147,16 +149,16 @@ export class SpreadyControlServer {
       request = JSON.parse(line) as ControlRequest;
     } catch {
       this.#writeMessage(socket, {
-        error: 'Request must be valid JSON.',
+        error: "Request must be valid JSON.",
         id: null,
         ok: false,
       } satisfies ControlErrorResponse);
       return;
     }
 
-    if (typeof request.method !== 'string' || request.method.length === 0) {
+    if (typeof request.method !== "string" || request.method.length === 0) {
       this.#writeMessage(socket, {
-        error: 'Request must include a method string.',
+        error: "Request must include a method string.",
         id: request.id ?? null,
         ok: false,
       } satisfies ControlErrorResponse);
@@ -164,7 +166,10 @@ export class SpreadyControlServer {
     }
 
     try {
-      const result = await this.#dispatchRequest(request.method, request.params);
+      const result = await this.#dispatchRequest(
+        request.method,
+        request.params,
+      );
 
       this.#writeMessage(socket, {
         id: request.id ?? null,
@@ -173,7 +178,7 @@ export class SpreadyControlServer {
       } satisfies ControlSuccessResponse);
     } catch (error) {
       this.#writeMessage(socket, {
-        error: error instanceof Error ? error.message : 'Request failed.',
+        error: error instanceof Error ? error.message : "Request failed.",
         id: request.id ?? null,
         ok: false,
       } satisfies ControlErrorResponse);
@@ -184,16 +189,19 @@ export class SpreadyControlServer {
     await new Promise<void>((resolve, reject) => {
       const server = net.createServer(this.#handleConnection);
 
-      server.once('error', reject);
+      server.once("error", reject);
       server.listen(port, this.#host, () => {
-        server.off('error', reject);
+        server.off("error", reject);
         this.#server = server;
         resolve();
       });
     });
   }
 
-  #writeMessage(socket: Socket, message: ControlErrorResponse | ControlEvent | ControlSuccessResponse) {
+  #writeMessage(
+    socket: Socket,
+    message: ControlErrorResponse | ControlEvent | ControlSuccessResponse,
+  ) {
     if (socket.destroyed) {
       return;
     }
@@ -209,43 +217,59 @@ export class SpreadyControlServer {
 
   #handleWorkbookChanged = (summary: WorkbookSummary) => {
     this.#broadcast({
-      event: 'workbookChanged',
+      event: "workbookChanged",
       payload: summary,
     });
   };
 
   async #dispatchRequest(method: string, params: unknown) {
     switch (method) {
-      case 'applyTransaction':
-        return this.#controller.applyTransaction(params as ApplyTransactionRequest);
-      case 'exportCsvFile':
+      case "applyTransaction":
+        return this.#controller.applyTransaction(
+          params as ApplyTransactionRequest,
+        );
+      case "exportCsvFile":
         return this.#controller.exportCsvFile(params as ExportCsvFileRequest);
-      case 'getControlInfo':
+      case "getCellData":
+        return this.#controller.getCellData(
+          params as { columnIndex: number; rowIndex: number; sheetId?: string },
+        );
+      case "getControlInfo":
         return this.getInfo();
-      case 'getSheetCsv':
-        return this.#controller.getSheetCsv((params as { sheetId?: string } | undefined)?.sheetId);
-      case 'getSheetRange':
+      case "getSheetCsv":
+        return this.#controller.getSheetCsv(
+          (params as { sheetId?: string } | undefined)?.sheetId,
+        );
+      case "getSheetDisplayRange":
+        return this.#controller.getSheetDisplayRange(
+          params as SheetRangeRequest,
+        );
+      case "getSheetRange":
         return this.#controller.getSheetRange(params as SheetRangeRequest);
-      case 'getUsedRange':
-        return this.#controller.getUsedRange((params as { sheetId?: string } | undefined)?.sheetId);
-      case 'getWorkbookSummary':
+      case "getUsedRange":
+        return this.#controller.getUsedRange(
+          (params as { sheetId?: string } | undefined)?.sheetId,
+        );
+      case "getWorkbookSummary":
         return this.#controller.getSummary();
-      case 'importCsvFile':
+      case "importCsvFile":
         return this.#controller.importCsvFile(params as ImportCsvFileRequest);
-      case 'listMethods':
+      case "listMethods":
         return [
-          'applyTransaction',
-          'exportCsvFile',
-          'getControlInfo',
-          'getSheetCsv',
-          'getSheetRange',
-          'getUsedRange',
-          'getWorkbookSummary',
-          'importCsvFile',
-          'listMethods',
-          'ping',
+          "applyTransaction",
+          "exportCsvFile",
+          "getCellData",
+          "getControlInfo",
+          "getSheetCsv",
+          "getSheetDisplayRange",
+          "getSheetRange",
+          "getUsedRange",
+          "getWorkbookSummary",
+          "importCsvFile",
+          "listMethods",
+          "ping",
         ];
-      case 'ping':
+      case "ping":
         return {
           control: this.getInfo(),
           protocol: CONTROL_PROTOCOL,

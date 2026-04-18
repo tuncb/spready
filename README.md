@@ -83,13 +83,24 @@ The control protocol is newline-delimited JSON over a local TCP socket.
 Each request is a single JSON line:
 
 ```json
-{"id":1,"method":"getWorkbookSummary"}
+{ "id": 1, "method": "getWorkbookSummary" }
 ```
 
 Each response is a single JSON line:
 
 ```json
-{"id":1,"ok":true,"result":{"activeSheetId":"sheet-1","activeSheetName":"Sheet 1","sheets":[{"id":"sheet-1","name":"Sheet 1","rowCount":200,"columnCount":50}],"version":0}}
+{
+  "id": 1,
+  "ok": true,
+  "result": {
+    "activeSheetId": "sheet-1",
+    "activeSheetName": "Sheet 1",
+    "sheets": [
+      { "id": "sheet-1", "name": "Sheet 1", "rowCount": 200, "columnCount": 50 }
+    ],
+    "version": 0
+  }
+}
 ```
 
 On connect, the server sends a `hello` event. Workbook mutations also emit `workbookChanged` events to all connected clients.
@@ -100,6 +111,8 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `listMethods`
 - `getControlInfo`
 - `getWorkbookSummary`
+- `getCellData`
+- `getSheetDisplayRange`
 - `getSheetRange`
 - `getUsedRange`
 - `getSheetCsv`
@@ -193,11 +206,17 @@ The stdio MCP wrapper currently exposes:
 - `describe_capabilities`
 - `get_workbook_summary`
 - `get_used_range`
+- `get_cell_data`
+- `get_sheet_display_range`
 - `get_sheet_range`
 - `get_sheet_csv`
 - `import_csv_file`
 - `export_csv_file`
 - `apply_transaction`
+
+`get_sheet_range` returns raw stored cell input, including formula strings like `=A1+B1`.
+`get_sheet_display_range` returns evaluated display values for the grid view.
+`get_cell_data` returns both the raw input and the evaluated display value for one cell.
 
 `import_csv_file` and `export_csv_file` both accept an optional `sheetId`. If omitted, they use
 the active sheet.

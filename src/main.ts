@@ -22,6 +22,7 @@ import {
 import { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
+  CellDataRequest,
   SheetRangeRequest,
 } from "./workbook-core";
 
@@ -287,6 +288,16 @@ ipcMain.handle(
   "workbook:apply-transaction",
   (_event, args: ApplyTransactionRequest) =>
     workbookController.applyTransaction(args),
+);
+
+ipcMain.handle("workbook:get-cell-data", (_event, args: CellDataRequest) =>
+  workbookController.getCellData(args),
+);
+
+ipcMain.handle(
+  "workbook:get-display-range",
+  (_event, args: SheetRangeRequest) =>
+    workbookController.getSheetDisplayRange(args),
 );
 
 ipcMain.handle("workbook:get-range", (_event, args: SheetRangeRequest) =>

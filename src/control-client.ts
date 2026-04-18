@@ -1,21 +1,24 @@
-import { EventEmitter } from 'node:events';
-import net, { type Socket } from 'node:net';
+import { EventEmitter } from "node:events";
+import net, { type Socket } from "node:net";
 
-import { readDiscoveredControlInfo } from './control-discovery';
+import { readDiscoveredControlInfo } from "./control-discovery";
 import type {
   ApplyTransactionRequest,
   ApplyTransactionResult,
+  CellDataRequest,
+  CellDataResult,
   ControlServerInfo,
   CsvFileOperationResult,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
+  SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
   WorkbookSummary,
-} from './workbook-core';
+} from "./workbook-core";
 
-const DEFAULT_CONTROL_HOST = '127.0.0.1';
+const DEFAULT_CONTROL_HOST = "127.0.0.1";
 const DEFAULT_CONTROL_PORT = 45731;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 
@@ -60,7 +63,7 @@ type PendingRequest = {
 export interface ControlTarget {
   host: string;
   port: number;
-  source: 'argv' | 'default' | 'discovery' | 'env';
+  source: "argv" | "default" | "discovery" | "env";
 }
 
 export interface ControlClientOptions {
@@ -69,7 +72,7 @@ export interface ControlClientOptions {
 }
 
 export class SpreadyControlClient extends EventEmitter {
-  #buffer = '';
+  #buffer = "";
   #host: string;
   #nextRequestId = 1;
   #pendingRequests = new Map<number, PendingRequest>();
@@ -93,12 +96,12 @@ export class SpreadyControlClient extends EventEmitter {
     });
 
     this.#socket = socket;
-    socket.setEncoding('utf8');
+    socket.setEncoding("utf8");
 
-    socket.on('data', (chunk: string) => {
+    socket.on("data", (chunk: string) => {
       this.#buffer += chunk;
 
-      let newlineIndex = this.#buffer.indexOf('\n');
+      let newlineIndex = this.#buffer.indexOf("\n");
 
       while (newlineIndex >= 0) {
         const line = this.#buffer.slice(0, newlineIndex).trim();
@@ -108,26 +111,26 @@ export class SpreadyControlClient extends EventEmitter {
           this.#handleMessage(line);
         }
 
-        newlineIndex = this.#buffer.indexOf('\n');
+        newlineIndex = this.#buffer.indexOf("\n");
       }
     });
 
-    socket.on('error', (error) => {
+    socket.on("error", (error) => {
       this.#rejectAllPending(error);
 
-      if (this.listenerCount('error') > 0) {
-        this.emit('error', error);
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", error);
       }
     });
 
-    socket.on('close', () => {
-      this.#rejectAllPending(new Error('Spready control connection closed.'));
-      this.emit('close');
+    socket.on("close", () => {
+      this.#rejectAllPending(new Error("Spready control connection closed."));
+      this.emit("close");
     });
 
     await new Promise<void>((resolve, reject) => {
-      socket.once('connect', resolve);
-      socket.once('error', reject);
+      socket.once("connect", resolve);
+      socket.once("error", reject);
     });
   }
 
@@ -142,38 +145,46 @@ export class SpreadyControlClient extends EventEmitter {
   }
 
   async applyTransaction(request: ApplyTransactionRequest) {
-    return this.call<ApplyTransactionResult>('applyTransaction', request);
+    return this.call<ApplyTransactionResult>("applyTransaction", request);
   }
 
   async exportCsvFile(request: ExportCsvFileRequest) {
-    return this.call<CsvFileOperationResult>('exportCsvFile', request);
+    return this.call<CsvFileOperationResult>("exportCsvFile", request);
+  }
+
+  async getCellData(request: CellDataRequest) {
+    return this.call<CellDataResult>("getCellData", request);
   }
 
   async getSheetCsv(sheetId?: string) {
-    return this.call<string>('getSheetCsv', { sheetId });
+    return this.call<string>("getSheetCsv", { sheetId });
+  }
+
+  async getSheetDisplayRange(request: SheetRangeRequest) {
+    return this.call<SheetDisplayRangeResult>("getSheetDisplayRange", request);
   }
 
   async getSheetRange(request: SheetRangeRequest) {
-    return this.call<SheetRangeResult>('getSheetRange', request);
+    return this.call<SheetRangeResult>("getSheetRange", request);
   }
 
   async getUsedRange(sheetId?: string) {
-    return this.call<UsedRangeResult>('getUsedRange', { sheetId });
+    return this.call<UsedRangeResult>("getUsedRange", { sheetId });
   }
 
   async getWorkbookSummary() {
-    return this.call<WorkbookSummary>('getWorkbookSummary');
+    return this.call<WorkbookSummary>("getWorkbookSummary");
   }
 
   async importCsvFile(request: ImportCsvFileRequest) {
-    return this.call<CsvFileOperationResult>('importCsvFile', request);
+    return this.call<CsvFileOperationResult>("importCsvFile", request);
   }
 
   async call<Result>(method: string, params?: unknown): Promise<Result> {
     const socket = this.#socket;
 
     if (!socket || socket.destroyed) {
-      throw new Error('Spready control client is not connected.');
+      throw new Error("Spready control client is not connected.");
     }
 
     const id = this.#nextRequestId;
@@ -210,14 +221,17 @@ export class SpreadyControlClient extends EventEmitter {
   }
 
   #handleMessage(line: string) {
-    const message = JSON.parse(line) as ControlErrorResponse | ControlEventMessage | ControlSuccessResponse;
+    const message = JSON.parse(line) as
+      | ControlErrorResponse
+      | ControlEventMessage
+      | ControlSuccessResponse;
 
-    if ('event' in message) {
+    if ("event" in message) {
       this.emit(message.event, message.payload);
       return;
     }
 
-    if (typeof message.id !== 'number') {
+    if (typeof message.id !== "number") {
       return;
     }
 
@@ -230,7 +244,7 @@ export class SpreadyControlClient extends EventEmitter {
     clearTimeout(pendingRequest.timeout);
     this.#pendingRequests.delete(message.id);
 
-    if ('ok' in message && message.ok) {
+    if ("ok" in message && message.ok) {
       pendingRequest.resolve(message.result);
       return;
     }
@@ -248,12 +262,14 @@ export class SpreadyControlClient extends EventEmitter {
   }
 }
 
-export async function resolveControlTarget(options: ControlClientOptions = {}): Promise<ControlTarget> {
+export async function resolveControlTarget(
+  options: ControlClientOptions = {},
+): Promise<ControlTarget> {
   if (options.host || options.port) {
     return {
       host: options.host ?? DEFAULT_CONTROL_HOST,
       port: options.port ?? DEFAULT_CONTROL_PORT,
-      source: 'argv',
+      source: "argv",
     };
   }
 
@@ -261,16 +277,18 @@ export async function resolveControlTarget(options: ControlClientOptions = {}): 
   const envPortValue = process.env.SPREADY_CONTROL_PORT;
 
   if (envHost || envPortValue) {
-    const envPort = envPortValue ? Number.parseInt(envPortValue, 10) : DEFAULT_CONTROL_PORT;
+    const envPort = envPortValue
+      ? Number.parseInt(envPortValue, 10)
+      : DEFAULT_CONTROL_PORT;
 
     if (Number.isNaN(envPort)) {
-      throw new Error('SPREADY_CONTROL_PORT must be a valid integer.');
+      throw new Error("SPREADY_CONTROL_PORT must be a valid integer.");
     }
 
     return {
       host: envHost ?? DEFAULT_CONTROL_HOST,
       port: envPort,
-      source: 'env',
+      source: "env",
     };
   }
 
@@ -280,13 +298,13 @@ export async function resolveControlTarget(options: ControlClientOptions = {}): 
     return {
       host: discoveredTarget.host,
       port: discoveredTarget.port,
-      source: 'discovery',
+      source: "discovery",
     };
   }
 
   return {
     host: DEFAULT_CONTROL_HOST,
     port: DEFAULT_CONTROL_PORT,
-    source: 'default',
+    source: "default",
   };
 }

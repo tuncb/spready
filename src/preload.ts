@@ -4,7 +4,10 @@ import type { AppMenuAction } from "./app-menu";
 import type {
   ApplyTransactionRequest,
   ApplyTransactionResult,
+  CellDataRequest,
+  CellDataResult,
   ControlServerInfo,
+  SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
@@ -36,12 +39,22 @@ contextBridge.exposeInMainWorld("appShell", {
       "workbook:apply-transaction",
       request,
     ) as Promise<ApplyTransactionResult>,
+  getCellData: (request: CellDataRequest) =>
+    ipcRenderer.invoke(
+      "workbook:get-cell-data",
+      request,
+    ) as Promise<CellDataResult>,
   getControlInfo: () =>
     ipcRenderer.invoke("control:get-info") as Promise<ControlServerInfo>,
   getSheetCsv: (sheetId?: string) =>
     ipcRenderer.invoke("workbook:get-sheet-csv", {
       sheetId,
     }) as Promise<string>,
+  getSheetDisplayRange: (request: SheetRangeRequest) =>
+    ipcRenderer.invoke(
+      "workbook:get-display-range",
+      request,
+    ) as Promise<SheetDisplayRangeResult>,
   getSheetRange: (request: SheetRangeRequest) =>
     ipcRenderer.invoke(
       "workbook:get-range",

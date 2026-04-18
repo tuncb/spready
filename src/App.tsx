@@ -1,12 +1,15 @@
 import DataEditor, {
+  CompactSelection,
   GridCellKind,
   type EditableGridCell,
   type GridCell,
   type GridColumn,
+  type GridSelection,
   type Item,
 } from "@glideapps/glide-data-grid";
 import {
   type ChangeEvent,
+  type KeyboardEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -17,7 +20,10 @@ import {
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
 import {
   getColumnTitle,
+  isFormulaInput,
+  type CellDataResult,
   type ControlServerInfo,
+  type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
   type WorkbookSummary,
@@ -35,6 +41,8 @@ type VisibleRegion = {
   x: number;
   y: number;
 };
+
+type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
 
 function buildRangeRequest(
   activeSheetId: string,
@@ -80,6 +88,13 @@ function createColumns(columnCount: number): GridColumn[] {
   }));
 }
 
+function createEmptyGridSelection(): GridSelection {
+  return {
+    columns: CompactSelection.empty(),
+    rows: CompactSelection.empty(),
+  };
+}
+
 function createLoadingCell(): GridCell {
   return {
     allowOverlay: false,
@@ -87,17 +102,17 @@ function createLoadingCell(): GridCell {
   };
 }
 
-function createTextCell(value: string): GridCell {
+function createTextCell(input: string, display: string): GridCell {
   return {
     allowOverlay: true,
-    data: value,
-    displayData: value,
+    data: input,
+    displayData: display,
     kind: GridCellKind.Text,
   };
 }
 
 function getCachedCellValue(
-  cache: SheetRangeResult | null,
+  cache: RangeCache | null,
   columnIndex: number,
   rowIndex: number,
   sheetId?: string,
@@ -120,13 +135,13 @@ function getCachedCellValue(
   return cache.values[rowOffset]?.[columnOffset];
 }
 
-function setCachedCellValue(
-  cache: SheetRangeResult | null,
+function setCachedCellValue<Cache extends RangeCache>(
+  cache: Cache | null,
   columnIndex: number,
   rowIndex: number,
   sheetId: string,
   value: string,
-): SheetRangeResult | null {
+): Cache | null {
   if (!cache || cache.sheetId !== sheetId) {
     return cache;
   }
@@ -158,20 +173,62 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
+function getPastedCellValue(
+  target: Item,
+  selectedCell: Item | null,
+  values: readonly (readonly string[])[],
+): string | null {
+  if (!selectedCell) {
+    return null;
+  }
+
+  const [startColumn, startRow] = target;
+  const [selectedColumn, selectedRow] = selectedCell;
+  const rowOffset = selectedRow - startRow;
+  const columnOffset = selectedColumn - startColumn;
+
+  if (
+    rowOffset < 0 ||
+    columnOffset < 0 ||
+    rowOffset >= values.length ||
+    columnOffset >= values[rowOffset].length
+  ) {
+    return null;
+  }
+
+  return values[rowOffset][columnOffset] ?? "";
+}
+
+function getSelectedCellAddress(selectedCell: Item | null): string {
+  if (!selectedCell) {
+    return "";
+  }
+
+  return `${getColumnTitle(selectedCell[0])}${selectedCell[1] + 1}`;
+}
+
 export default function App() {
   const [controlInfo, setControlInfo] = useState<ControlServerInfo | null>(
     null,
   );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [formulaInputValue, setFormulaInputValue] = useState("");
+  const [gridSelection, setGridSelection] = useState<GridSelection>(
+    createEmptyGridSelection,
+  );
+  const [selectedCellData, setSelectedCellData] =
+    useState<CellDataResult | null>(null);
   const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(
     null,
   );
   const [viewNonce, setViewNonce] = useState(0);
 
   const exportPathRef = useRef<string>();
+  const displayRangeCacheRef = useRef<SheetDisplayRangeResult | null>(null);
   const lastVisibleRegionRef = useRef<VisibleRegion | null>(null);
+  const pendingCellDataRequestIdRef = useRef(0);
   const pendingRangeRequestIdRef = useRef(0);
-  const rangeCacheRef = useRef<SheetRangeResult | null>(null);
+  const rawRangeCacheRef = useRef<SheetRangeResult | null>(null);
 
   const activeSheet = useMemo(
     () =>
@@ -180,7 +237,11 @@ export default function App() {
       ) ?? null,
     [sheetSummary],
   );
-
+  const selectedCell = gridSelection.current?.cell ?? null;
+  const selectedCellAddress = useMemo(
+    () => getSelectedCellAddress(selectedCell),
+    [selectedCell],
+  );
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
@@ -218,13 +279,17 @@ export default function App() {
       pendingRangeRequestIdRef.current = requestId;
 
       try {
-        const result = await window.appShell.getSheetRange(request);
+        const [rawRange, displayRange] = await Promise.all([
+          window.appShell.getSheetRange(request),
+          window.appShell.getSheetDisplayRange(request),
+        ]);
 
         if (pendingRangeRequestIdRef.current !== requestId) {
           return;
         }
 
-        rangeCacheRef.current = result;
+        rawRangeCacheRef.current = rawRange;
+        displayRangeCacheRef.current = displayRange;
         setViewNonce((current) => current + 1);
       } catch (error) {
         setErrorMessage(getErrorMessage(error));
@@ -233,21 +298,58 @@ export default function App() {
     [activeSheet],
   );
 
+  const refreshSelectedCellData = useCallback(async () => {
+    if (!activeSheet || !selectedCell) {
+      setSelectedCellData(null);
+      setFormulaInputValue("");
+      return;
+    }
+
+    const requestId = pendingCellDataRequestIdRef.current + 1;
+
+    pendingCellDataRequestIdRef.current = requestId;
+
+    try {
+      const [columnIndex, rowIndex] = selectedCell;
+      const cellData = await window.appShell.getCellData({
+        columnIndex,
+        rowIndex,
+        sheetId: activeSheet.id,
+      });
+
+      if (pendingCellDataRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      setSelectedCellData(cellData);
+      setFormulaInputValue(cellData.input);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, [activeSheet, selectedCell]);
+
   const getCellContent = useCallback(
     (cell: Item): GridCell => {
       const [columnIndex, rowIndex] = cell;
-      const cachedValue = getCachedCellValue(
-        rangeCacheRef.current,
+      const rawValue = getCachedCellValue(
+        rawRangeCacheRef.current,
+        columnIndex,
+        rowIndex,
+        activeSheet?.id,
+      );
+      const displayValue = getCachedCellValue(
+        displayRangeCacheRef.current,
         columnIndex,
         rowIndex,
         activeSheet?.id,
       );
 
-      if (cachedValue === undefined) {
+      if (rawValue === undefined || displayValue === undefined) {
         return createLoadingCell();
       }
 
-      return createTextCell(cachedValue);
+      return createTextCell(rawValue, displayValue);
     },
     [activeSheet?.id, viewNonce],
   );
@@ -259,15 +361,26 @@ export default function App() {
           return [];
         }
 
-        const range = await window.appShell.getSheetRange({
+        const request = {
           columnCount: selection.width,
           rowCount: selection.height,
           sheetId: activeSheet.id,
           startColumn: selection.x,
           startRow: selection.y,
-        });
+        };
+        const [rawRange, displayRange] = await Promise.all([
+          window.appShell.getSheetRange(request),
+          window.appShell.getSheetDisplayRange(request),
+        ]);
 
-        return range.values.map((row) => row.map(createTextCell));
+        return displayRange.values.map((row, rowOffset) =>
+          row.map((displayValue, columnOffset) =>
+            createTextCell(
+              rawRange.values[rowOffset]?.[columnOffset] ?? displayValue,
+              displayValue,
+            ),
+          ),
+        );
       };
     },
     [activeSheet],
@@ -281,13 +394,36 @@ export default function App() {
 
       const [columnIndex, rowIndex] = cell;
 
-      rangeCacheRef.current = setCachedCellValue(
-        rangeCacheRef.current,
+      rawRangeCacheRef.current = setCachedCellValue(
+        rawRangeCacheRef.current,
         columnIndex,
         rowIndex,
         activeSheet.id,
         newValue.data,
       );
+      displayRangeCacheRef.current = setCachedCellValue(
+        displayRangeCacheRef.current,
+        columnIndex,
+        rowIndex,
+        activeSheet.id,
+        newValue.data,
+      );
+
+      if (selectedCell?.[0] === columnIndex && selectedCell?.[1] === rowIndex) {
+        setFormulaInputValue(newValue.data);
+        setSelectedCellData((current) =>
+          current
+            ? {
+                ...current,
+                display: newValue.data,
+                errorCode: undefined,
+                input: newValue.data,
+                isFormula: isFormulaInput(newValue.data),
+              }
+            : current,
+        );
+      }
+
       setViewNonce((current) => current + 1);
 
       void applyTransaction([
@@ -299,9 +435,17 @@ export default function App() {
         },
       ]).catch((error) => {
         setErrorMessage(getErrorMessage(error));
+        void loadVisibleRange(lastVisibleRegionRef.current);
+        void refreshSelectedCellData();
       });
     },
-    [activeSheet, applyTransaction],
+    [
+      activeSheet,
+      applyTransaction,
+      loadVisibleRange,
+      refreshSelectedCellData,
+      selectedCell,
+    ],
   );
 
   const handlePaste = useCallback(
@@ -319,14 +463,44 @@ export default function App() {
           columnOffset < nextValues[rowOffset].length;
           columnOffset += 1
         ) {
-          rangeCacheRef.current = setCachedCellValue(
-            rangeCacheRef.current,
+          const nextValue = nextValues[rowOffset][columnOffset] ?? "";
+
+          rawRangeCacheRef.current = setCachedCellValue(
+            rawRangeCacheRef.current,
             startColumn + columnOffset,
             startRow + rowOffset,
             activeSheet.id,
-            nextValues[rowOffset][columnOffset] ?? "",
+            nextValue,
+          );
+          displayRangeCacheRef.current = setCachedCellValue(
+            displayRangeCacheRef.current,
+            startColumn + columnOffset,
+            startRow + rowOffset,
+            activeSheet.id,
+            nextValue,
           );
         }
+      }
+
+      const selectedPastedValue = getPastedCellValue(
+        target,
+        selectedCell,
+        values,
+      );
+
+      if (selectedPastedValue !== null) {
+        setFormulaInputValue(selectedPastedValue);
+        setSelectedCellData((current) =>
+          current
+            ? {
+                ...current,
+                display: selectedPastedValue,
+                errorCode: undefined,
+                input: selectedPastedValue,
+                isFormula: isFormulaInput(selectedPastedValue),
+              }
+            : current,
+        );
       }
 
       setViewNonce((current) => current + 1);
@@ -340,12 +514,82 @@ export default function App() {
         },
       ]).catch((error) => {
         setErrorMessage(getErrorMessage(error));
+        void loadVisibleRange(lastVisibleRegionRef.current);
+        void refreshSelectedCellData();
       });
 
       return true;
     },
-    [activeSheet, applyTransaction],
+    [
+      activeSheet,
+      applyTransaction,
+      loadVisibleRange,
+      refreshSelectedCellData,
+      selectedCell,
+    ],
   );
+
+  const commitFormulaBar = useCallback(async () => {
+    if (!activeSheet || !selectedCell) {
+      return;
+    }
+
+    const [columnIndex, rowIndex] = selectedCell;
+
+    if (formulaInputValue === (selectedCellData?.input ?? "")) {
+      return;
+    }
+
+    rawRangeCacheRef.current = setCachedCellValue(
+      rawRangeCacheRef.current,
+      columnIndex,
+      rowIndex,
+      activeSheet.id,
+      formulaInputValue,
+    );
+    displayRangeCacheRef.current = setCachedCellValue(
+      displayRangeCacheRef.current,
+      columnIndex,
+      rowIndex,
+      activeSheet.id,
+      formulaInputValue,
+    );
+    setSelectedCellData((current) =>
+      current
+        ? {
+            ...current,
+            display: formulaInputValue,
+            errorCode: undefined,
+            input: formulaInputValue,
+            isFormula: isFormulaInput(formulaInputValue),
+          }
+        : current,
+    );
+    setViewNonce((current) => current + 1);
+
+    try {
+      await applyTransaction([
+        {
+          columnIndex,
+          rowIndex,
+          type: "setCell",
+          value: formulaInputValue,
+        },
+      ]);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+      void loadVisibleRange(lastVisibleRegionRef.current);
+      void refreshSelectedCellData();
+    }
+  }, [
+    activeSheet,
+    applyTransaction,
+    formulaInputValue,
+    loadVisibleRange,
+    refreshSelectedCellData,
+    selectedCell,
+    selectedCellData?.input,
+  ]);
 
   const addColumn = useCallback(() => {
     if (!activeSheet) {
@@ -417,6 +661,29 @@ export default function App() {
       });
     },
     [applyTransaction],
+  );
+
+  const handleFormulaInputChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setFormulaInputValue(event.target.value);
+    },
+    [],
+  );
+
+  const handleFormulaInputKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void commitFormulaBar();
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setFormulaInputValue(selectedCellData?.input ?? "");
+      }
+    },
+    [commitFormulaBar, selectedCellData?.input],
   );
 
   const handleImport = useCallback(async () => {
@@ -507,11 +774,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    setGridSelection(createEmptyGridSelection());
+    setSelectedCellData(null);
+    setFormulaInputValue("");
+  }, [activeSheet?.id]);
+
+  useEffect(() => {
+    if (!selectedCell || !activeSheet) {
+      setSelectedCellData(null);
+      setFormulaInputValue("");
+      return;
+    }
+
+    void refreshSelectedCellData();
+  }, [
+    activeSheet,
+    refreshSelectedCellData,
+    selectedCell,
+    sheetSummary?.version,
+  ]);
+
+  useEffect(() => {
     if (!activeSheet) {
       return;
     }
 
-    rangeCacheRef.current = null;
+    rawRangeCacheRef.current = null;
+    displayRangeCacheRef.current = null;
     setViewNonce((current) => current + 1);
 
     if (activeSheet.sourceFilePath) {
@@ -598,14 +887,51 @@ export default function App() {
         </div>
       ) : null}
 
+      <section className="formula-bar" aria-label="Formula bar">
+        <div className="formula-bar__address">
+          {selectedCellAddress || "Cell"}
+        </div>
+        <label className="formula-bar__field" htmlFor="formula-input">
+          <span className="formula-bar__label">Formula</span>
+          <input
+            className="formula-bar__input"
+            disabled={!selectedCell}
+            id="formula-input"
+            onBlur={() => {
+              void commitFormulaBar();
+            }}
+            onChange={handleFormulaInputChange}
+            onKeyDown={handleFormulaInputKeyDown}
+            placeholder={
+              selectedCell
+                ? "Type a value or a formula like =A1+B1"
+                : "Select a cell to inspect or edit"
+            }
+            value={selectedCell ? formulaInputValue : ""}
+          />
+        </label>
+        <div className="formula-bar__preview">
+          {selectedCellData
+            ? selectedCellData.isFormula
+              ? selectedCellData.display
+              : "literal"
+            : "idle"}
+        </div>
+      </section>
+
       <section className="sheet-surface" aria-label="Spreadsheet surface">
         <DataEditor
           columns={columns}
           getCellContent={getCellContent}
           getCellsForSelection={getCellsForSelection}
+          gridSelection={gridSelection}
           height="100%"
           onCellEdited={handleCellEdited}
+          onGridSelectionChange={setGridSelection}
           onPaste={handlePaste}
+          onSelectionCleared={() => {
+            setGridSelection(createEmptyGridSelection());
+          }}
           onVisibleRegionChanged={(region) => {
             lastVisibleRegionRef.current = {
               height: region.height,
