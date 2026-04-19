@@ -113,6 +113,7 @@ export function parseWorkbookDocument(content: string): WorkbookState {
 
   const workbook: WorkbookState = {
     activeSheetId: document.workbook.activeSheetId,
+    hasUnsavedChanges: false,
     nextSheetNumber: document.workbook.nextSheetNumber,
     sheets: document.workbook.sheets.map((sheet) =>
       restoreWorkbookSheet(sheet),

@@ -14,6 +14,7 @@ const workbookSummarySchema = z.object({
   activeSheetId: z.string(),
   activeSheetName: z.string(),
   documentFilePath: z.string().optional(),
+  hasUnsavedChanges: z.boolean(),
   sheets: z.array(
     z.object({
       columnCount: z.int().min(1),
@@ -391,6 +392,7 @@ const guideResource = {
   usageConventions: [
     "Rows and columns are zero-based.",
     "Use open_workbook_file and save_workbook_file for full multi-sheet workbook persistence.",
+    "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.",
     "Use get_cell_data when you need one cell's raw formula text plus its evaluated display result.",
@@ -687,6 +689,12 @@ async function main() {
       description:
         "Open a native Spready workbook file and replace the in-app workbook state.",
       inputSchema: z.object({
+        discardUnsavedChanges: z
+          .boolean()
+          .optional()
+          .describe(
+            "Set to true to replace the current workbook even when it has unsaved changes.",
+          ),
         filePath: z
           .string()
           .min(1)
@@ -749,7 +757,7 @@ async function main() {
             name: "get_workbook_summary",
             readOnly: true,
             useWhen:
-              "Always use this first before exploring or editing a workbook.",
+              "Always use this first before exploring or editing a workbook, and inspect hasUnsavedChanges before replacing it.",
           },
           {
             defaultsToActiveSheet: false,
@@ -758,7 +766,7 @@ async function main() {
             name: "open_workbook_file",
             readOnly: false,
             useWhen:
-              "Use this when the task starts from a saved .spready workbook document.",
+              "Use this when the task starts from a saved .spready workbook document. Pass discardUnsavedChanges only after you have explicitly decided to replace unsaved work.",
           },
           {
             defaultsToActiveSheet: false,
@@ -1083,6 +1091,7 @@ async function main() {
                 "Workflow:\n" +
                 "- Use open_workbook_file when the task starts from an existing .spready workbook.\n" +
                 "- Start with get_workbook_summary.\n" +
+                "- If get_workbook_summary reports hasUnsavedChanges, save first or pass discardUnsavedChanges only if losing local changes is intended.\n" +
                 "- Use zero-based row and column indexes.\n" +
                 "- Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +

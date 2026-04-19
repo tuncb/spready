@@ -112,6 +112,7 @@ test('getWorkbookSummary, getSheetRange, and getSheetUsedRange reflect workbook 
   assert.equal(summary.version, 1);
   assert.equal(summary.activeSheetId, initialState.activeSheetId);
   assert.equal(summary.activeSheetName, 'Sheet 1');
+  assert.equal(summary.hasUnsavedChanges, false);
   assert.equal(summary.sheets.length, 1);
   assert.equal(summary.sheets[0].rowCount, 200);
   assert.equal(summary.sheets[0].columnCount, 50);

@@ -1026,6 +1026,9 @@ export default function App() {
         <div className="app-shell__stats" aria-label="Workbook state">
           <span>{rowCount} rows</span>
           <span>{columnCount} columns</span>
+          <span>
+            {sheetSummary?.hasUnsavedChanges ? "modified" : "saved"}
+          </span>
           <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
         </div>
       </footer>

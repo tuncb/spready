@@ -20,6 +20,8 @@ npm start
 
 When the app starts it also opens a local TCP control server on `127.0.0.1:45731` by default. If that port is busy it falls back to a random free local port and prints the chosen address in the Electron console. You can override the preferred port with `SPREADY_CONTROL_PORT`.
 
+Workbook summaries report `hasUnsavedChanges` so clients can decide whether to save, discard, or cancel before replacing the current workbook.
+
 ### MCP stdio wrapper
 
 Start the Electron app first, then run:
@@ -97,6 +99,7 @@ Each response is a single JSON line:
   "result": {
     "activeSheetId": "sheet-1",
     "activeSheetName": "Sheet 1",
+    "hasUnsavedChanges": false,
     "sheets": [
       { "id": "sheet-1", "name": "Sheet 1", "rowCount": 200, "columnCount": 50 }
     ],
@@ -164,7 +167,8 @@ Open a native Spready workbook file:
   "id": 5,
   "method": "openWorkbookFile",
   "params": {
-    "filePath": "C:\\\\workbooks\\\\budget.spready"
+    "filePath": "C:\\\\workbooks\\\\budget.spready",
+    "discardUnsavedChanges": true
   }
 }
 ```
@@ -254,6 +258,8 @@ The stdio MCP wrapper currently exposes:
 the active sheet.
 
 `open_workbook_file` and `save_workbook_file` operate on the full multi-sheet workbook and use the `.spready` document format.
+
+When `get_workbook_summary` reports `hasUnsavedChanges: true`, remote clients should either save first or pass `discardUnsavedChanges: true` to `open_workbook_file` only when replacing local changes is intended.
 
 ### Resources
 

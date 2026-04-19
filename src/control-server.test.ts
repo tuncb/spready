@@ -98,6 +98,7 @@ test("SpreadyControlServer saves and opens native workbook files over TCP", asyn
 
     assert.equal(saveResult.changed, true);
     assert.equal(saveResult.summary.documentFilePath, filePath);
+    assert.equal(saveResult.summary.hasUnsavedChanges, false);
     assert.ok((await client.call<string[]>("listMethods")).includes("openWorkbookFile"));
     assert.ok((await client.call<string[]>("listMethods")).includes("saveWorkbookFile"));
 
@@ -112,7 +113,15 @@ test("SpreadyControlServer saves and opens native workbook files over TCP", asyn
       ],
     });
 
-    const openResult = await client.openWorkbookFile({ filePath });
+    await assert.rejects(
+      () => client.openWorkbookFile({ filePath }),
+      /discardUnsavedChanges: true/,
+    );
+
+    const openResult = await client.openWorkbookFile({
+      discardUnsavedChanges: true,
+      filePath,
+    });
     const displayRange = await client.getSheetDisplayRange({
       columnCount: 3,
       rowCount: 1,
@@ -121,6 +130,7 @@ test("SpreadyControlServer saves and opens native workbook files over TCP", asyn
     });
 
     assert.equal(openResult.summary.documentFilePath, filePath);
+    assert.equal(openResult.summary.hasUnsavedChanges, false);
     assert.deepEqual(displayRange.values, [["4", "5", "9"]]);
   } finally {
     await client.close();

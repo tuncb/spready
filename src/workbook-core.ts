@@ -17,6 +17,7 @@ export interface WorkbookSheet {
 
 export interface WorkbookState {
   documentFilePath?: string;
+  hasUnsavedChanges: boolean;
   version: number;
   activeSheetId: string;
   nextSheetNumber: number;
@@ -33,6 +34,7 @@ export interface SheetSummary {
 
 export interface WorkbookSummary {
   documentFilePath?: string;
+  hasUnsavedChanges: boolean;
   version: number;
   activeSheetId: string;
   activeSheetName: string;
@@ -213,6 +215,7 @@ export interface ExportCsvFileRequest {
 }
 
 export interface OpenWorkbookFileRequest {
+  discardUnsavedChanges?: boolean;
   filePath: string;
 }
 
@@ -397,6 +400,7 @@ export function createWorkbookState(): WorkbookState {
 
   return {
     activeSheetId: defaultSheet.id,
+    hasUnsavedChanges: false,
     nextSheetNumber: 2,
     sheets: [defaultSheet],
     version: 0,
@@ -410,6 +414,7 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
     activeSheetId: activeSheet.id,
     activeSheetName: activeSheet.name,
     documentFilePath: workbook.documentFilePath,
+    hasUnsavedChanges: workbook.hasUnsavedChanges,
     sheets: workbook.sheets.map((sheet) => ({
       columnCount: getSheetColumnCount(sheet),
       id: sheet.id,

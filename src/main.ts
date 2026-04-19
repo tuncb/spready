@@ -24,6 +24,7 @@ import type {
   ApplyTransactionRequest,
   CellDataRequest,
   SheetRangeRequest,
+  WorkbookFileOperationResult,
 } from "./workbook-core";
 
 const APP_DISPLAY_NAME = "Spready";
@@ -59,6 +60,8 @@ type SaveCsvFileArgs = {
 type SaveWorkbookFileAsArgs = {
   defaultPath?: string;
 };
+
+type UnsavedChangesResolution = "cancel" | "discard" | "none" | "save";
 
 function getTargetWindow(
   browserWindow?: BrowserWindow | null,
@@ -103,6 +106,93 @@ async function showAboutDialog(browserWindow?: BrowserWindow | null) {
   }
 
   await dialog.showMessageBox(options);
+}
+
+async function chooseWorkbookSavePath(
+  browserWindow?: BrowserWindow | null,
+  defaultPath?: string,
+) {
+  const targetWindow = getTargetWindow(browserWindow);
+  const dialogOptions: SaveDialogOptions = {
+    title: "Save Workbook",
+    defaultPath: defaultPath ?? DEFAULT_WORKBOOK_FILE_NAME,
+    filters: [{ name: "Spready Workbooks", extensions: ["spready"] }],
+  };
+  const result = targetWindow
+    ? await dialog.showSaveDialog(targetWindow, dialogOptions)
+    : await dialog.showSaveDialog(dialogOptions);
+
+  if (result.canceled || !result.filePath) {
+    return null;
+  }
+
+  return result.filePath;
+}
+
+async function saveCurrentWorkbook(
+  browserWindow?: BrowserWindow | null,
+  requestedFilePath?: string,
+  defaultPath?: string,
+): Promise<WorkbookFileOperationResult | null> {
+  try {
+    const summary = workbookController.getSummary();
+    const filePath =
+      requestedFilePath ??
+      summary.documentFilePath ??
+      (await chooseWorkbookSavePath(browserWindow, defaultPath));
+
+    if (!filePath) {
+      return null;
+    }
+
+    return await workbookController.saveWorkbookFile({ filePath });
+  } catch (error) {
+    dialog.showErrorBox(
+      "Save workbook failed",
+      error instanceof Error
+        ? error.message
+        : "The workbook file could not be saved.",
+    );
+
+    return null;
+  }
+}
+
+async function resolveUnsavedChanges(
+  browserWindow?: BrowserWindow | null,
+): Promise<UnsavedChangesResolution> {
+  const summary = workbookController.getSummary();
+
+  if (!summary.hasUnsavedChanges) {
+    return "none";
+  }
+
+  const targetWindow = getTargetWindow(browserWindow);
+  const options = {
+    type: "warning" as const,
+    buttons: ["Save", "Discard", "Cancel"],
+    cancelId: 2,
+    defaultId: 0,
+    noLink: true,
+    title: "Unsaved Changes",
+    message: "Save the current workbook before continuing?",
+    detail: "Your unsaved changes will be lost if you discard them.",
+  };
+  const result = targetWindow
+    ? await dialog.showMessageBox(targetWindow, options)
+    : await dialog.showMessageBox(options);
+
+  if (result.response === 0) {
+    return (await saveCurrentWorkbook(browserWindow, undefined, undefined))
+      ? "save"
+      : "cancel";
+  }
+
+  if (result.response === 1) {
+    return "discard";
+  }
+
+  return "cancel";
 }
 
 function buildAppMenu() {
@@ -202,6 +292,8 @@ function buildAppMenu() {
 }
 
 const createWindow = () => {
+  let isClosePromptPending = false;
+  let isCloseAuthorized = false;
   const mainWindow = new BrowserWindow({
     width: 960,
     height: 640,
@@ -227,6 +319,33 @@ const createWindow = () => {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
+  });
+
+  mainWindow.on("close", (event) => {
+    if (isCloseAuthorized) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (isClosePromptPending) {
+      return;
+    }
+
+    isClosePromptPending = true;
+
+    void resolveUnsavedChanges(mainWindow)
+      .then((resolution) => {
+        if (resolution === "cancel") {
+          return;
+        }
+
+        isCloseAuthorized = true;
+        mainWindow.close();
+      })
+      .finally(() => {
+        isClosePromptPending = false;
+      });
   });
 
   return mainWindow;
@@ -272,6 +391,12 @@ ipcMain.handle("dialog:open-csv-file", async (event) => {
 ipcMain.handle("dialog:open-workbook-file", async (event) => {
   try {
     const browserWindow = BrowserWindow.fromWebContents(event.sender);
+    const unsavedChangesResolution = await resolveUnsavedChanges(browserWindow);
+
+    if (unsavedChangesResolution === "cancel") {
+      return { canceled: true as const };
+    }
+
     const targetWindow = getTargetWindow(browserWindow);
     const dialogOptions: OpenDialogOptions = {
       title: "Open Workbook",
@@ -289,6 +414,7 @@ ipcMain.handle("dialog:open-workbook-file", async (event) => {
     return {
       canceled: false as const,
       ...(await workbookController.openWorkbookFile({
+        discardUnsavedChanges: unsavedChangesResolution === "discard",
         filePath: result.filePaths[0],
       })),
     };
@@ -346,38 +472,26 @@ ipcMain.handle("dialog:save-csv-file", async (event, args: SaveCsvFileArgs) => {
 ipcMain.handle(
   "dialog:save-workbook-file-as",
   async (event, args?: SaveWorkbookFileAsArgs) => {
-    try {
       const browserWindow = BrowserWindow.fromWebContents(event.sender);
-      const targetWindow = getTargetWindow(browserWindow);
-      const dialogOptions: SaveDialogOptions = {
-        title: "Save Workbook",
-        defaultPath: args?.defaultPath ?? DEFAULT_WORKBOOK_FILE_NAME,
-        filters: [{ name: "Spready Workbooks", extensions: ["spready"] }],
-      };
-      const saveDialogResult = targetWindow
-        ? await dialog.showSaveDialog(targetWindow, dialogOptions)
-        : await dialog.showSaveDialog(dialogOptions);
+      const filePath = await chooseWorkbookSavePath(
+        browserWindow,
+        args?.defaultPath,
+      );
 
-      if (saveDialogResult.canceled || !saveDialogResult.filePath) {
+      if (!filePath) {
+        return { canceled: true as const };
+      }
+
+      const result = await saveCurrentWorkbook(browserWindow, filePath);
+
+      if (!result) {
         return { canceled: true as const };
       }
 
       return {
         canceled: false as const,
-        ...(await workbookController.saveWorkbookFile({
-          filePath: saveDialogResult.filePath,
-        })),
+        ...result,
       };
-    } catch (error) {
-      dialog.showErrorBox(
-        "Save workbook failed",
-        error instanceof Error
-          ? error.message
-          : "The workbook file could not be saved.",
-      );
-
-      return { canceled: true as const };
-    }
   },
 );
 

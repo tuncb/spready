@@ -104,12 +104,17 @@ export class WorkbookController extends EventEmitter {
 
   applyTransaction(request: ApplyTransactionRequest): ApplyTransactionResult {
     const execution = applyWorkbookTransaction(this.#state, request);
-    const nextSummary = getWorkbookSummary(execution.state);
+    const nextState =
+      execution.changed && !request.dryRun
+        ? {
+            ...execution.state,
+            hasUnsavedChanges: true,
+          }
+        : execution.state;
+    const nextSummary = getWorkbookSummary(nextState);
 
     if (execution.changed && !request.dryRun) {
-      this.#state = execution.state;
-      this.#sheetEvaluationSnapshots.clear();
-      this.emit("changed", nextSummary);
+      this.#commitState(nextState);
     }
 
     return {
@@ -146,11 +151,18 @@ export class WorkbookController extends EventEmitter {
   async openWorkbookFile(
     request: OpenWorkbookFileRequest,
   ): Promise<WorkbookFileOperationResult> {
+    if (this.#state.hasUnsavedChanges && !request.discardUnsavedChanges) {
+      throw new Error(
+        "Workbook has unsaved changes. Save it first or retry with discardUnsavedChanges: true.",
+      );
+    }
+
     const filePath = path.resolve(request.filePath);
     const content = await fs.readFile(filePath, "utf8");
     const nextState = parseWorkbookDocument(content);
 
     nextState.documentFilePath = filePath;
+    nextState.hasUnsavedChanges = false;
     nextState.version = this.#state.version + 1;
 
     this.#commitState(nextState);
@@ -232,7 +244,10 @@ export class WorkbookController extends EventEmitter {
     changed: boolean;
     summary: WorkbookSummary;
   } {
-    if (this.#state.documentFilePath === filePath) {
+    if (
+      this.#state.documentFilePath === filePath &&
+      !this.#state.hasUnsavedChanges
+    ) {
       return {
         changed: false,
         summary: getWorkbookSummary(this.#state),
@@ -242,6 +257,7 @@ export class WorkbookController extends EventEmitter {
     this.#commitState({
       ...this.#state,
       documentFilePath: filePath,
+      hasUnsavedChanges: false,
       version: this.#state.version + 1,
     });
 

@@ -71,6 +71,7 @@ test("WorkbookController exposes raw range reads separately from display-range a
     sheetId: rawRange.sheetId,
     sheetName: rawRange.sheetName,
   });
+  assert.equal(controller.getSummary().hasUnsavedChanges, true);
 });
 
 test("WorkbookController keeps CSV export on raw input strings even when formulas are present", () => {
@@ -144,12 +145,15 @@ test("WorkbookController saves and opens native workbook files", async () => {
   );
 
   try {
+    assert.equal(controller.getSummary().hasUnsavedChanges, true);
+
     const saveResult = await controller.saveWorkbookFile({
       filePath: path.join(tempDirectory, "budget"),
     });
 
     assert.equal(saveResult.changed, true);
     assert.equal(saveResult.summary.documentFilePath, saveResult.filePath);
+    assert.equal(saveResult.summary.hasUnsavedChanges, false);
     assert.match(saveResult.filePath, /\.spready$/);
     assert.match(
       await fs.readFile(saveResult.filePath, "utf8"),
@@ -167,12 +171,24 @@ test("WorkbookController saves and opens native workbook files", async () => {
       ],
     });
 
+    assert.equal(controller.getSummary().hasUnsavedChanges, true);
+
+    await assert.rejects(
+      () =>
+        controller.openWorkbookFile({
+          filePath: saveResult.filePath,
+        }),
+      /discardUnsavedChanges: true/,
+    );
+
     const openResult = await controller.openWorkbookFile({
+      discardUnsavedChanges: true,
       filePath: saveResult.filePath,
     });
 
     assert.equal(openResult.changed, true);
     assert.equal(openResult.summary.documentFilePath, saveResult.filePath);
+    assert.equal(openResult.summary.hasUnsavedChanges, false);
     assert.equal(
       controller.getSheetDisplayRange({
         columnCount: 3,
@@ -190,6 +206,13 @@ test("WorkbookController saves and opens native workbook files", async () => {
       }).input,
       "Saved",
     );
+
+    const secondSaveResult = await controller.saveWorkbookFile({
+      filePath: saveResult.filePath,
+    });
+
+    assert.equal(secondSaveResult.changed, false);
+    assert.equal(secondSaveResult.summary.hasUnsavedChanges, false);
   } finally {
     await fs.rm(tempDirectory, { force: true, recursive: true });
   }
