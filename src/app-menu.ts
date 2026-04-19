@@ -5,11 +5,14 @@ export const APP_MENU_ACTIONS = {
   addRow: "sheet:add-row",
   deleteSelection: "edit:delete-selection",
   deleteSheet: "sheet:delete-sheet",
-  export: "export",
-  import: "import",
+  exportCsv: "csv:export",
+  importCsv: "csv:import",
   newSheet: "sheet:new-sheet",
+  openWorkbook: "workbook:open",
   paste: "edit:paste",
   pasteValues: "edit:paste-values",
+  saveWorkbook: "workbook:save",
+  saveWorkbookAs: "workbook:save-as",
 } as const;
 
 export type AppMenuAction =

@@ -11,14 +11,18 @@ import type {
   ControlServerInfo,
   CopyRangeRequest,
   CopyRangeResult,
+  CreateNewWorkbookRequest,
   CsvFileOperationResult,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
+  OpenWorkbookFileRequest,
+  SaveWorkbookFileRequest,
   PasteRangeRequest,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
+  WorkbookFileOperationResult,
   WorkbookSummary,
 } from "./workbook-core";
 
@@ -152,6 +156,10 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<ApplyTransactionResult>("applyTransaction", request);
   }
 
+  async createNewWorkbook(request?: CreateNewWorkbookRequest) {
+    return this.call<ApplyTransactionResult>("createNewWorkbook", request);
+  }
+
   async exportCsvFile(request: ExportCsvFileRequest) {
     return this.call<CsvFileOperationResult>("exportCsvFile", request);
   }
@@ -194,6 +202,14 @@ export class SpreadyControlClient extends EventEmitter {
 
   async pasteRange(request: PasteRangeRequest) {
     return this.call<ApplyTransactionResult>("pasteRange", request);
+  }
+
+  async openWorkbookFile(request: OpenWorkbookFileRequest) {
+    return this.call<WorkbookFileOperationResult>("openWorkbookFile", request);
+  }
+
+  async saveWorkbookFile(request: SaveWorkbookFileRequest) {
+    return this.call<WorkbookFileOperationResult>("saveWorkbookFile", request);
   }
 
   async call<Result>(method: string, params?: unknown): Promise<Result> {

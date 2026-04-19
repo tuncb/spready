@@ -6,29 +6,33 @@ import {
   applyWorkbookTransaction,
   createWorkbookState,
   getSheetColumnCount,
-  type CsvFileOperationResult,
-  type ExportCsvFileRequest,
   getWorkbookSheet,
   getSheetCsv,
   getSheetRange,
-  type CellDataRequest,
-  type CellDataResult,
   getSheetUsedRange,
   getWorkbookSummary,
   getSheetRowCount,
   type ApplyTransactionRequest,
   type ApplyTransactionResult,
+  type CellDataRequest,
+  type CellDataResult,
+  type ClearRangeRequest,
+  type CopyRangeRequest,
+  type CopyRangeResult,
+  type CreateNewWorkbookRequest,
+  type CsvFileOperationResult,
+  type ExportCsvFileRequest,
   type ImportCsvFileRequest,
   parseTsv,
   serializeTsv,
-  type ClearRangeRequest,
-  type SheetRangeRequest,
-  type SheetDisplayRangeResult,
-  type SheetRangeResult,
-  type CopyRangeRequest,
-  type CopyRangeResult,
+  type OpenWorkbookFileRequest,
   type PasteRangeRequest,
+  type SaveWorkbookFileRequest,
+  type SheetDisplayRangeResult,
+  type SheetRangeRequest,
+  type SheetRangeResult,
   type UsedRangeResult,
+  type WorkbookFileOperationResult,
   type WorkbookState,
   type WorkbookSummary,
 } from "./workbook-core";
@@ -37,6 +41,11 @@ import {
   getCellEvaluation,
   type SheetEvaluationSnapshot,
 } from "./formula-engine";
+import {
+  parseWorkbookDocument,
+  serializeWorkbookDocument,
+  WORKBOOK_DOCUMENT_EXTENSION,
+} from "./workbook-document";
 
 export class WorkbookController extends EventEmitter {
   #state: WorkbookState = createWorkbookState();
@@ -149,14 +158,42 @@ export class WorkbookController extends EventEmitter {
     });
   }
 
+  createNewWorkbook(
+    request: CreateNewWorkbookRequest = {},
+  ): ApplyTransactionResult {
+    if (this.#state.hasUnsavedChanges && !request.discardUnsavedChanges) {
+      throw new Error(
+        "Workbook has unsaved changes. Save it first or retry with discardUnsavedChanges: true.",
+      );
+    }
+
+    const nextState = createWorkbookState();
+
+    nextState.version = this.#state.version + 1;
+    this.#commitState(nextState);
+
+    const summary = getWorkbookSummary(this.#state);
+
+    return {
+      changed: true,
+      summary,
+      version: summary.version,
+    };
+  }
+
   applyTransaction(request: ApplyTransactionRequest): ApplyTransactionResult {
     const execution = applyWorkbookTransaction(this.#state, request);
-    const nextSummary = getWorkbookSummary(execution.state);
+    const nextState =
+      execution.changed && !request.dryRun
+        ? {
+            ...execution.state,
+            hasUnsavedChanges: true,
+          }
+        : execution.state;
+    const nextSummary = getWorkbookSummary(nextState);
 
     if (execution.changed && !request.dryRun) {
-      this.#state = execution.state;
-      this.#sheetEvaluationSnapshots.clear();
-      this.emit("changed", nextSummary);
+      this.#commitState(nextState);
     }
 
     return {
@@ -187,6 +224,56 @@ export class WorkbookController extends EventEmitter {
     return {
       ...result,
       filePath,
+    };
+  }
+
+  async openWorkbookFile(
+    request: OpenWorkbookFileRequest,
+  ): Promise<WorkbookFileOperationResult> {
+    if (this.#state.hasUnsavedChanges && !request.discardUnsavedChanges) {
+      throw new Error(
+        "Workbook has unsaved changes. Save it first or retry with discardUnsavedChanges: true.",
+      );
+    }
+
+    const filePath = path.resolve(request.filePath);
+    const content = await fs.readFile(filePath, "utf8");
+    const nextState = parseWorkbookDocument(content);
+
+    nextState.documentFilePath = filePath;
+    nextState.hasUnsavedChanges = false;
+    nextState.version = this.#state.version + 1;
+
+    this.#commitState(nextState);
+
+    const summary = getWorkbookSummary(this.#state);
+
+    return {
+      changed: true,
+      filePath,
+      summary,
+      version: summary.version,
+    };
+  }
+
+  async saveWorkbookFile(
+    request: SaveWorkbookFileRequest,
+  ): Promise<WorkbookFileOperationResult> {
+    const filePath = normalizeWorkbookFilePath(request.filePath);
+
+    await fs.writeFile(
+      filePath,
+      serializeWorkbookDocument(this.#state),
+      "utf8",
+    );
+
+    const result = this.#updateDocumentFilePath(filePath);
+
+    return {
+      changed: result.changed,
+      filePath,
+      summary: result.summary,
+      version: result.summary.version,
     };
   }
 
@@ -229,6 +316,39 @@ export class WorkbookController extends EventEmitter {
     this.#sheetEvaluationSnapshots.set(sheet.id, nextSnapshot);
     return nextSnapshot;
   }
+
+  #commitState(nextState: WorkbookState) {
+    this.#state = nextState;
+    this.#sheetEvaluationSnapshots.clear();
+    this.emit("changed", getWorkbookSummary(this.#state));
+  }
+
+  #updateDocumentFilePath(filePath: string): {
+    changed: boolean;
+    summary: WorkbookSummary;
+  } {
+    if (
+      this.#state.documentFilePath === filePath &&
+      !this.#state.hasUnsavedChanges
+    ) {
+      return {
+        changed: false,
+        summary: getWorkbookSummary(this.#state),
+      };
+    }
+
+    this.#commitState({
+      ...this.#state,
+      documentFilePath: filePath,
+      hasUnsavedChanges: false,
+      version: this.#state.version + 1,
+    });
+
+    return {
+      changed: true,
+      summary: getWorkbookSummary(this.#state),
+    };
+  }
 }
 
 function normalizeCsvFilePath(filePath: string): string {
@@ -239,6 +359,16 @@ function normalizeCsvFilePath(filePath: string): string {
   }
 
   return `${resolvedFilePath}.csv`;
+}
+
+function normalizeWorkbookFilePath(filePath: string): string {
+  const resolvedFilePath = path.resolve(filePath);
+
+  if (resolvedFilePath.toLowerCase().endsWith(WORKBOOK_DOCUMENT_EXTENSION)) {
+    return resolvedFilePath;
+  }
+
+  return `${resolvedFilePath}${WORKBOOK_DOCUMENT_EXTENSION}`;
 }
 
 function assertCellIndex(value: number, limit: number, label: string) {

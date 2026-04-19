@@ -6,8 +6,11 @@ import type {
   ClearRangeRequest,
   ControlServerInfo,
   CopyRangeRequest,
+  CreateNewWorkbookRequest,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
+  OpenWorkbookFileRequest,
+  SaveWorkbookFileRequest,
   PasteRangeRequest,
   SheetRangeRequest,
   WorkbookSummary,
@@ -235,6 +238,10 @@ export class SpreadyControlServer {
         return this.#controller.clearRange(params as ClearRangeRequest);
       case "copyRange":
         return this.#controller.copyRange(params as CopyRangeRequest);
+      case "createNewWorkbook":
+        return this.#controller.createNewWorkbook(
+          (params as CreateNewWorkbookRequest | undefined) ?? {},
+        );
       case "exportCsvFile":
         return this.#controller.exportCsvFile(params as ExportCsvFileRequest);
       case "getCellData":
@@ -261,13 +268,22 @@ export class SpreadyControlServer {
         return this.#controller.getSummary();
       case "importCsvFile":
         return this.#controller.importCsvFile(params as ImportCsvFileRequest);
+      case "openWorkbookFile":
+        return this.#controller.openWorkbookFile(
+          params as OpenWorkbookFileRequest,
+        );
       case "pasteRange":
         return this.#controller.pasteRange(params as PasteRangeRequest);
+      case "saveWorkbookFile":
+        return this.#controller.saveWorkbookFile(
+          params as SaveWorkbookFileRequest,
+        );
       case "listMethods":
         return [
           "applyTransaction",
           "clearRange",
           "copyRange",
+          "createNewWorkbook",
           "exportCsvFile",
           "getCellData",
           "getControlInfo",
@@ -278,8 +294,10 @@ export class SpreadyControlServer {
           "getWorkbookSummary",
           "importCsvFile",
           "listMethods",
+          "openWorkbookFile",
           "pasteRange",
           "ping",
+          "saveWorkbookFile",
         ];
       case "ping":
         return {

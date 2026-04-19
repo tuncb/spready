@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import { WorkbookController } from "./workbook-controller";
@@ -68,6 +71,7 @@ test("WorkbookController exposes raw range reads separately from display-range a
     sheetId: rawRange.sheetId,
     sheetName: rawRange.sheetName,
   });
+  assert.equal(controller.getSummary().hasUnsavedChanges, true);
 });
 
 test("WorkbookController keeps CSV export on raw input strings even when formulas are present", () => {
@@ -173,5 +177,155 @@ test("WorkbookController supports raw-vs-display range copy plus explicit paste 
       ["1", "2", "=A1+B1"],
       ["1", "", ""],
     ],
+  );
+});
+
+test("WorkbookController saves and opens native workbook files", async () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["1", "2", "=A1+B1"],
+          ["North", "980", ""],
+        ],
+      },
+      {
+        sourceFilePath: "C:\\imports\\north.csv",
+        type: "setSheetSourceFile",
+      },
+      {
+        activate: true,
+        columnCount: 2,
+        name: "Notes",
+        rowCount: 2,
+        type: "addSheet",
+      },
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "Saved",
+      },
+    ],
+  });
+
+  const tempDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "spready-controller-"),
+  );
+
+  try {
+    assert.equal(controller.getSummary().hasUnsavedChanges, true);
+
+    const saveResult = await controller.saveWorkbookFile({
+      filePath: path.join(tempDirectory, "budget"),
+    });
+
+    assert.equal(saveResult.changed, true);
+    assert.equal(saveResult.summary.documentFilePath, saveResult.filePath);
+    assert.equal(saveResult.summary.hasUnsavedChanges, false);
+    assert.match(saveResult.filePath, /\.spready$/);
+    assert.match(
+      await fs.readFile(saveResult.filePath, "utf8"),
+      /"format": "spready-workbook"/,
+    );
+
+    controller.applyTransaction({
+      operations: [
+        {
+          columnIndex: 0,
+          rowIndex: 0,
+          type: "setCell",
+          value: "Changed",
+        },
+      ],
+    });
+
+    assert.equal(controller.getSummary().hasUnsavedChanges, true);
+
+    await assert.rejects(
+      () =>
+        controller.openWorkbookFile({
+          filePath: saveResult.filePath,
+        }),
+      /discardUnsavedChanges: true/,
+    );
+
+    const openResult = await controller.openWorkbookFile({
+      discardUnsavedChanges: true,
+      filePath: saveResult.filePath,
+    });
+
+    assert.equal(openResult.changed, true);
+    assert.equal(openResult.summary.documentFilePath, saveResult.filePath);
+    assert.equal(openResult.summary.hasUnsavedChanges, false);
+    assert.equal(
+      controller.getSheetDisplayRange({
+        columnCount: 3,
+        rowCount: 2,
+        sheetId: openResult.summary.sheets[0].id,
+        startColumn: 0,
+        startRow: 0,
+      }).values[0][2],
+      "3",
+    );
+    assert.equal(
+      controller.getCellData({
+        columnIndex: 0,
+        rowIndex: 0,
+      }).input,
+      "Saved",
+    );
+
+    const secondSaveResult = await controller.saveWorkbookFile({
+      filePath: saveResult.filePath,
+    });
+
+    assert.equal(secondSaveResult.changed, false);
+    assert.equal(secondSaveResult.summary.hasUnsavedChanges, false);
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
+});
+
+test("WorkbookController creates a new workbook and guards unsaved replacement", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "draft",
+      },
+    ],
+  });
+
+  assert.equal(controller.getSummary().hasUnsavedChanges, true);
+
+  assert.throws(
+    () => controller.createNewWorkbook(),
+    /discardUnsavedChanges: true/,
+  );
+
+  const resetResult = controller.createNewWorkbook({
+    discardUnsavedChanges: true,
+  });
+
+  assert.equal(resetResult.changed, true);
+  assert.equal(resetResult.summary.documentFilePath, undefined);
+  assert.equal(resetResult.summary.hasUnsavedChanges, false);
+  assert.equal(resetResult.summary.sheets.length, 1);
+  assert.equal(
+    controller.getCellData({
+      columnIndex: 0,
+      rowIndex: 0,
+    }).input,
+    "",
   );
 });

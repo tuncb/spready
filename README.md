@@ -2,6 +2,8 @@
 
 Spready now keeps workbook state in the Electron main process and exposes a local control endpoint for external LLM harnesses. The renderer is a view over that shared workbook state, not the source of truth.
 
+Native workbook documents use the `.spready` extension. CSV import and export remain available as sheet-level interchange tools.
+
 ## Commands
 
 ### Install
@@ -17,6 +19,8 @@ npm start
 ```
 
 When the app starts it also opens a local TCP control server on `127.0.0.1:45731` by default. If that port is busy it falls back to a random free local port and prints the chosen address in the Electron console. You can override the preferred port with `SPREADY_CONTROL_PORT`.
+
+Workbook summaries report `hasUnsavedChanges` so clients can decide whether to save, discard, or cancel before replacing the current workbook.
 
 ### MCP stdio wrapper
 
@@ -95,6 +99,7 @@ Each response is a single JSON line:
   "result": {
     "activeSheetId": "sheet-1",
     "activeSheetName": "Sheet 1",
+    "hasUnsavedChanges": false,
     "sheets": [
       { "id": "sheet-1", "name": "Sheet 1", "rowCount": 200, "columnCount": 50 }
     ],
@@ -116,6 +121,9 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `getSheetRange`
 - `getUsedRange`
 - `getSheetCsv`
+- `createNewWorkbook`
+- `openWorkbookFile`
+- `saveWorkbookFile`
 - `importCsvFile`
 - `exportCsvFile`
 - `applyTransaction`
@@ -147,6 +155,45 @@ Export a specific sheet to CSV without changing the active sheet:
   "params": {
     "filePath": "C:\\\\exports\\\\quarterly.csv",
     "sheetId": "sheet-2"
+  }
+}
+```
+
+### Workbook file examples
+
+Create a new blank workbook, replacing the current workbook only if discarding unsaved changes is intentional:
+
+```json
+{
+  "id": 4,
+  "method": "createNewWorkbook",
+  "params": {
+    "discardUnsavedChanges": true
+  }
+}
+```
+
+Open a native Spready workbook file:
+
+```json
+{
+  "id": 5,
+  "method": "openWorkbookFile",
+  "params": {
+    "filePath": "C:\\\\workbooks\\\\budget.spready",
+    "discardUnsavedChanges": true
+  }
+}
+```
+
+Save the current workbook as a native Spready workbook file:
+
+```json
+{
+  "id": 6,
+  "method": "saveWorkbookFile",
+  "params": {
+    "filePath": "C:\\\\workbooks\\\\budget.spready"
   }
 }
 ```
@@ -205,11 +252,14 @@ The stdio MCP wrapper currently exposes:
 
 - `describe_capabilities`
 - `get_workbook_summary`
+- `create_new_workbook`
 - `get_used_range`
 - `get_cell_data`
 - `get_sheet_display_range`
 - `get_sheet_range`
 - `get_sheet_csv`
+- `open_workbook_file`
+- `save_workbook_file`
 - `import_csv_file`
 - `export_csv_file`
 - `apply_transaction`
@@ -220,6 +270,12 @@ The stdio MCP wrapper currently exposes:
 
 `import_csv_file` and `export_csv_file` both accept an optional `sheetId`. If omitted, they use
 the active sheet.
+
+`open_workbook_file` and `save_workbook_file` operate on the full multi-sheet workbook and use the `.spready` document format.
+
+When `get_workbook_summary` reports `hasUnsavedChanges: true`, remote clients should either save first or pass `discardUnsavedChanges: true` to `open_workbook_file` only when replacing local changes is intended.
+
+`create_new_workbook` follows the same rule and requires `discardUnsavedChanges: true` when replacing a dirty in-memory workbook.
 
 ### Resources
 

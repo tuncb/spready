@@ -1,0 +1,153 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  applyWorkbookTransaction,
+  createWorkbookState,
+} from "./workbook-core";
+import {
+  parseWorkbookDocument,
+  serializeWorkbookDocument,
+  WORKBOOK_DOCUMENT_FORMAT,
+  WORKBOOK_DOCUMENT_VERSION,
+} from "./workbook-document";
+
+test("workbook documents round-trip sparse multi-sheet workbook state", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Revenue", "2026", "=B2*2"],
+          ["North", "1200", ""],
+        ],
+      },
+      {
+        sourceFilePath: "C:\\imports\\quarterly.csv",
+        type: "setSheetSourceFile",
+      },
+      {
+        activate: true,
+        columnCount: 3,
+        name: "Budget",
+        rowCount: 4,
+        sheetId: "sheet-12",
+        type: "addSheet",
+      },
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        sheetId: "sheet-12",
+        type: "setCell",
+        value: "2026",
+      },
+      {
+        columnIndex: 1,
+        rowIndex: 0,
+        sheetId: "sheet-12",
+        type: "setCell",
+        value: "=A1+1",
+      },
+    ],
+  }).state;
+
+  workbook.documentFilePath = "C:\\workbooks\\budget.spready";
+
+  const serialized = serializeWorkbookDocument(workbook);
+  const parsed = parseWorkbookDocument(serialized);
+
+  assert.ok(serialized.includes(`"format": "${WORKBOOK_DOCUMENT_FORMAT}"`));
+  assert.ok(
+    serialized.includes(`"formatVersion": ${WORKBOOK_DOCUMENT_VERSION}`),
+  );
+  assert.ok(!serialized.includes("documentFilePath"));
+  assert.equal(parsed.version, 0);
+  assert.equal(parsed.documentFilePath, undefined);
+  assert.equal(parsed.activeSheetId, "sheet-12");
+  assert.equal(parsed.nextSheetNumber, workbook.nextSheetNumber);
+  assert.deepEqual(
+    parsed.sheets.map((sheet) => ({
+      columnCount: sheet.cells[0]?.length ?? 0,
+      id: sheet.id,
+      name: sheet.name,
+      rowCount: sheet.cells.length,
+      sourceFilePath: sheet.sourceFilePath,
+    })),
+    [
+      {
+        columnCount: 50,
+        id: workbook.sheets[0].id,
+        name: "Sheet 1",
+        rowCount: 200,
+        sourceFilePath: "C:\\imports\\quarterly.csv",
+      },
+      {
+        columnCount: 3,
+        id: "sheet-12",
+        name: "Budget",
+        rowCount: 4,
+        sourceFilePath: undefined,
+      },
+    ],
+  );
+  assert.deepEqual(parsed.sheets[0].cells[0].slice(0, 3), [
+    "Revenue",
+    "2026",
+    "=B2*2",
+  ]);
+  assert.deepEqual(parsed.sheets[0].cells[1].slice(0, 3), ["North", "1200", ""]);
+  assert.deepEqual(parsed.sheets[1].cells[0].slice(0, 2), ["2026", "=A1+1"]);
+  assert.equal(parsed.sheets[1].cells[3][2], "");
+});
+
+test("workbook documents reject invalid workbook references and cell entries", () => {
+  assert.throws(
+    () =>
+      parseWorkbookDocument(
+        JSON.stringify({
+          format: WORKBOOK_DOCUMENT_FORMAT,
+          formatVersion: WORKBOOK_DOCUMENT_VERSION,
+          workbook: {
+            activeSheetId: "missing",
+            nextSheetNumber: 2,
+            sheets: [
+              {
+                cells: [],
+                columnCount: 2,
+                id: "sheet-1",
+                name: "Sheet 1",
+                rowCount: 2,
+              },
+            ],
+          },
+        }),
+      ),
+    /missing active sheet "missing"/,
+  );
+
+  assert.throws(
+    () =>
+      parseWorkbookDocument(
+        JSON.stringify({
+          format: WORKBOOK_DOCUMENT_FORMAT,
+          formatVersion: WORKBOOK_DOCUMENT_VERSION,
+          workbook: {
+            activeSheetId: "sheet-1",
+            nextSheetNumber: 2,
+            sheets: [
+              {
+                cells: [{ column: 4, row: 0, value: "bad" }],
+                columnCount: 2,
+                id: "sheet-1",
+                name: "Sheet 1",
+                rowCount: 2,
+              },
+            ],
+          },
+        }),
+      ),
+    /out-of-bounds cell 0:4/,
+  );
+});
