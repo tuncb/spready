@@ -59,7 +59,19 @@ const sheetDisplayRangeSchema = z.object({
 const cellDataSchema = z.object({
   columnIndex: z.int().min(0),
   display: z.string(),
-  errorCode: z.enum(["PARSE", "REF", "DIV0", "VALUE", "CYCLE"]).optional(),
+  errorCode: z
+    .enum([
+      "PARSE",
+      "REF",
+      "DIV0",
+      "VALUE",
+      "CYCLE",
+      "NAME",
+      "NUM",
+      "NA",
+      "NULL",
+    ])
+    .optional(),
   input: z.string(),
   isFormula: z.boolean(),
   rowIndex: z.int().min(0),
@@ -437,6 +449,8 @@ const guideResource = {
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.",
+    "Evaluated display reads include same-sheet arithmetic, comparisons, text operators, ranges, core worksheet functions, and same-sheet lookup functions such as INDEX, MATCH, and XLOOKUP.",
+    "Current formula exclusions include absolute references with $, cross-sheet references, defined names, and LET.",
     "Use copy_range when you need a tab-delimited clipboard-style payload for one explicit rectangular range.",
     "Use get_cell_data when you need one cell's raw formula text plus its evaluated display result.",
     "Many transaction operations also default to the active sheet when sheetId is omitted.",
@@ -747,7 +761,8 @@ async function main() {
       }),
       outputSchema: applyTransactionResultSchema,
     },
-    async (args) => createTextResult(await controlClient.createNewWorkbook(args)),
+    async (args) =>
+      createTextResult(await controlClient.createNewWorkbook(args)),
   );
 
   server.registerTool(
@@ -777,7 +792,8 @@ async function main() {
       }),
       outputSchema: workbookFileOperationResultSchema,
     },
-    async (args) => createTextResult(await controlClient.openWorkbookFile(args)),
+    async (args) =>
+      createTextResult(await controlClient.openWorkbookFile(args)),
   );
 
   server.registerTool(
@@ -801,7 +817,8 @@ async function main() {
       }),
       outputSchema: workbookFileOperationResultSchema,
     },
-    async (args) => createTextResult(await controlClient.saveWorkbookFile(args)),
+    async (args) =>
+      createTextResult(await controlClient.saveWorkbookFile(args)),
   );
 
   server.registerTool(

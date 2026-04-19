@@ -74,6 +74,64 @@ test("WorkbookController exposes raw range reads separately from display-range a
   assert.equal(controller.getSummary().hasUnsavedChanges, true);
 });
 
+test("WorkbookController exposes expanded formula compatibility through the same raw and display reads", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)"],
+          [
+            "b",
+            "20",
+            '=XLOOKUP("b",A1:A2,B1:B2,"nf")',
+            '=TEXTJOIN(", ",TRUE,A1:A2)',
+          ],
+        ],
+      },
+    ],
+  });
+
+  const rawRange = controller.getSheetRange({
+    columnCount: 4,
+    rowCount: 2,
+    startColumn: 0,
+    startRow: 0,
+  });
+  const displayRange = controller.getSheetDisplayRange({
+    columnCount: 4,
+    rowCount: 2,
+    startColumn: 0,
+    startRow: 0,
+  });
+  const lookupCell = controller.getCellData({
+    columnIndex: 2,
+    rowIndex: 1,
+  });
+
+  assert.deepEqual(rawRange.values, [
+    ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)"],
+    ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)'],
+  ]);
+  assert.deepEqual(displayRange.values, [
+    ["a", "10", "30", "99"],
+    ["b", "20", "20", "a, b"],
+  ]);
+  assert.deepEqual(lookupCell, {
+    columnIndex: 2,
+    display: "20",
+    input: '=XLOOKUP("b",A1:A2,B1:B2,"nf")',
+    isFormula: true,
+    rowIndex: 1,
+    sheetId: rawRange.sheetId,
+    sheetName: rawRange.sheetName,
+  });
+});
+
 test("WorkbookController keeps CSV export on raw input strings even when formulas are present", () => {
   const controller = new WorkbookController();
 

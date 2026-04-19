@@ -49,7 +49,16 @@ export interface SheetRangeRequest {
   columnCount: number;
 }
 
-export type FormulaErrorCode = "PARSE" | "REF" | "DIV0" | "VALUE" | "CYCLE";
+export type FormulaErrorCode =
+  | "PARSE"
+  | "REF"
+  | "DIV0"
+  | "VALUE"
+  | "CYCLE"
+  | "NAME"
+  | "NUM"
+  | "NA"
+  | "NULL";
 
 export interface SheetRangeResult {
   sheetId: string;

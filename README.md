@@ -268,6 +268,9 @@ The stdio MCP wrapper currently exposes:
 `get_sheet_display_range` returns evaluated display values for the grid view.
 `get_cell_data` returns both the raw input and the evaluated display value for one cell.
 
+Display reads evaluate the same-sheet formula engine used by the app UI, including arithmetic, comparisons, text operators, ranges, core math/logical/text functions, and same-sheet lookup functions such as `INDEX`, `MATCH`, and `XLOOKUP`.
+Raw reads continue to preserve the stored input exactly as written.
+
 `import_csv_file` and `export_csv_file` both accept an optional `sheetId`. If omitted, they use
 the active sheet.
 

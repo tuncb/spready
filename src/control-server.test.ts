@@ -84,10 +84,77 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
   }
 });
 
+test("SpreadyControlServer exposes expanded formula compatibility over TCP", async () => {
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
+
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    await client.applyTransaction({
+      operations: [
+        {
+          startColumn: 0,
+          startRow: 0,
+          type: "setRange",
+          values: [
+            ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)"],
+            [
+              "b",
+              "20",
+              '=XLOOKUP("b",A1:A2,B1:B2,"nf")',
+              '=TEXTJOIN(", ",TRUE,A1:A2)',
+            ],
+          ],
+        },
+      ],
+    });
+
+    const displayRange = await client.getSheetDisplayRange({
+      columnCount: 4,
+      rowCount: 2,
+      startColumn: 0,
+      startRow: 0,
+    });
+    const cellData = await client.getCellData({
+      columnIndex: 2,
+      rowIndex: 1,
+    });
+
+    assert.deepEqual(displayRange.values, [
+      ["a", "10", "30", "99"],
+      ["b", "20", "20", "a, b"],
+    ]);
+    assert.deepEqual(cellData, {
+      columnIndex: 2,
+      display: "20",
+      input: '=XLOOKUP("b",A1:A2,B1:B2,"nf")',
+      isFormula: true,
+      rowIndex: 1,
+      sheetId: displayRange.sheetId,
+      sheetName: displayRange.sheetName,
+    });
+  } finally {
+    await client.close();
+    await server.stop();
+  }
+});
+
 test("SpreadyControlServer saves and opens native workbook files over TCP", async () => {
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
-  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-tcp-"));
+  const tempDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "spready-tcp-"),
+  );
 
   await server.start();
 
@@ -118,8 +185,12 @@ test("SpreadyControlServer saves and opens native workbook files over TCP", asyn
     assert.equal(saveResult.changed, true);
     assert.equal(saveResult.summary.documentFilePath, filePath);
     assert.equal(saveResult.summary.hasUnsavedChanges, false);
-    assert.ok((await client.call<string[]>("listMethods")).includes("openWorkbookFile"));
-    assert.ok((await client.call<string[]>("listMethods")).includes("saveWorkbookFile"));
+    assert.ok(
+      (await client.call<string[]>("listMethods")).includes("openWorkbookFile"),
+    );
+    assert.ok(
+      (await client.call<string[]>("listMethods")).includes("saveWorkbookFile"),
+    );
 
     await client.applyTransaction({
       operations: [
