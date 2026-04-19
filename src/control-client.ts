@@ -11,10 +11,13 @@ import type {
   CsvFileOperationResult,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
+  OpenWorkbookFileRequest,
+  SaveWorkbookFileRequest,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
+  WorkbookFileOperationResult,
   WorkbookSummary,
 } from "./workbook-core";
 
@@ -178,6 +181,14 @@ export class SpreadyControlClient extends EventEmitter {
 
   async importCsvFile(request: ImportCsvFileRequest) {
     return this.call<CsvFileOperationResult>("importCsvFile", request);
+  }
+
+  async openWorkbookFile(request: OpenWorkbookFileRequest) {
+    return this.call<WorkbookFileOperationResult>("openWorkbookFile", request);
+  }
+
+  async saveWorkbookFile(request: SaveWorkbookFileRequest) {
+    return this.call<WorkbookFileOperationResult>("saveWorkbookFile", request);
   }
 
   async call<Result>(method: string, params?: unknown): Promise<Result> {

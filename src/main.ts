@@ -28,6 +28,7 @@ import type {
 
 const APP_DISPLAY_NAME = "Spready";
 const DEFAULT_EXPORT_FILE_NAME = "Sheet1.csv";
+const DEFAULT_WORKBOOK_FILE_NAME = "Workbook.spready";
 const DEFAULT_CONTROL_HOST = "127.0.0.1";
 const DEFAULT_CONTROL_PORT = 45731;
 
@@ -52,6 +53,10 @@ app.setName(APP_DISPLAY_NAME);
 
 type SaveCsvFileArgs = {
   content: string;
+  defaultPath?: string;
+};
+
+type SaveWorkbookFileAsArgs = {
   defaultPath?: string;
 };
 
@@ -106,17 +111,37 @@ function buildAppMenu() {
       label: "File",
       submenu: [
         {
-          label: "Import",
+          label: "Open Workbook",
           accelerator: "CmdOrCtrl+O",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.import);
+            sendMenuAction(APP_MENU_ACTIONS.openWorkbook);
           },
         },
         {
-          label: "Export",
+          label: "Save Workbook",
+          accelerator: "CmdOrCtrl+S",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.saveWorkbook);
+          },
+        },
+        {
+          label: "Save Workbook As",
           accelerator: "CmdOrCtrl+Shift+S",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.export);
+            sendMenuAction(APP_MENU_ACTIONS.saveWorkbookAs);
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Import CSV",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.importCsv);
+          },
+        },
+        {
+          label: "Export CSV",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.exportCsv);
           },
         },
         { type: "separator" },
@@ -244,6 +269,41 @@ ipcMain.handle("dialog:open-csv-file", async (event) => {
   }
 });
 
+ipcMain.handle("dialog:open-workbook-file", async (event) => {
+  try {
+    const browserWindow = BrowserWindow.fromWebContents(event.sender);
+    const targetWindow = getTargetWindow(browserWindow);
+    const dialogOptions: OpenDialogOptions = {
+      title: "Open Workbook",
+      properties: ["openFile"],
+      filters: [{ name: "Spready Workbooks", extensions: ["spready"] }],
+    };
+    const result = targetWindow
+      ? await dialog.showOpenDialog(targetWindow, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true as const };
+    }
+
+    return {
+      canceled: false as const,
+      ...(await workbookController.openWorkbookFile({
+        filePath: result.filePaths[0],
+      })),
+    };
+  } catch (error) {
+    dialog.showErrorBox(
+      "Open workbook failed",
+      error instanceof Error
+        ? error.message
+        : "The workbook file could not be opened.",
+    );
+
+    return { canceled: true as const };
+  }
+});
+
 ipcMain.handle("dialog:save-csv-file", async (event, args: SaveCsvFileArgs) => {
   try {
     const browserWindow = BrowserWindow.fromWebContents(event.sender);
@@ -284,6 +344,44 @@ ipcMain.handle("dialog:save-csv-file", async (event, args: SaveCsvFileArgs) => {
 });
 
 ipcMain.handle(
+  "dialog:save-workbook-file-as",
+  async (event, args?: SaveWorkbookFileAsArgs) => {
+    try {
+      const browserWindow = BrowserWindow.fromWebContents(event.sender);
+      const targetWindow = getTargetWindow(browserWindow);
+      const dialogOptions: SaveDialogOptions = {
+        title: "Save Workbook",
+        defaultPath: args?.defaultPath ?? DEFAULT_WORKBOOK_FILE_NAME,
+        filters: [{ name: "Spready Workbooks", extensions: ["spready"] }],
+      };
+      const saveDialogResult = targetWindow
+        ? await dialog.showSaveDialog(targetWindow, dialogOptions)
+        : await dialog.showSaveDialog(dialogOptions);
+
+      if (saveDialogResult.canceled || !saveDialogResult.filePath) {
+        return { canceled: true as const };
+      }
+
+      return {
+        canceled: false as const,
+        ...(await workbookController.saveWorkbookFile({
+          filePath: saveDialogResult.filePath,
+        })),
+      };
+    } catch (error) {
+      dialog.showErrorBox(
+        "Save workbook failed",
+        error instanceof Error
+          ? error.message
+          : "The workbook file could not be saved.",
+      );
+
+      return { canceled: true as const };
+    }
+  },
+);
+
+ipcMain.handle(
   "workbook:apply-transaction",
   (_event, args: ApplyTransactionRequest) =>
     workbookController.applyTransaction(args),
@@ -307,6 +405,10 @@ ipcMain.handle(
   "workbook:get-sheet-csv",
   (_event, args?: { sheetId?: string }) =>
     workbookController.getSheetCsv(args?.sheetId),
+);
+
+ipcMain.handle("workbook:save-file", (_event, args: { filePath: string }) =>
+  workbookController.saveWorkbookFile(args),
 );
 
 ipcMain.handle("workbook:get-summary", () => workbookController.getSummary());

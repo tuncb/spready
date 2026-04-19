@@ -2,9 +2,12 @@ export const APP_MENU_ACTIONS = {
   addColumn: "sheet:add-column",
   addRow: "sheet:add-row",
   deleteSheet: "sheet:delete-sheet",
-  export: "export",
-  import: "import",
+  exportCsv: "csv:export",
+  importCsv: "csv:import",
   newSheet: "sheet:new-sheet",
+  openWorkbook: "workbook:open",
+  saveWorkbook: "workbook:save",
+  saveWorkbookAs: "workbook:save-as",
 } as const;
 
 export type AppMenuAction =

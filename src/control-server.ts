@@ -6,6 +6,8 @@ import type {
   ControlServerInfo,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
+  OpenWorkbookFileRequest,
+  SaveWorkbookFileRequest,
   SheetRangeRequest,
   WorkbookSummary,
 } from "./workbook-core";
@@ -254,6 +256,14 @@ export class SpreadyControlServer {
         return this.#controller.getSummary();
       case "importCsvFile":
         return this.#controller.importCsvFile(params as ImportCsvFileRequest);
+      case "openWorkbookFile":
+        return this.#controller.openWorkbookFile(
+          params as OpenWorkbookFileRequest,
+        );
+      case "saveWorkbookFile":
+        return this.#controller.saveWorkbookFile(
+          params as SaveWorkbookFileRequest,
+        );
       case "listMethods":
         return [
           "applyTransaction",
@@ -267,7 +277,9 @@ export class SpreadyControlServer {
           "getWorkbookSummary",
           "importCsvFile",
           "listMethods",
+          "openWorkbookFile",
           "ping",
+          "saveWorkbookFile",
         ];
       case "ping":
         return {

@@ -8,6 +8,7 @@ import type {
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
+  WorkbookFileOperationResult,
   WorkbookSummary,
 } from "./workbook-core";
 
@@ -30,6 +31,22 @@ type SaveCsvFileResult =
       filePath: string;
     };
 
+type OpenWorkbookFileResult =
+  | {
+      canceled: true;
+    }
+  | ({
+      canceled: false;
+    } & WorkbookFileOperationResult);
+
+type SaveWorkbookFileAsResult =
+  | {
+      canceled: true;
+    }
+  | ({
+      canceled: false;
+    } & WorkbookFileOperationResult);
+
 declare global {
   interface Window {
     appShell: {
@@ -50,10 +67,17 @@ declare global {
         listener: (summary: WorkbookSummary) => void,
       ) => () => void;
       openCsvFile: () => Promise<OpenCsvFileResult>;
+      openWorkbookFile: () => Promise<OpenWorkbookFileResult>;
       saveCsvFile: (
         content: string,
         defaultPath?: string,
       ) => Promise<SaveCsvFileResult>;
+      saveWorkbookFile: (
+        filePath: string,
+      ) => Promise<WorkbookFileOperationResult>;
+      saveWorkbookFileAs: (
+        defaultPath?: string,
+      ) => Promise<SaveWorkbookFileAsResult>;
     };
   }
 }

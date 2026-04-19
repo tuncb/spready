@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import { WorkbookController } from "./workbook-controller";
@@ -100,4 +103,94 @@ test("WorkbookController keeps CSV export on raw input strings even when formula
       ["", "6"],
     ],
   );
+});
+
+test("WorkbookController saves and opens native workbook files", async () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["1", "2", "=A1+B1"],
+          ["North", "980", ""],
+        ],
+      },
+      {
+        sourceFilePath: "C:\\imports\\north.csv",
+        type: "setSheetSourceFile",
+      },
+      {
+        activate: true,
+        columnCount: 2,
+        name: "Notes",
+        rowCount: 2,
+        type: "addSheet",
+      },
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "Saved",
+      },
+    ],
+  });
+
+  const tempDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "spready-controller-"),
+  );
+
+  try {
+    const saveResult = await controller.saveWorkbookFile({
+      filePath: path.join(tempDirectory, "budget"),
+    });
+
+    assert.equal(saveResult.changed, true);
+    assert.equal(saveResult.summary.documentFilePath, saveResult.filePath);
+    assert.match(saveResult.filePath, /\.spready$/);
+    assert.match(
+      await fs.readFile(saveResult.filePath, "utf8"),
+      /"format": "spready-workbook"/,
+    );
+
+    controller.applyTransaction({
+      operations: [
+        {
+          columnIndex: 0,
+          rowIndex: 0,
+          type: "setCell",
+          value: "Changed",
+        },
+      ],
+    });
+
+    const openResult = await controller.openWorkbookFile({
+      filePath: saveResult.filePath,
+    });
+
+    assert.equal(openResult.changed, true);
+    assert.equal(openResult.summary.documentFilePath, saveResult.filePath);
+    assert.equal(
+      controller.getSheetDisplayRange({
+        columnCount: 3,
+        rowCount: 2,
+        sheetId: openResult.summary.sheets[0].id,
+        startColumn: 0,
+        startRow: 0,
+      }).values[0][2],
+      "3",
+    );
+    assert.equal(
+      controller.getCellData({
+        columnIndex: 0,
+        rowIndex: 0,
+      }).input,
+      "Saved",
+    );
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
 });

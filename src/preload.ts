@@ -10,6 +10,7 @@ import type {
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
+  WorkbookFileOperationResult,
   WorkbookSummary,
 } from "./workbook-core";
 
@@ -31,6 +32,22 @@ type SaveCsvFileResult =
       canceled: false;
       filePath: string;
     };
+
+type OpenWorkbookFileResult =
+  | {
+      canceled: true;
+    }
+  | ({
+      canceled: false;
+    } & WorkbookFileOperationResult);
+
+type SaveWorkbookFileAsResult =
+  | {
+      canceled: true;
+    }
+  | ({
+      canceled: false;
+    } & WorkbookFileOperationResult);
 
 contextBridge.exposeInMainWorld("appShell", {
   applyTransaction: (request: ApplyTransactionRequest) =>
@@ -94,9 +111,21 @@ contextBridge.exposeInMainWorld("appShell", {
   },
   openCsvFile: () =>
     ipcRenderer.invoke("dialog:open-csv-file") as Promise<OpenCsvFileResult>,
+  openWorkbookFile: () =>
+    ipcRenderer.invoke(
+      "dialog:open-workbook-file",
+    ) as Promise<OpenWorkbookFileResult>,
   saveCsvFile: (content: string, defaultPath?: string) =>
     ipcRenderer.invoke("dialog:save-csv-file", {
       content,
       defaultPath,
     }) as Promise<SaveCsvFileResult>,
+  saveWorkbookFile: (filePath: string) =>
+    ipcRenderer.invoke("workbook:save-file", {
+      filePath,
+    }) as Promise<WorkbookFileOperationResult>,
+  saveWorkbookFileAs: (defaultPath?: string) =>
+    ipcRenderer.invoke("dialog:save-workbook-file-as", {
+      defaultPath,
+    }) as Promise<SaveWorkbookFileAsResult>,
 });

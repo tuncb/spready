@@ -13,6 +13,7 @@ import { resolveControlTarget, SpreadyControlClient } from "./control-client";
 const workbookSummarySchema = z.object({
   activeSheetId: z.string(),
   activeSheetName: z.string(),
+  documentFilePath: z.string().optional(),
   sheets: z.array(
     z.object({
       columnCount: z.int().min(1),
@@ -174,6 +175,13 @@ const csvFileOperationResultSchema = z.object({
   version: z.int().min(0),
 });
 
+const workbookFileOperationResultSchema = z.object({
+  changed: z.boolean(),
+  filePath: z.string(),
+  summary: workbookSummarySchema,
+  version: z.int().min(0),
+});
+
 const WORKBOOK_SUMMARY_RESOURCE_URI = "spready://workbook/summary";
 const SERVER_GUIDE_RESOURCE_URI = "spready://guide";
 const WORKBOOK_TASK_PROMPT_NAME = "spready_workbook_task";
@@ -310,6 +318,20 @@ const guideResource = {
       readOnly: true,
     },
     {
+      defaultsToActiveSheet: false,
+      description:
+        "Open a native Spready workbook file and replace the in-app workbook state.",
+      name: "open_workbook_file",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description:
+        "Save the current workbook as a native Spready workbook file.",
+      name: "save_workbook_file",
+      readOnly: false,
+    },
+    {
       defaultsToActiveSheet: true,
       description: "Return the used range bounds for a sheet.",
       name: "get_used_range",
@@ -368,10 +390,12 @@ const guideResource = {
   })),
   usageConventions: [
     "Rows and columns are zero-based.",
+    "Use open_workbook_file and save_workbook_file for full multi-sheet workbook persistence.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.",
     "Use get_cell_data when you need one cell's raw formula text plus its evaluated display result.",
     "Many transaction operations also default to the active sheet when sheetId is omitted.",
+    "Use import_csv_file and export_csv_file only for single-sheet CSV interchange.",
     "Use get_workbook_summary before large edits so you know which sheet ids and sizes exist.",
     "Use get_used_range or get_sheet_range instead of reading an entire large sheet.",
     "Prefer one apply_transaction call with batched operations over repeated single-cell writes.",
@@ -380,11 +404,13 @@ const guideResource = {
     `Subscribe to ${WORKBOOK_SUMMARY_RESOURCE_URI} if your client supports live workbook summary updates.`,
   ],
   workflow: [
+    "Open an existing workbook with open_workbook_file when the task starts from a .spready document.",
     "Inspect the workbook with get_workbook_summary.",
     "Narrow the target area with get_used_range or get_sheet_range.",
     "Read only the rows or columns needed for the task.",
     "Validate planned edits with apply_transaction dryRun when the change is risky or destructive.",
     "Apply the final mutation in one batched apply_transaction call.",
+    "Save the finished workbook with save_workbook_file when you need a durable workbook document.",
   ],
 } satisfies z.infer<typeof guideResourceSchema>;
 
@@ -396,11 +422,9 @@ ${guideResource.startupRequirement}
 
 ## Recommended workflow
 
-1. ${guideResource.workflow[0]}
-2. ${guideResource.workflow[1]}
-3. ${guideResource.workflow[2]}
-4. ${guideResource.workflow[3]}
-5. ${guideResource.workflow[4]}
+${guideResource.workflow
+  .map((step, index) => `${index + 1}. ${step}`)
+  .join("\n")}
 
 ## Usage conventions
 
@@ -409,6 +433,8 @@ ${guideResource.startupRequirement}
 ## Tools
 
 - get_workbook_summary: Return workbook metadata including active sheet, version, and sheet sizes.
+- open_workbook_file: Open a native Spready workbook file and replace the in-app workbook state.
+- save_workbook_file: Save the current workbook as a native Spready workbook file.
 - get_used_range: Return the used range bounds for a sheet. Omitting sheetId uses the active sheet.
 - get_cell_data: Return one cell's raw input plus its evaluated display value. Omitting sheetId uses the active sheet.
 - get_sheet_display_range: Read one rectangular range of evaluated display values. Prefer this for formula-aware grid views.
@@ -551,7 +577,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input and get_sheet_display_range for evaluated grid values, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input and get_sheet_display_range for evaluated grid values, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -650,6 +676,54 @@ async function main() {
   );
 
   server.registerTool(
+    "open_workbook_file",
+    {
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Open a native Spready workbook file and replace the in-app workbook state.",
+      inputSchema: z.object({
+        filePath: z
+          .string()
+          .min(1)
+          .describe(
+            "Path to a .spready workbook file on the machine running Spready.",
+          ),
+      }),
+      outputSchema: workbookFileOperationResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.openWorkbookFile(args)),
+  );
+
+  server.registerTool(
+    "save_workbook_file",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Save the current workbook as a native Spready workbook file.",
+      inputSchema: z.object({
+        filePath: z
+          .string()
+          .min(1)
+          .describe(
+            "Destination path for a .spready workbook file on the machine running Spready.",
+          ),
+      }),
+      outputSchema: workbookFileOperationResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.saveWorkbookFile(args)),
+  );
+
+  server.registerTool(
     "describe_capabilities",
     {
       annotations: {
@@ -676,6 +750,24 @@ async function main() {
             readOnly: true,
             useWhen:
               "Always use this first before exploring or editing a workbook.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Open a native Spready workbook file and replace the in-app workbook state.",
+            name: "open_workbook_file",
+            readOnly: false,
+            useWhen:
+              "Use this when the task starts from a saved .spready workbook document.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Save the current workbook as a native Spready workbook file.",
+            name: "save_workbook_file",
+            readOnly: false,
+            useWhen:
+              "Use this when the result should persist as a full multi-sheet workbook document.",
           },
           {
             defaultsToActiveSheet: true,
@@ -989,12 +1081,14 @@ async function main() {
               text:
                 `Use the Spready MCP server to accomplish this workbook task: ${goal}\n\n` +
                 "Workflow:\n" +
+                "- Use open_workbook_file when the task starts from an existing .spready workbook.\n" +
                 "- Start with get_workbook_summary.\n" +
                 "- Use zero-based row and column indexes.\n" +
                 "- Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
                 "- Read only the ranges you need with get_used_range, get_sheet_range, or get_sheet_display_range.\n" +
                 "- Use apply_transaction for writes, preferably as one batched request.\n" +
+                "- Use save_workbook_file when the final result should persist as a native workbook document.\n" +
                 "- Use dryRun before risky or destructive mutations.\n" +
                 `- If you need server details, call describe_capabilities or read ${SERVER_GUIDE_RESOURCE_URI}.`,
             },

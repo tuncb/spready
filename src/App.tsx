@@ -32,6 +32,7 @@ import {
 const DEFAULT_COLUMN_WIDTH = 140;
 const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
 const DEFAULT_VISIBLE_ROW_COUNT = 36;
+const DEFAULT_WORKBOOK_FILE_NAME = "Workbook.spready";
 const VISIBLE_COLUMN_PADDING = 4;
 const VISIBLE_ROW_PADDING = 24;
 
@@ -234,6 +235,10 @@ function getSelectedCellAddress(selectedCell: Item | null): string {
   }
 
   return `${getColumnTitle(selectedCell[0])}${selectedCell[1] + 1}`;
+}
+
+function getDefaultWorkbookFilePath(summary: WorkbookSummary | null): string {
+  return summary?.documentFilePath ?? DEFAULT_WORKBOOK_FILE_NAME;
 }
 
 export default function App() {
@@ -764,6 +769,56 @@ export default function App() {
     }
   }, [activeSheet, applyTransaction]);
 
+  const handleOpenWorkbook = useCallback(async () => {
+    try {
+      const result = await window.appShell.openWorkbookFile();
+
+      if (result.canceled) {
+        return;
+      }
+
+      setSheetSummary(result.summary);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, []);
+
+  const handleSaveWorkbookAs = useCallback(async () => {
+    try {
+      const result = await window.appShell.saveWorkbookFileAs(
+        getDefaultWorkbookFilePath(sheetSummary),
+      );
+
+      if (result.canceled) {
+        return;
+      }
+
+      setSheetSummary(result.summary);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, [sheetSummary]);
+
+  const handleSaveWorkbook = useCallback(async () => {
+    try {
+      if (!sheetSummary?.documentFilePath) {
+        await handleSaveWorkbookAs();
+        return;
+      }
+
+      const result = await window.appShell.saveWorkbookFile(
+        sheetSummary.documentFilePath,
+      );
+
+      setSheetSummary(result.summary);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, [handleSaveWorkbookAs, sheetSummary]);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -826,9 +881,7 @@ export default function App() {
     displayRangeCacheRef.current = null;
     setViewNonce((current) => current + 1);
 
-    if (activeSheet.sourceFilePath) {
-      exportPathRef.current = activeSheet.sourceFilePath;
-    }
+    exportPathRef.current = activeSheet.sourceFilePath;
 
     void loadVisibleRange(lastVisibleRegionRef.current);
   }, [
@@ -844,10 +897,19 @@ export default function App() {
     return window.appShell.onMenuAction((action) => {
       const handleMenuAction = (nextAction: AppMenuAction) => {
         switch (nextAction) {
-          case APP_MENU_ACTIONS.import:
+          case APP_MENU_ACTIONS.openWorkbook:
+            void handleOpenWorkbook();
+            return;
+          case APP_MENU_ACTIONS.saveWorkbook:
+            void handleSaveWorkbook();
+            return;
+          case APP_MENU_ACTIONS.saveWorkbookAs:
+            void handleSaveWorkbookAs();
+            return;
+          case APP_MENU_ACTIONS.importCsv:
             void handleImport();
             return;
-          case APP_MENU_ACTIONS.export:
+          case APP_MENU_ACTIONS.exportCsv:
             void handleExport();
             return;
           case APP_MENU_ACTIONS.addRow:
@@ -866,7 +928,17 @@ export default function App() {
 
       handleMenuAction(action);
     });
-  }, [addColumn, addRow, addSheet, deleteSheet, handleExport, handleImport]);
+  }, [
+    addColumn,
+    addRow,
+    addSheet,
+    deleteSheet,
+    handleExport,
+    handleImport,
+    handleOpenWorkbook,
+    handleSaveWorkbook,
+    handleSaveWorkbookAs,
+  ]);
 
   return (
     <main className="app-shell">

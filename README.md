@@ -2,6 +2,8 @@
 
 Spready now keeps workbook state in the Electron main process and exposes a local control endpoint for external LLM harnesses. The renderer is a view over that shared workbook state, not the source of truth.
 
+Native workbook documents use the `.spready` extension. CSV import and export remain available as sheet-level interchange tools.
+
 ## Commands
 
 ### Install
@@ -116,6 +118,8 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `getSheetRange`
 - `getUsedRange`
 - `getSheetCsv`
+- `openWorkbookFile`
+- `saveWorkbookFile`
 - `importCsvFile`
 - `exportCsvFile`
 - `applyTransaction`
@@ -147,6 +151,32 @@ Export a specific sheet to CSV without changing the active sheet:
   "params": {
     "filePath": "C:\\\\exports\\\\quarterly.csv",
     "sheetId": "sheet-2"
+  }
+}
+```
+
+### Workbook file examples
+
+Open a native Spready workbook file:
+
+```json
+{
+  "id": 5,
+  "method": "openWorkbookFile",
+  "params": {
+    "filePath": "C:\\\\workbooks\\\\budget.spready"
+  }
+}
+```
+
+Save the current workbook as a native Spready workbook file:
+
+```json
+{
+  "id": 6,
+  "method": "saveWorkbookFile",
+  "params": {
+    "filePath": "C:\\\\workbooks\\\\budget.spready"
   }
 }
 ```
@@ -210,6 +240,8 @@ The stdio MCP wrapper currently exposes:
 - `get_sheet_display_range`
 - `get_sheet_range`
 - `get_sheet_csv`
+- `open_workbook_file`
+- `save_workbook_file`
 - `import_csv_file`
 - `export_csv_file`
 - `apply_transaction`
@@ -220,6 +252,8 @@ The stdio MCP wrapper currently exposes:
 
 `import_csv_file` and `export_csv_file` both accept an optional `sheetId`. If omitted, they use
 the active sheet.
+
+`open_workbook_file` and `save_workbook_file` operate on the full multi-sheet workbook and use the `.spready` document format.
 
 ### Resources
 

@@ -16,6 +16,7 @@ export interface WorkbookSheet {
 }
 
 export interface WorkbookState {
+  documentFilePath?: string;
   version: number;
   activeSheetId: string;
   nextSheetNumber: number;
@@ -31,6 +32,7 @@ export interface SheetSummary {
 }
 
 export interface WorkbookSummary {
+  documentFilePath?: string;
   version: number;
   activeSheetId: string;
   activeSheetName: string;
@@ -210,7 +212,22 @@ export interface ExportCsvFileRequest {
   sheetId?: string;
 }
 
+export interface OpenWorkbookFileRequest {
+  filePath: string;
+}
+
+export interface SaveWorkbookFileRequest {
+  filePath: string;
+}
+
 export interface CsvFileOperationResult {
+  changed: boolean;
+  filePath: string;
+  summary: WorkbookSummary;
+  version: number;
+}
+
+export interface WorkbookFileOperationResult {
   changed: boolean;
   filePath: string;
   summary: WorkbookSummary;
@@ -392,6 +409,7 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
   return {
     activeSheetId: activeSheet.id,
     activeSheetName: activeSheet.name,
+    documentFilePath: workbook.documentFilePath,
     sheets: workbook.sheets.map((sheet) => ({
       columnCount: getSheetColumnCount(sheet),
       id: sheet.id,
@@ -981,6 +999,8 @@ function createWorkbookSheet(
   columnCount: number,
   id = createSheetId(),
 ): WorkbookSheet {
+  registerSheetId(id);
+
   return {
     cells: createSheet(rowCount, columnCount),
     id,
@@ -993,6 +1013,12 @@ function createSheetId(): string {
 
   nextSheetIdSequence += 1;
   return sheetId;
+}
+
+export function syncSheetIdSequence(workbook: WorkbookState) {
+  for (const sheet of workbook.sheets) {
+    registerSheetId(sheet.id);
+  }
 }
 
 function ensureSheetSize(
@@ -1110,4 +1136,18 @@ function resizeMatrix(
       (_, columnIndex) => sourceRow[columnIndex] ?? "",
     );
   });
+}
+
+function registerSheetId(sheetId: string) {
+  const match = /^sheet-(\d+)$/.exec(sheetId);
+
+  if (!match) {
+    return;
+  }
+
+  const sequence = Number.parseInt(match[1], 10) + 1;
+
+  if (!Number.isNaN(sequence)) {
+    nextSheetIdSequence = Math.max(nextSheetIdSequence, sequence);
+  }
 }

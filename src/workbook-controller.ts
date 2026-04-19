@@ -19,10 +19,13 @@ import {
   type ApplyTransactionRequest,
   type ApplyTransactionResult,
   type ImportCsvFileRequest,
+  type OpenWorkbookFileRequest,
+  type SaveWorkbookFileRequest,
   type SheetRangeRequest,
   type SheetDisplayRangeResult,
   type SheetRangeResult,
   type UsedRangeResult,
+  type WorkbookFileOperationResult,
   type WorkbookState,
   type WorkbookSummary,
 } from "./workbook-core";
@@ -31,6 +34,11 @@ import {
   getCellEvaluation,
   type SheetEvaluationSnapshot,
 } from "./formula-engine";
+import {
+  parseWorkbookDocument,
+  serializeWorkbookDocument,
+  WORKBOOK_DOCUMENT_EXTENSION,
+} from "./workbook-document";
 
 export class WorkbookController extends EventEmitter {
   #state: WorkbookState = createWorkbookState();
@@ -135,6 +143,45 @@ export class WorkbookController extends EventEmitter {
     };
   }
 
+  async openWorkbookFile(
+    request: OpenWorkbookFileRequest,
+  ): Promise<WorkbookFileOperationResult> {
+    const filePath = path.resolve(request.filePath);
+    const content = await fs.readFile(filePath, "utf8");
+    const nextState = parseWorkbookDocument(content);
+
+    nextState.documentFilePath = filePath;
+    nextState.version = this.#state.version + 1;
+
+    this.#commitState(nextState);
+
+    const summary = getWorkbookSummary(this.#state);
+
+    return {
+      changed: true,
+      filePath,
+      summary,
+      version: summary.version,
+    };
+  }
+
+  async saveWorkbookFile(
+    request: SaveWorkbookFileRequest,
+  ): Promise<WorkbookFileOperationResult> {
+    const filePath = normalizeWorkbookFilePath(request.filePath);
+
+    await fs.writeFile(filePath, serializeWorkbookDocument(this.#state), "utf8");
+
+    const result = this.#updateDocumentFilePath(filePath);
+
+    return {
+      changed: result.changed,
+      filePath,
+      summary: result.summary,
+      version: result.summary.version,
+    };
+  }
+
   async importCsvFile(
     request: ImportCsvFileRequest,
   ): Promise<CsvFileOperationResult> {
@@ -174,6 +221,35 @@ export class WorkbookController extends EventEmitter {
     this.#sheetEvaluationSnapshots.set(sheet.id, nextSnapshot);
     return nextSnapshot;
   }
+
+  #commitState(nextState: WorkbookState) {
+    this.#state = nextState;
+    this.#sheetEvaluationSnapshots.clear();
+    this.emit("changed", getWorkbookSummary(this.#state));
+  }
+
+  #updateDocumentFilePath(filePath: string): {
+    changed: boolean;
+    summary: WorkbookSummary;
+  } {
+    if (this.#state.documentFilePath === filePath) {
+      return {
+        changed: false,
+        summary: getWorkbookSummary(this.#state),
+      };
+    }
+
+    this.#commitState({
+      ...this.#state,
+      documentFilePath: filePath,
+      version: this.#state.version + 1,
+    });
+
+    return {
+      changed: true,
+      summary: getWorkbookSummary(this.#state),
+    };
+  }
 }
 
 function normalizeCsvFilePath(filePath: string): string {
@@ -184,6 +260,16 @@ function normalizeCsvFilePath(filePath: string): string {
   }
 
   return `${resolvedFilePath}.csv`;
+}
+
+function normalizeWorkbookFilePath(filePath: string): string {
+  const resolvedFilePath = path.resolve(filePath);
+
+  if (resolvedFilePath.toLowerCase().endsWith(WORKBOOK_DOCUMENT_EXTENSION)) {
+    return resolvedFilePath;
+  }
+
+  return `${resolvedFilePath}${WORKBOOK_DOCUMENT_EXTENSION}`;
 }
 
 function assertCellIndex(value: number, limit: number, label: string) {
