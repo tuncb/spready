@@ -17,16 +17,21 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
 import {
   getColumnTitle,
   isFormulaInput,
+  parseTsv,
+  serializeTsv,
   type CellDataResult,
+  type ClipboardRangeMode,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
   type WorkbookSummary,
+  type WorkbookTransactionOperation,
 } from "./workbook-core";
 
 const DEFAULT_COLUMN_WIDTH = 140;
@@ -124,6 +129,25 @@ function createEmptyGridSelection(): GridSelection {
   };
 }
 
+function createCellSelection(cell: Item): GridSelection {
+  const [columnIndex, rowIndex] = cell;
+
+  return {
+    columns: CompactSelection.empty(),
+    current: {
+      cell,
+      range: {
+        height: 1,
+        width: 1,
+        x: columnIndex,
+        y: rowIndex,
+      },
+      rangeStack: [],
+    },
+    rows: CompactSelection.empty(),
+  };
+}
+
 function createLoadingCell(): GridCell {
   return {
     allowOverlay: false,
@@ -134,6 +158,7 @@ function createLoadingCell(): GridCell {
 function createTextCell(input: string, display: string): GridCell {
   return {
     allowOverlay: true,
+    copyData: input,
     data: input,
     displayData: display,
     kind: GridCellKind.Text,
@@ -236,6 +261,158 @@ function getSelectedCellAddress(selectedCell: Item | null): string {
   return `${getColumnTitle(selectedCell[0])}${selectedCell[1] + 1}`;
 }
 
+function getCurrentSelectionRange(
+  selection: GridSelection,
+  sheetId: string,
+): SheetRangeRequest | null {
+  const range = selection.current?.range;
+
+  if (!range) {
+    return null;
+  }
+
+  return {
+    columnCount: Math.max(1, range.width),
+    rowCount: Math.max(1, range.height),
+    sheetId,
+    startColumn: range.x,
+    startRow: range.y,
+  };
+}
+
+function selectionContainsCell(selection: GridSelection, cell: Item): boolean {
+  const [columnIndex, rowIndex] = cell;
+  const range = selection.current?.range;
+
+  if (
+    range &&
+    columnIndex >= range.x &&
+    columnIndex < range.x + range.width &&
+    rowIndex >= range.y &&
+    rowIndex < range.y + range.height
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function compactSelectionToRuns(
+  selection: CompactSelection,
+): Array<{ count: number; start: number }> {
+  const runs: Array<{ count: number; start: number }> = [];
+  let runStart: number | null = null;
+  let previousIndex: number | null = null;
+
+  for (const index of selection) {
+    if (runStart === null) {
+      runStart = index;
+      previousIndex = index;
+      continue;
+    }
+
+    if (previousIndex !== null && index === previousIndex + 1) {
+      previousIndex = index;
+      continue;
+    }
+
+    runs.push({
+      count: (previousIndex ?? runStart) - runStart + 1,
+      start: runStart,
+    });
+    runStart = index;
+    previousIndex = index;
+  }
+
+  if (runStart !== null) {
+    runs.push({
+      count: (previousIndex ?? runStart) - runStart + 1,
+      start: runStart,
+    });
+  }
+
+  return runs;
+}
+
+function getClearSelectionOperations(
+  selection: GridSelection,
+  sheetId: string,
+  rowCount: number,
+  columnCount: number,
+): WorkbookTransactionOperation[] {
+  const operations: WorkbookTransactionOperation[] = [];
+  const range = selection.current?.range;
+
+  if (range) {
+    operations.push({
+      columnCount: Math.max(1, range.width),
+      rowCount: Math.max(1, range.height),
+      sheetId,
+      startColumn: range.x,
+      startRow: range.y,
+      type: "clearRange",
+    });
+  }
+
+  for (const rowRun of compactSelectionToRuns(selection.rows)) {
+    operations.push({
+      columnCount,
+      rowCount: rowRun.count,
+      sheetId,
+      startColumn: 0,
+      startRow: rowRun.start,
+      type: "clearRange",
+    });
+  }
+
+  for (const columnRun of compactSelectionToRuns(selection.columns)) {
+    operations.push({
+      columnCount: columnRun.count,
+      rowCount,
+      sheetId,
+      startColumn: columnRun.start,
+      startRow: 0,
+      type: "clearRange",
+    });
+  }
+
+  return operations;
+}
+
+function cellWouldBeCleared(
+  selection: GridSelection,
+  cell: Item | null,
+): boolean {
+  if (!cell) {
+    return false;
+  }
+
+  if (selectionContainsCell(selection, cell)) {
+    return true;
+  }
+
+  return (
+    selection.columns.hasIndex(cell[0]) || selection.rows.hasIndex(cell[1])
+  );
+}
+
+function replaceInputSelection(
+  input: HTMLInputElement,
+  nextText: string,
+): { selectionStart: number; value: string } {
+  const selectionStart = input.selectionStart ?? input.value.length;
+  const selectionEnd = input.selectionEnd ?? input.value.length;
+  const value =
+    input.value.slice(0, selectionStart) +
+    nextText +
+    input.value.slice(selectionEnd);
+
+  return {
+    selectionStart: selectionStart + nextText.length,
+    value,
+  };
+}
+
 export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formulaInputValue, setFormulaInputValue] = useState("");
@@ -250,6 +427,7 @@ export default function App() {
   const [viewNonce, setViewNonce] = useState(0);
 
   const exportPathRef = useRef<string>();
+  const formulaInputRef = useRef<HTMLInputElement>(null);
   const displayRangeCacheRef = useRef<SheetDisplayRangeResult | null>(null);
   const lastVisibleRegionRef = useRef<VisibleRegion | null>(null);
   const pendingCellDataRequestIdRef = useRef(0);
@@ -271,6 +449,13 @@ export default function App() {
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
+  const currentSelectionRange = useMemo(
+    () =>
+      activeSheet
+        ? getCurrentSelectionRange(gridSelection, activeSheet.id)
+        : null,
+    [activeSheet, gridSelection],
+  );
 
   const applyTransaction = useCallback(
     async (
@@ -553,6 +738,224 @@ export default function App() {
       refreshSelectedCellData,
       selectedCell,
     ],
+  );
+
+  const replaceFormulaInputSelection = useCallback((nextText: string) => {
+    const input = formulaInputRef.current;
+
+    if (!input) {
+      return false;
+    }
+
+    const nextState = replaceInputSelection(input, nextText);
+
+    setFormulaInputValue(nextState.value);
+
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(
+        nextState.selectionStart,
+        nextState.selectionStart,
+      );
+    });
+
+    return true;
+  }, []);
+
+  const deleteFormulaInputSelection = useCallback(() => {
+    const input = formulaInputRef.current;
+
+    if (!input) {
+      return false;
+    }
+
+    const selectionStart = input.selectionStart ?? input.value.length;
+    const selectionEnd = input.selectionEnd ?? input.value.length;
+
+    if (
+      selectionStart === selectionEnd &&
+      selectionStart >= input.value.length
+    ) {
+      return false;
+    }
+
+    const deleteEnd =
+      selectionStart === selectionEnd ? selectionStart + 1 : selectionEnd;
+    const value =
+      input.value.slice(0, selectionStart) + input.value.slice(deleteEnd);
+
+    setFormulaInputValue(value);
+
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(selectionStart, selectionStart);
+    });
+
+    return true;
+  }, []);
+
+  const copySelection = useCallback(
+    async (mode: ClipboardRangeMode) => {
+      const input = formulaInputRef.current;
+
+      if (document.activeElement === input && input) {
+        const selectionStart = input.selectionStart ?? input.value.length;
+        const selectionEnd = input.selectionEnd ?? input.value.length;
+
+        if (selectionStart === selectionEnd) {
+          return false;
+        }
+
+        await window.appShell.writeClipboard({
+          text: input.value.slice(selectionStart, selectionEnd),
+        });
+        return true;
+      }
+
+      if (!currentSelectionRange) {
+        return false;
+      }
+
+      try {
+        const [rawRange, displayRange] = await Promise.all([
+          window.appShell.getSheetRange(currentSelectionRange),
+          window.appShell.getSheetDisplayRange(currentSelectionRange),
+        ]);
+        const rawText = serializeTsv(rawRange.values);
+        const displayText = serializeTsv(displayRange.values);
+
+        await window.appShell.writeClipboard({
+          payload: {
+            displayText,
+            displayValues: displayRange.values.map((row) => [...row]),
+            rawText,
+            rawValues: rawRange.values.map((row) => [...row]),
+          },
+          text: mode === "display" ? displayText : rawText,
+        });
+        setErrorMessage(null);
+        return true;
+      } catch (error) {
+        setErrorMessage(getErrorMessage(error));
+        return false;
+      }
+    },
+    [currentSelectionRange],
+  );
+
+  const pasteSelection = useCallback(
+    async (mode: ClipboardRangeMode) => {
+      const clipboard = await window.appShell.readClipboard();
+      const input = formulaInputRef.current;
+
+      if (document.activeElement === input && input) {
+        const nextText =
+          mode === "display"
+            ? (clipboard.payload?.displayText ?? clipboard.text)
+            : (clipboard.payload?.rawText ?? clipboard.text);
+
+        if (
+          nextText.length === 0 &&
+          !clipboard.payload &&
+          clipboard.text.length === 0
+        ) {
+          return false;
+        }
+
+        return replaceFormulaInputSelection(nextText);
+      }
+
+      if (!selectedCell) {
+        return false;
+      }
+
+      const values =
+        mode === "display"
+          ? (clipboard.payload?.displayValues ?? parseTsv(clipboard.text))
+          : (clipboard.payload?.rawValues ?? parseTsv(clipboard.text));
+
+      return handlePaste(selectedCell, values);
+    },
+    [handlePaste, replaceFormulaInputSelection, selectedCell],
+  );
+
+  const deleteSelection = useCallback(
+    (selection: GridSelection = gridSelection) => {
+      const input = formulaInputRef.current;
+
+      if (document.activeElement === input && input) {
+        return deleteFormulaInputSelection();
+      }
+
+      if (!activeSheet) {
+        return false;
+      }
+
+      const operations = getClearSelectionOperations(
+        selection,
+        activeSheet.id,
+        activeSheet.rowCount,
+        activeSheet.columnCount,
+      );
+
+      if (operations.length === 0) {
+        return false;
+      }
+
+      if (cellWouldBeCleared(selection, selectedCell)) {
+        setFormulaInputValue("");
+        setSelectedCellData((current) =>
+          current
+            ? {
+                ...current,
+                display: "",
+                errorCode: undefined,
+                input: "",
+                isFormula: false,
+              }
+            : current,
+        );
+      }
+
+      void applyTransaction(operations).catch((error) => {
+        setErrorMessage(getErrorMessage(error));
+        void loadVisibleRange(lastVisibleRegionRef.current);
+        void refreshSelectedCellData();
+      });
+
+      return true;
+    },
+    [
+      activeSheet,
+      applyTransaction,
+      deleteFormulaInputSelection,
+      gridSelection,
+      loadVisibleRange,
+      refreshSelectedCellData,
+      selectedCell,
+    ],
+  );
+
+  const handleCellContextMenu = useCallback(
+    (cell: Item, event: { preventDefault?: () => void }) => {
+      event.preventDefault?.();
+
+      if (!selectionContainsCell(gridSelection, cell)) {
+        flushSync(() => {
+          setGridSelection(createCellSelection(cell));
+        });
+      }
+
+      void window.appShell
+        .showCellContextMenu({
+          canCopy: true,
+          canDelete: true,
+        })
+        .catch((error) => {
+          setErrorMessage(getErrorMessage(error));
+        });
+    },
+    [gridSelection],
   );
 
   const commitFormulaBar = useCallback(async () => {
@@ -844,11 +1247,26 @@ export default function App() {
     return window.appShell.onMenuAction((action) => {
       const handleMenuAction = (nextAction: AppMenuAction) => {
         switch (nextAction) {
+          case APP_MENU_ACTIONS.copy:
+            void copySelection("raw");
+            return;
+          case APP_MENU_ACTIONS.copyValues:
+            void copySelection("display");
+            return;
           case APP_MENU_ACTIONS.import:
             void handleImport();
             return;
           case APP_MENU_ACTIONS.export:
             void handleExport();
+            return;
+          case APP_MENU_ACTIONS.paste:
+            pasteSelection("raw");
+            return;
+          case APP_MENU_ACTIONS.pasteValues:
+            pasteSelection("display");
+            return;
+          case APP_MENU_ACTIONS.deleteSelection:
+            deleteSelection();
             return;
           case APP_MENU_ACTIONS.addRow:
             addRow();
@@ -866,7 +1284,17 @@ export default function App() {
 
       handleMenuAction(action);
     });
-  }, [addColumn, addRow, addSheet, deleteSheet, handleExport, handleImport]);
+  }, [
+    addColumn,
+    addRow,
+    addSheet,
+    copySelection,
+    deleteSelection,
+    deleteSheet,
+    handleExport,
+    handleImport,
+    pasteSelection,
+  ]);
 
   return (
     <main className="app-shell">
@@ -886,6 +1314,7 @@ export default function App() {
             className="formula-bar__input"
             disabled={!selectedCell}
             id="formula-input"
+            ref={formulaInputRef}
             onBlur={() => {
               void commitFormulaBar();
             }}
@@ -903,12 +1332,17 @@ export default function App() {
 
       <section className="sheet-surface" aria-label="Spreadsheet surface">
         <DataEditor
+          onCellContextMenu={handleCellContextMenu}
           columns={columns}
           getCellContent={getCellContent}
           getCellsForSelection={getCellsForSelection}
           gridSelection={gridSelection}
           height="100%"
           onCellEdited={handleCellEdited}
+          onDelete={(selection) => {
+            deleteSelection(selection);
+            return false;
+          }}
           onGridSelectionChange={setGridSelection}
           onPaste={handlePaste}
           onSelectionCleared={() => {

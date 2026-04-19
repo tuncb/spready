@@ -210,6 +210,40 @@ export interface ExportCsvFileRequest {
   sheetId?: string;
 }
 
+export type ClipboardRangeMode = "display" | "raw";
+
+export interface CopyRangeRequest extends SheetRangeRequest {
+  mode?: ClipboardRangeMode;
+}
+
+export interface CopyRangeResult {
+  columnCount: number;
+  mode: ClipboardRangeMode;
+  rowCount: number;
+  sheetId: string;
+  sheetName: string;
+  startColumn: number;
+  startRow: number;
+  text: string;
+  values: string[][];
+}
+
+export interface PasteRangeRequest {
+  sheetId?: string;
+  startColumn: number;
+  startRow: number;
+  text?: string;
+  values?: string[][];
+}
+
+export interface ClearRangeRequest {
+  columnCount: number;
+  rowCount: number;
+  sheetId?: string;
+  startColumn: number;
+  startRow: number;
+}
+
 export interface CsvFileOperationResult {
   changed: boolean;
   filePath: string;
@@ -248,6 +282,14 @@ export function normalizeSheet(rows: string[][]): string[][] {
 }
 
 export function parseCsv(content: string): string[][] {
+  return parseDelimitedText(content, ",");
+}
+
+export function parseTsv(content: string): string[][] {
+  return parseDelimitedText(content, "\t");
+}
+
+function parseDelimitedText(content: string, delimiter: string): string[][] {
   if (content.length === 0) {
     return normalizeSheet([]);
   }
@@ -280,7 +322,7 @@ export function parseCsv(content: string): string[][] {
       continue;
     }
 
-    if (character === ",") {
+    if (character === delimiter) {
       currentRow.push(currentValue);
       currentValue = "";
       continue;
@@ -336,8 +378,12 @@ export function getUsedRange(sheet: WorkbookSheet): UsedRangeResult {
   };
 }
 
-function escapeCsvValue(value: string): string {
-  if (/[",\r\n]/.test(value)) {
+function escapeDelimitedValue(value: string, delimiter: string): string {
+  if (
+    value.includes(delimiter) ||
+    value.includes('"') ||
+    /[\r\n]/.test(value)
+  ) {
     return `"${value.replaceAll('"', '""')}"`;
   }
 
@@ -354,7 +400,18 @@ export function serializeCsv(sheet: WorkbookSheet): string {
   return sheet.cells
     .slice(0, usedRange.rowCount)
     .map((row) =>
-      row.slice(0, usedRange.columnCount).map(escapeCsvValue).join(","),
+      row
+        .slice(0, usedRange.columnCount)
+        .map((value) => escapeDelimitedValue(value, ","))
+        .join(","),
+    )
+    .join("\r\n");
+}
+
+export function serializeTsv(values: readonly (readonly string[])[]): string {
+  return values
+    .map((row) =>
+      row.map((value) => escapeDelimitedValue(value ?? "", "\t")).join("\t"),
     )
     .join("\r\n");
 }

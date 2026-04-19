@@ -7,10 +7,14 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
+  ClearRangeRequest,
   ControlServerInfo,
+  CopyRangeRequest,
+  CopyRangeResult,
   CsvFileOperationResult,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
+  PasteRangeRequest,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
@@ -152,6 +156,14 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<CsvFileOperationResult>("exportCsvFile", request);
   }
 
+  async copyRange(request: CopyRangeRequest) {
+    return this.call<CopyRangeResult>("copyRange", request);
+  }
+
+  async clearRange(request: ClearRangeRequest) {
+    return this.call<ApplyTransactionResult>("clearRange", request);
+  }
+
   async getCellData(request: CellDataRequest) {
     return this.call<CellDataResult>("getCellData", request);
   }
@@ -178,6 +190,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async importCsvFile(request: ImportCsvFileRequest) {
     return this.call<CsvFileOperationResult>("importCsvFile", request);
+  }
+
+  async pasteRange(request: PasteRangeRequest) {
+    return this.call<ApplyTransactionResult>("pasteRange", request);
   }
 
   async call<Result>(method: string, params?: unknown): Promise<Result> {

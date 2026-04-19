@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type { AppMenuAction } from "./app-menu";
 import type {
+  ClipboardReadResult,
+  ClipboardWriteRequest,
+} from "./clipboard";
+import type {
   ApplyTransactionRequest,
   ApplyTransactionResult,
   CellDataRequest,
@@ -31,6 +35,11 @@ type SaveCsvFileResult =
       canceled: false;
       filePath: string;
     };
+
+type ShowCellContextMenuRequest = {
+  canCopy: boolean;
+  canDelete: boolean;
+};
 
 contextBridge.exposeInMainWorld("appShell", {
   applyTransaction: (request: ApplyTransactionRequest) =>
@@ -64,6 +73,8 @@ contextBridge.exposeInMainWorld("appShell", {
   getWorkbookSummary: () =>
     ipcRenderer.invoke("workbook:get-summary") as Promise<WorkbookSummary>,
   name: "Spready",
+  readClipboard: () =>
+    ipcRenderer.invoke("clipboard:read") as Promise<ClipboardReadResult>,
   onMenuAction: (listener: (action: AppMenuAction) => void) => {
     const wrappedListener = (
       _event: Electron.IpcRendererEvent,
@@ -99,4 +110,8 @@ contextBridge.exposeInMainWorld("appShell", {
       content,
       defaultPath,
     }) as Promise<SaveCsvFileResult>,
+  showCellContextMenu: (request: ShowCellContextMenuRequest) =>
+    ipcRenderer.invoke("menu:show-cell-context-menu", request) as Promise<void>,
+  writeClipboard: (request: ClipboardWriteRequest) =>
+    ipcRenderer.invoke("clipboard:write", request) as Promise<void>,
 });

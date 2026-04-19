@@ -1,4 +1,5 @@
 import type { AppMenuAction } from "./app-menu";
+import type { ClipboardReadResult, ClipboardWriteRequest } from "./clipboard";
 import type {
   ApplyTransactionRequest,
   ApplyTransactionResult,
@@ -45,6 +46,7 @@ declare global {
       getUsedRange: (sheetId?: string) => Promise<UsedRangeResult>;
       getWorkbookSummary: () => Promise<WorkbookSummary>;
       name: string;
+      readClipboard: () => Promise<ClipboardReadResult>;
       onMenuAction: (listener: (action: AppMenuAction) => void) => () => void;
       onWorkbookChanged: (
         listener: (summary: WorkbookSummary) => void,
@@ -54,6 +56,11 @@ declare global {
         content: string,
         defaultPath?: string,
       ) => Promise<SaveCsvFileResult>;
+      showCellContextMenu: (request: {
+        canCopy: boolean;
+        canDelete: boolean;
+      }) => Promise<void>;
+      writeClipboard: (request: ClipboardWriteRequest) => Promise<void>;
     };
   }
 }

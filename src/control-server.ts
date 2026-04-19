@@ -3,9 +3,12 @@ import net, { type Socket } from "node:net";
 import type { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
+  ClearRangeRequest,
   ControlServerInfo,
+  CopyRangeRequest,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
+  PasteRangeRequest,
   SheetRangeRequest,
   WorkbookSummary,
 } from "./workbook-core";
@@ -228,6 +231,10 @@ export class SpreadyControlServer {
         return this.#controller.applyTransaction(
           params as ApplyTransactionRequest,
         );
+      case "clearRange":
+        return this.#controller.clearRange(params as ClearRangeRequest);
+      case "copyRange":
+        return this.#controller.copyRange(params as CopyRangeRequest);
       case "exportCsvFile":
         return this.#controller.exportCsvFile(params as ExportCsvFileRequest);
       case "getCellData":
@@ -254,9 +261,13 @@ export class SpreadyControlServer {
         return this.#controller.getSummary();
       case "importCsvFile":
         return this.#controller.importCsvFile(params as ImportCsvFileRequest);
+      case "pasteRange":
+        return this.#controller.pasteRange(params as PasteRangeRequest);
       case "listMethods":
         return [
           "applyTransaction",
+          "clearRange",
+          "copyRange",
           "exportCsvFile",
           "getCellData",
           "getControlInfo",
@@ -267,6 +278,7 @@ export class SpreadyControlServer {
           "getWorkbookSummary",
           "importCsvFile",
           "listMethods",
+          "pasteRange",
           "ping",
         ];
       case "ping":

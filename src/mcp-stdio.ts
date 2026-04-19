@@ -65,6 +65,20 @@ const cellDataSchema = z.object({
   sheetName: z.string(),
 });
 
+const clipboardRangeModeSchema = z.enum(["display", "raw"]);
+
+const copyRangeResultSchema = z.object({
+  columnCount: z.int().min(0),
+  mode: clipboardRangeModeSchema,
+  rowCount: z.int().min(0),
+  sheetId: z.string(),
+  sheetName: z.string(),
+  startColumn: z.int().min(0),
+  startRow: z.int().min(0),
+  text: z.string(),
+  values: z.array(z.array(z.string())),
+});
+
 const transactionOperationSchema = z.discriminatedUnion("type", [
   z.object({
     activate: z.boolean().optional(),
@@ -337,9 +351,29 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: true,
+      description:
+        "Copy one rectangular range as tab-delimited text, using raw cell input or displayed values.",
+      name: "copy_range",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: true,
       description: "Return the sheet as CSV text trimmed to its used range.",
       name: "get_sheet_csv",
       readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: true,
+      description:
+        "Paste tab-delimited text or explicit values into a rectangular range starting at one cell.",
+      name: "paste_range",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: true,
+      description: "Clear a rectangular range without resizing the sheet.",
+      name: "clear_range",
+      readOnly: false,
     },
     {
       defaultsToActiveSheet: true,
@@ -370,10 +404,12 @@ const guideResource = {
     "Rows and columns are zero-based.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.",
+    "Use copy_range when you need a tab-delimited clipboard-style payload for one explicit rectangular range.",
     "Use get_cell_data when you need one cell's raw formula text plus its evaluated display result.",
     "Many transaction operations also default to the active sheet when sheetId is omitted.",
     "Use get_workbook_summary before large edits so you know which sheet ids and sizes exist.",
     "Use get_used_range or get_sheet_range instead of reading an entire large sheet.",
+    "Use paste_range and clear_range for explicit clipboard-like range edits without relying on UI selection state.",
     "Prefer one apply_transaction call with batched operations over repeated single-cell writes.",
     "Use dryRun on apply_transaction to validate risky changes before mutating the workbook.",
     "CSV file paths are resolved on the same machine running the Spready desktop app and MCP wrapper.",
@@ -413,7 +449,10 @@ ${guideResource.startupRequirement}
 - get_cell_data: Return one cell's raw input plus its evaluated display value. Omitting sheetId uses the active sheet.
 - get_sheet_display_range: Read one rectangular range of evaluated display values. Prefer this for formula-aware grid views.
 - get_sheet_range: Read one rectangular range. Prefer this over loading a large sheet.
+- copy_range: Return one rectangular range plus tab-delimited text using raw input or displayed values.
 - get_sheet_csv: Return trimmed CSV for one sheet. Omitting sheetId uses the active sheet.
+- paste_range: Paste tab-delimited text or explicit values into the sheet starting at one cell. Omitting sheetId uses the active sheet.
+- clear_range: Clear one explicit rectangular range without resizing the sheet. Omitting sheetId uses the active sheet.
 - apply_transaction: Apply one atomic batch of workbook mutations. Supports dryRun.
 - import_csv_file: Load a local CSV file into a sheet. Omitting sheetId uses the active sheet.
 - export_csv_file: Save one sheet as a local CSV file. Omitting sheetId uses the active sheet.
@@ -714,11 +753,38 @@ async function main() {
           {
             defaultsToActiveSheet: true,
             description:
+              "Copy one rectangular range as tab-delimited text using raw input or displayed values.",
+            name: "copy_range",
+            readOnly: true,
+            useWhen:
+              "Use this when a task needs explicit clipboard-style range output without relying on UI selection state.",
+          },
+          {
+            defaultsToActiveSheet: true,
+            description:
               "Return the sheet as CSV text trimmed to its used range.",
             name: "get_sheet_csv",
             readOnly: true,
             useWhen:
               "Use this when you need the full used range in one text payload.",
+          },
+          {
+            defaultsToActiveSheet: true,
+            description:
+              "Paste tab-delimited text or explicit values into the sheet starting at one cell.",
+            name: "paste_range",
+            readOnly: false,
+            useWhen:
+              "Use this for explicit range pastes when the input is already tabular text or a 2D string array.",
+          },
+          {
+            defaultsToActiveSheet: true,
+            description:
+              "Clear a rectangular range without resizing the sheet.",
+            name: "clear_range",
+            readOnly: false,
+            useWhen:
+              "Use this for delete-style range clearing without constructing a full apply_transaction request.",
           },
           {
             defaultsToActiveSheet: true,
@@ -856,6 +922,36 @@ async function main() {
   );
 
   server.registerTool(
+    "copy_range",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description:
+        "Copy one rectangular range as tab-delimited text using raw cell input or displayed values.",
+      inputSchema: z.object({
+        columnCount: z.int().min(1).describe("Number of columns to copy."),
+        mode: clipboardRangeModeSchema
+          .optional()
+          .describe(
+            'Copy mode. Use "raw" to preserve formulas, or "display" to flatten them to visible values.',
+          ),
+        rowCount: z.int().min(1).describe("Number of rows to copy."),
+        sheetId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional target sheet id. Defaults to the active sheet."),
+        startColumn: z.int().min(0).describe("Zero-based start column."),
+        startRow: z.int().min(0).describe("Zero-based start row."),
+      }),
+      outputSchema: copyRangeResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.copyRange(args)),
+  );
+
+  server.registerTool(
     "get_sheet_csv",
     {
       annotations: {
@@ -939,6 +1035,78 @@ async function main() {
       outputSchema: csvFileOperationResultSchema,
     },
     async (args) => createTextResult(await controlClient.exportCsvFile(args)),
+  );
+
+  server.registerTool(
+    "paste_range",
+    {
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Paste tab-delimited text or explicit values into a sheet starting at one cell.",
+      inputSchema: z
+        .object({
+          sheetId: z
+            .string()
+            .min(1)
+            .optional()
+            .describe(
+              "Optional target sheet id. Defaults to the active sheet.",
+            ),
+          startColumn: z.int().min(0).describe("Zero-based start column."),
+          startRow: z.int().min(0).describe("Zero-based start row."),
+          text: z
+            .string()
+            .optional()
+            .describe(
+              "Optional tab-delimited text payload to parse into a 2D string matrix.",
+            ),
+          values: z
+            .array(z.array(z.string()))
+            .optional()
+            .describe("Optional explicit 2D string matrix to paste."),
+        })
+        .refine(
+          (value) => value.text !== undefined || value.values !== undefined,
+          {
+            message: 'Provide either "text" or "values".',
+            path: ["text"],
+          },
+        ),
+      outputSchema: applyTransactionResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.pasteRange(args)),
+  );
+
+  server.registerTool(
+    "clear_range",
+    {
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Clear a rectangular range without resizing the sheet. Omit sheetId to use the active sheet.",
+      inputSchema: z.object({
+        columnCount: z.int().min(1).describe("Number of columns to clear."),
+        rowCount: z.int().min(1).describe("Number of rows to clear."),
+        sheetId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional target sheet id. Defaults to the active sheet."),
+        startColumn: z.int().min(0).describe("Zero-based start column."),
+        startRow: z.int().min(0).describe("Zero-based start row."),
+      }),
+      outputSchema: applyTransactionResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.clearRange(args)),
   );
 
   server.registerTool(

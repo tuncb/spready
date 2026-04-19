@@ -101,3 +101,77 @@ test("WorkbookController keeps CSV export on raw input strings even when formula
     ],
   );
 });
+
+test("WorkbookController supports raw-vs-display range copy plus explicit paste and clear helpers", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["1", "2", "=A1+B1"]],
+      },
+    ],
+  });
+
+  const rawCopy = controller.copyRange({
+    columnCount: 3,
+    mode: "raw",
+    rowCount: 1,
+    startColumn: 0,
+    startRow: 0,
+  });
+  const displayCopy = controller.copyRange({
+    columnCount: 3,
+    mode: "display",
+    rowCount: 1,
+    startColumn: 0,
+    startRow: 0,
+  });
+
+  assert.equal(rawCopy.text, "1\t2\t=A1+B1");
+  assert.deepEqual(rawCopy.values, [["1", "2", "=A1+B1"]]);
+  assert.equal(displayCopy.text, "1\t2\t3");
+  assert.deepEqual(displayCopy.values, [["1", "2", "3"]]);
+
+  controller.pasteRange({
+    startColumn: 0,
+    startRow: 1,
+    text: displayCopy.text,
+  });
+
+  assert.deepEqual(
+    controller.getSheetRange({
+      columnCount: 3,
+      rowCount: 2,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["1", "2", "=A1+B1"],
+      ["1", "2", "3"],
+    ],
+  );
+
+  controller.clearRange({
+    columnCount: 2,
+    rowCount: 1,
+    startColumn: 1,
+    startRow: 1,
+  });
+
+  assert.deepEqual(
+    controller.getSheetRange({
+      columnCount: 3,
+      rowCount: 2,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["1", "2", "=A1+B1"],
+      ["1", "", ""],
+    ],
+  );
+});

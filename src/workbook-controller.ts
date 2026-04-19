@@ -19,9 +19,15 @@ import {
   type ApplyTransactionRequest,
   type ApplyTransactionResult,
   type ImportCsvFileRequest,
+  parseTsv,
+  serializeTsv,
+  type ClearRangeRequest,
   type SheetRangeRequest,
   type SheetDisplayRangeResult,
   type SheetRangeResult,
+  type CopyRangeRequest,
+  type CopyRangeResult,
+  type PasteRangeRequest,
   type UsedRangeResult,
   type WorkbookState,
   type WorkbookSummary,
@@ -92,6 +98,55 @@ export class WorkbookController extends EventEmitter {
 
   getUsedRange(sheetId?: string): UsedRangeResult {
     return getSheetUsedRange(this.#state, sheetId);
+  }
+
+  copyRange(request: CopyRangeRequest): CopyRangeResult {
+    const mode = request.mode ?? "raw";
+    const range =
+      mode === "display"
+        ? this.getSheetDisplayRange(request)
+        : this.getSheetRange(request);
+
+    return {
+      ...range,
+      mode,
+      text: serializeTsv(range.values),
+    };
+  }
+
+  clearRange(request: ClearRangeRequest): ApplyTransactionResult {
+    return this.applyTransaction({
+      operations: [
+        {
+          ...request,
+          type: "clearRange",
+        },
+      ],
+    });
+  }
+
+  pasteRange(request: PasteRangeRequest): ApplyTransactionResult {
+    const values =
+      request.values?.map((row) => [...row]) ??
+      (request.text !== undefined ? parseTsv(request.text) : undefined);
+
+    if (!values || values.length === 0) {
+      return this.applyTransaction({
+        operations: [],
+      });
+    }
+
+    return this.applyTransaction({
+      operations: [
+        {
+          sheetId: request.sheetId,
+          startColumn: request.startColumn,
+          startRow: request.startRow,
+          type: "setRange",
+          values,
+        },
+      ],
+    });
   }
 
   applyTransaction(request: ApplyTransactionRequest): ApplyTransactionResult {

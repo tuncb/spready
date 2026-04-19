@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -14,6 +15,12 @@ import {
 import started from "electron-squirrel-startup";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
+import {
+  SPREADY_CLIPBOARD_FORMAT,
+  type ClipboardReadResult,
+  type ClipboardWriteRequest,
+  type SpreadyClipboardPayload,
+} from "./clipboard";
 import { SpreadyControlServer } from "./control-server";
 import {
   clearDiscoveredControlInfo,
@@ -54,6 +61,25 @@ type SaveCsvFileArgs = {
   content: string;
   defaultPath?: string;
 };
+
+type ShowCellContextMenuArgs = {
+  canCopy: boolean;
+  canDelete: boolean;
+};
+
+function readSpreadyClipboardPayload(): SpreadyClipboardPayload | undefined {
+  const buffer = clipboard.readBuffer(SPREADY_CLIPBOARD_FORMAT);
+
+  if (buffer.length === 0) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(buffer.toString("utf8")) as SpreadyClipboardPayload;
+  } catch {
+    return undefined;
+  }
+}
 
 function getTargetWindow(
   browserWindow?: BrowserWindow | null,
@@ -100,6 +126,49 @@ async function showAboutDialog(browserWindow?: BrowserWindow | null) {
   await dialog.showMessageBox(options);
 }
 
+function buildCellContextMenu(
+  browserWindow: BrowserWindow,
+  args: ShowCellContextMenuArgs,
+) {
+  return Menu.buildFromTemplate([
+    {
+      enabled: args.canCopy,
+      label: "Copy",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.copy, browserWindow);
+      },
+    },
+    {
+      enabled: args.canCopy,
+      label: "Copy Values",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.copyValues, browserWindow);
+      },
+    },
+    { type: "separator" },
+    {
+      label: "Paste",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.paste, browserWindow);
+      },
+    },
+    {
+      label: "Paste Values",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.pasteValues, browserWindow);
+      },
+    },
+    { type: "separator" },
+    {
+      enabled: args.canDelete,
+      label: "Delete",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.deleteSelection, browserWindow);
+      },
+    },
+  ]);
+}
+
 function buildAppMenu() {
   const template: MenuItemConstructorOptions[] = [
     {
@@ -125,6 +194,47 @@ function buildAppMenu() {
           accelerator: "Alt+F4",
           click: () => {
             app.quit();
+          },
+        },
+      ],
+    },
+    {
+      label: "Edit",
+      submenu: [
+        {
+          accelerator: "CmdOrCtrl+C",
+          label: "Copy",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.copy);
+          },
+        },
+        {
+          accelerator: "CmdOrCtrl+Shift+C",
+          label: "Copy Values",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.copyValues);
+          },
+        },
+        { type: "separator" },
+        {
+          accelerator: "CmdOrCtrl+V",
+          label: "Paste",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.paste);
+          },
+        },
+        {
+          accelerator: "CmdOrCtrl+Shift+V",
+          label: "Paste Values",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.pasteValues);
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Delete",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.deleteSelection);
           },
         },
       ],
@@ -282,6 +392,44 @@ ipcMain.handle("dialog:save-csv-file", async (event, args: SaveCsvFileArgs) => {
     return { canceled: true as const };
   }
 });
+
+ipcMain.handle("clipboard:read", () => {
+  const result: ClipboardReadResult = {
+    payload: readSpreadyClipboardPayload(),
+    text: clipboard.readText(),
+  };
+
+  return result;
+});
+
+ipcMain.handle("clipboard:write", (_event, request: ClipboardWriteRequest) => {
+  clipboard.clear();
+  clipboard.writeText(request.text);
+
+  if (!request.payload) {
+    return;
+  }
+
+  clipboard.writeBuffer(
+    SPREADY_CLIPBOARD_FORMAT,
+    Buffer.from(JSON.stringify(request.payload), "utf8"),
+  );
+});
+
+ipcMain.handle(
+  "menu:show-cell-context-menu",
+  async (event, args: ShowCellContextMenuArgs) => {
+    const browserWindow = BrowserWindow.fromWebContents(event.sender);
+
+    if (!browserWindow) {
+      return;
+    }
+
+    buildCellContextMenu(browserWindow, args).popup({
+      window: browserWindow,
+    });
+  },
+);
 
 ipcMain.handle(
   "workbook:apply-transaction",
