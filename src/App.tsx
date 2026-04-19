@@ -413,6 +413,22 @@ function replaceInputSelection(
   };
 }
 
+function isEditableShortcutTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLTextAreaElement
+  );
+}
+
 export default function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formulaInputValue, setFormulaInputValue] = useState("");
@@ -1295,6 +1311,60 @@ export default function App() {
     handleImport,
     pasteSelection,
   ]);
+
+  useEffect(() => {
+    const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      const isPrimaryModifier = event.ctrlKey || event.metaKey;
+      const activeElement = document.activeElement;
+      const isFormulaInputFocused = activeElement === formulaInputRef.current;
+
+      if (
+        isEditableShortcutTarget(event.target) &&
+        !isFormulaInputFocused &&
+        event.key !== "Delete"
+      ) {
+        return;
+      }
+
+      if (!isPrimaryModifier && event.key !== "Delete") {
+        return;
+      }
+
+      if (event.altKey) {
+        return;
+      }
+
+      const normalizedKey = event.key.toLowerCase();
+
+      if (isPrimaryModifier && normalizedKey === "c") {
+        event.preventDefault();
+        void copySelection(event.shiftKey ? "display" : "raw");
+        return;
+      }
+
+      if (isPrimaryModifier && normalizedKey === "v") {
+        event.preventDefault();
+        void pasteSelection(event.shiftKey ? "display" : "raw");
+        return;
+      }
+
+      if (
+        event.key === "Delete" &&
+        !event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey
+      ) {
+        event.preventDefault();
+        deleteSelection();
+      }
+    };
+
+    window.addEventListener("keydown", handleWindowKeyDown, true);
+
+    return () => {
+      window.removeEventListener("keydown", handleWindowKeyDown, true);
+    };
+  }, [copySelection, deleteSelection, pasteSelection]);
 
   return (
     <main className="app-shell">
