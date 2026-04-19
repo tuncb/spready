@@ -1521,8 +1521,7 @@ export default function App() {
         </div>
 
         <div className="app-shell__stats" aria-label="Workbook state">
-          <span>{rowCount} rows</span>
-          <span>{columnCount} columns</span>
+          <span>{`${rowCount}x${columnCount}`}</span>
           <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
         </div>
       </footer>
