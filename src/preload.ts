@@ -7,6 +7,8 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
+  CutRangeRequest,
+  CutRangeResult,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
@@ -36,6 +38,7 @@ type SaveCsvFileResult =
 
 type ShowCellContextMenuRequest = {
   canCopy: boolean;
+  canCut: boolean;
   canDelete: boolean;
 };
 
@@ -66,6 +69,11 @@ contextBridge.exposeInMainWorld("appShell", {
       "workbook:get-cell-data",
       request,
     ) as Promise<CellDataResult>,
+  cutRange: (request: CutRangeRequest) =>
+    ipcRenderer.invoke(
+      "workbook:cut-range",
+      request,
+    ) as Promise<CutRangeResult>,
   getSheetCsv: (sheetId?: string) =>
     ipcRenderer.invoke("workbook:get-sheet-csv", {
       sheetId,

@@ -12,6 +12,8 @@ import type {
   CopyRangeRequest,
   CopyRangeResult,
   CreateNewWorkbookRequest,
+  CutRangeRequest,
+  CutRangeResult,
   CsvFileOperationResult,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
@@ -166,6 +168,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async copyRange(request: CopyRangeRequest) {
     return this.call<CopyRangeResult>("copyRange", request);
+  }
+
+  async cutRange(request: CutRangeRequest) {
+    return this.call<CutRangeResult>("cutRange", request);
   }
 
   async clearRange(request: ClearRangeRequest) {

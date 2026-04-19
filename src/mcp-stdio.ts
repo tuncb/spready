@@ -81,6 +81,13 @@ const cellDataSchema = z.object({
 
 const clipboardRangeModeSchema = z.enum(["display", "raw"]);
 
+const clipboardRangePayloadSchema = z.object({
+  displayText: z.string(),
+  displayValues: z.array(z.array(z.string())),
+  rawText: z.string(),
+  rawValues: z.array(z.array(z.string())),
+});
+
 const copyRangeResultSchema = z.object({
   columnCount: z.int().min(0),
   mode: clipboardRangeModeSchema,
@@ -91,6 +98,13 @@ const copyRangeResultSchema = z.object({
   startRow: z.int().min(0),
   text: z.string(),
   values: z.array(z.array(z.string())),
+});
+
+const cutRangeResultSchema = copyRangeResultSchema.extend({
+  changed: z.boolean(),
+  clipboard: clipboardRangePayloadSchema,
+  summary: workbookSummarySchema,
+  version: z.int().min(0),
 });
 
 const transactionOperationSchema = z.discriminatedUnion("type", [
@@ -400,6 +414,13 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: true,
+      description:
+        "Cut one rectangular range by returning clipboard payloads and clearing the source cells in one workbook mutation.",
+      name: "cut_range",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: true,
       description: "Return the sheet as CSV text trimmed to its used range.",
       name: "get_sheet_csv",
       readOnly: true,
@@ -452,12 +473,13 @@ const guideResource = {
     "Evaluated display reads include same-sheet arithmetic, comparisons, text operators, ranges, core worksheet functions, and same-sheet lookup functions such as INDEX, MATCH, and XLOOKUP.",
     "Current formula exclusions include absolute references with $, cross-sheet references, defined names, and LET.",
     "Use copy_range when you need a tab-delimited clipboard-style payload for one explicit rectangular range.",
+    "Use cut_range when you need clipboard payloads plus a clear of the source range in one controller-backed mutation.",
     "Use get_cell_data when you need one cell's raw formula text plus its evaluated display result.",
     "Many transaction operations also default to the active sheet when sheetId is omitted.",
     "Use import_csv_file and export_csv_file only for single-sheet CSV interchange.",
     "Use get_workbook_summary before large edits so you know which sheet ids and sizes exist.",
     "Use get_used_range or get_sheet_range instead of reading an entire large sheet.",
-    "Use paste_range and clear_range for explicit clipboard-like range edits without relying on UI selection state.",
+    "Use paste_range, cut_range, and clear_range for explicit clipboard-like range edits without relying on UI selection state.",
     "Prefer one apply_transaction call with batched operations over repeated single-cell writes.",
     "Use dryRun on apply_transaction to validate risky changes before mutating the workbook.",
     "CSV file paths are resolved on the same machine running the Spready desktop app and MCP wrapper.",
@@ -502,6 +524,7 @@ ${guideResource.workflow
 - get_sheet_display_range: Read one rectangular range of evaluated display values. Prefer this for formula-aware grid views.
 - get_sheet_range: Read one rectangular range. Prefer this over loading a large sheet.
 - copy_range: Return one rectangular range plus tab-delimited text using raw input or displayed values.
+- cut_range: Return clipboard payloads for one rectangular range and clear the same source cells.
 - get_sheet_csv: Return trimmed CSV for one sheet. Omitting sheetId uses the active sheet.
 - paste_range: Paste tab-delimited text or explicit values into the sheet starting at one cell. Omitting sheetId uses the active sheet.
 - clear_range: Clear one explicit rectangular range without resizing the sheet. Omitting sheetId uses the active sheet.
@@ -922,6 +945,15 @@ async function main() {
           {
             defaultsToActiveSheet: true,
             description:
+              "Cut one rectangular range by returning clipboard payloads and clearing the source cells.",
+            name: "cut_range",
+            readOnly: false,
+            useWhen:
+              "Use this when a task needs one explicit copy-and-clear operation without composing separate copy_range and clear_range calls.",
+          },
+          {
+            defaultsToActiveSheet: true,
+            description:
               "Return the sheet as CSV text trimmed to its used range.",
             name: "get_sheet_csv",
             readOnly: true,
@@ -1109,6 +1141,38 @@ async function main() {
       outputSchema: copyRangeResultSchema,
     },
     async (args) => createTextResult(await controlClient.copyRange(args)),
+  );
+
+  server.registerTool(
+    "cut_range",
+    {
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Cut one rectangular range by returning clipboard payloads and clearing the source cells.",
+      inputSchema: z.object({
+        columnCount: z.int().min(1).describe("Number of columns to cut."),
+        mode: clipboardRangeModeSchema
+          .optional()
+          .describe(
+            'Cut mode. Use "raw" to preserve formulas, or "display" to flatten them to visible values in the primary text and values output fields.',
+          ),
+        rowCount: z.int().min(1).describe("Number of rows to cut."),
+        sheetId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional target sheet id. Defaults to the active sheet."),
+        startColumn: z.int().min(0).describe("Zero-based start column."),
+        startRow: z.int().min(0).describe("Zero-based start row."),
+      }),
+      outputSchema: cutRangeResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.cutRange(args)),
   );
 
   server.registerTool(

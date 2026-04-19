@@ -121,6 +121,10 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `getSheetRange`
 - `getUsedRange`
 - `getSheetCsv`
+- `copyRange`
+- `cutRange`
+- `pasteRange`
+- `clearRange`
 - `createNewWorkbook`
 - `openWorkbookFile`
 - `saveWorkbookFile`
@@ -130,6 +134,8 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 
 For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, you can pass
 `sheetId` explicitly. If you omit `sheetId`, the active sheet is used.
+
+`copyRange` returns one rectangular range as tab-delimited text using raw input or displayed values. `cutRange` returns the same clipboard payloads and clears the source cells through the controller in one mutation.
 
 ### CSV import/export examples
 

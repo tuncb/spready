@@ -50,6 +50,13 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
       startColumn: 0,
       startRow: 0,
     });
+    const cutResult = await client.cutRange({
+      columnCount: 3,
+      mode: "display",
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    });
     const displayRange = await client.getSheetDisplayRange({
       columnCount: 3,
       rowCount: 1,
@@ -64,16 +71,20 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.ok(methods.includes("getCellData"));
     assert.ok(methods.includes("getSheetDisplayRange"));
     assert.ok(methods.includes("copyRange"));
+    assert.ok(methods.includes("cutRange"));
     assert.ok(methods.includes("pasteRange"));
     assert.ok(methods.includes("clearRange"));
     assert.equal(rawCopy.text, "4\t5\t=A1+B1");
     assert.equal(displayCopy.text, "4\t5\t9");
-    assert.deepEqual(displayRange.values, [["4", "5", "9"]]);
+    assert.equal(cutResult.text, "4\t5\t9");
+    assert.equal(cutResult.clipboard.rawText, "4\t5\t=A1+B1");
+    assert.equal(cutResult.clipboard.displayText, "4\t5\t9");
+    assert.deepEqual(displayRange.values, [["", "", ""]]);
     assert.deepEqual(cellData, {
       columnIndex: 2,
-      display: "9",
-      input: "=A1+B1",
-      isFormula: true,
+      display: "",
+      input: "",
+      isFormula: false,
       rowIndex: 0,
       sheetId: displayRange.sheetId,
       sheetName: displayRange.sheetName,

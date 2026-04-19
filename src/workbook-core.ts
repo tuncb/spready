@@ -225,6 +225,13 @@ export interface ExportCsvFileRequest {
 
 export type ClipboardRangeMode = "display" | "raw";
 
+export interface ClipboardRangePayload {
+  displayText: string;
+  displayValues: string[][];
+  rawText: string;
+  rawValues: string[][];
+}
+
 export interface CopyRangeRequest extends SheetRangeRequest {
   mode?: ClipboardRangeMode;
 }
@@ -239,6 +246,26 @@ export interface CopyRangeResult {
   startRow: number;
   text: string;
   values: string[][];
+}
+
+export interface CutRangeRequest extends SheetRangeRequest {
+  mode?: ClipboardRangeMode;
+}
+
+export interface CutRangeResult {
+  changed: boolean;
+  clipboard: ClipboardRangePayload;
+  columnCount: number;
+  mode: ClipboardRangeMode;
+  rowCount: number;
+  sheetId: string;
+  sheetName: string;
+  startColumn: number;
+  startRow: number;
+  summary: WorkbookSummary;
+  text: string;
+  values: string[][];
+  version: number;
 }
 
 export interface PasteRangeRequest {

@@ -7,6 +7,7 @@ import type {
   ControlServerInfo,
   CopyRangeRequest,
   CreateNewWorkbookRequest,
+  CutRangeRequest,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
   OpenWorkbookFileRequest,
@@ -238,6 +239,8 @@ export class SpreadyControlServer {
         return this.#controller.clearRange(params as ClearRangeRequest);
       case "copyRange":
         return this.#controller.copyRange(params as CopyRangeRequest);
+      case "cutRange":
+        return this.#controller.cutRange(params as CutRangeRequest);
       case "createNewWorkbook":
         return this.#controller.createNewWorkbook(
           (params as CreateNewWorkbookRequest | undefined) ?? {},
@@ -283,6 +286,7 @@ export class SpreadyControlServer {
           "applyTransaction",
           "clearRange",
           "copyRange",
+          "cutRange",
           "createNewWorkbook",
           "exportCsvFile",
           "getCellData",

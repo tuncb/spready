@@ -1,4 +1,6 @@
 export const APP_MENU_ACTIONS = {
+  cut: "edit:cut",
+  cutValues: "edit:cut-values",
   copy: "edit:copy",
   copyValues: "edit:copy-values",
   addColumn: "sheet:add-column",

@@ -164,7 +164,7 @@ test("WorkbookController keeps CSV export on raw input strings even when formula
   );
 });
 
-test("WorkbookController supports raw-vs-display range copy plus explicit paste and clear helpers", () => {
+test("WorkbookController supports raw-vs-display range copy plus explicit cut, paste, and clear helpers", () => {
   const controller = new WorkbookController();
 
   controller.applyTransaction({
@@ -198,10 +198,34 @@ test("WorkbookController supports raw-vs-display range copy plus explicit paste 
   assert.equal(displayCopy.text, "1\t2\t3");
   assert.deepEqual(displayCopy.values, [["1", "2", "3"]]);
 
+  const cutResult = controller.cutRange({
+    columnCount: 3,
+    mode: "display",
+    rowCount: 1,
+    startColumn: 0,
+    startRow: 0,
+  });
+
+  assert.equal(cutResult.changed, true);
+  assert.equal(cutResult.text, "1\t2\t3");
+  assert.equal(cutResult.clipboard.rawText, "1\t2\t=A1+B1");
+  assert.equal(cutResult.clipboard.displayText, "1\t2\t3");
+  assert.deepEqual(cutResult.clipboard.rawValues, [["1", "2", "=A1+B1"]]);
+  assert.deepEqual(cutResult.clipboard.displayValues, [["1", "2", "3"]]);
+  assert.deepEqual(
+    controller.getSheetRange({
+      columnCount: 3,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [["", "", ""]],
+  );
+
   controller.pasteRange({
     startColumn: 0,
     startRow: 1,
-    text: displayCopy.text,
+    text: cutResult.clipboard.displayText,
   });
 
   assert.deepEqual(
@@ -212,7 +236,7 @@ test("WorkbookController supports raw-vs-display range copy plus explicit paste 
       startRow: 0,
     }).values,
     [
-      ["1", "2", "=A1+B1"],
+      ["", "", ""],
       ["1", "2", "3"],
     ],
   );
@@ -232,7 +256,7 @@ test("WorkbookController supports raw-vs-display range copy plus explicit paste 
       startRow: 0,
     }).values,
     [
-      ["1", "2", "=A1+B1"],
+      ["", "", ""],
       ["1", "", ""],
     ],
   );

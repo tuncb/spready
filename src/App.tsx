@@ -864,6 +864,87 @@ export default function App() {
     [currentSelectionRange],
   );
 
+  const cutSelection = useCallback(
+    async (mode: ClipboardRangeMode) => {
+      const input = formulaInputRef.current;
+
+      if (document.activeElement === input && input) {
+        const selectionStart = input.selectionStart ?? input.value.length;
+        const selectionEnd = input.selectionEnd ?? input.value.length;
+
+        if (selectionStart === selectionEnd) {
+          return false;
+        }
+
+        await window.appShell.writeClipboard({
+          text: input.value.slice(selectionStart, selectionEnd),
+        });
+
+        return replaceFormulaInputSelection("");
+      }
+
+      if (!currentSelectionRange) {
+        return false;
+      }
+
+      try {
+        const [rawRange, displayRange] = await Promise.all([
+          window.appShell.getSheetRange(currentSelectionRange),
+          window.appShell.getSheetDisplayRange(currentSelectionRange),
+        ]);
+        const rawText = serializeTsv(rawRange.values);
+        const displayText = serializeTsv(displayRange.values);
+
+        await window.appShell.writeClipboard({
+          payload: {
+            displayText,
+            displayValues: displayRange.values.map((row) => [...row]),
+            rawText,
+            rawValues: rawRange.values.map((row) => [...row]),
+          },
+          text: mode === "display" ? displayText : rawText,
+        });
+
+        const result = await window.appShell.cutRange({
+          ...currentSelectionRange,
+          mode,
+        });
+
+        setSheetSummary(result.summary);
+
+        if (
+          selectedCell &&
+          selectionContainsCell(gridSelection, selectedCell)
+        ) {
+          setFormulaInputValue("");
+          setSelectedCellData((current) =>
+            current
+              ? {
+                  ...current,
+                  display: "",
+                  errorCode: undefined,
+                  input: "",
+                  isFormula: false,
+                }
+              : current,
+          );
+        }
+
+        setErrorMessage(null);
+        return true;
+      } catch (error) {
+        setErrorMessage(getErrorMessage(error));
+        return false;
+      }
+    },
+    [
+      currentSelectionRange,
+      gridSelection,
+      replaceFormulaInputSelection,
+      selectedCell,
+    ],
+  );
+
   const pasteSelection = useCallback(
     async (mode: ClipboardRangeMode) => {
       const clipboard = await window.appShell.readClipboard();
@@ -970,6 +1051,7 @@ export default function App() {
       void window.appShell
         .showCellContextMenu({
           canCopy: true,
+          canCut: true,
           canDelete: true,
         })
         .catch((error) => {
@@ -1316,6 +1398,12 @@ export default function App() {
     return window.appShell.onMenuAction((action) => {
       const handleMenuAction = (nextAction: AppMenuAction) => {
         switch (nextAction) {
+          case APP_MENU_ACTIONS.cut:
+            void cutSelection("raw");
+            return;
+          case APP_MENU_ACTIONS.cutValues:
+            void cutSelection("display");
+            return;
           case APP_MENU_ACTIONS.copy:
             void copySelection("raw");
             return;
@@ -1366,6 +1454,7 @@ export default function App() {
     addColumn,
     addRow,
     addSheet,
+    cutSelection,
     copySelection,
     deleteSelection,
     deleteSheet,
@@ -1407,6 +1496,12 @@ export default function App() {
         return;
       }
 
+      if (isPrimaryModifier && normalizedKey === "x") {
+        event.preventDefault();
+        void cutSelection(event.shiftKey ? "display" : "raw");
+        return;
+      }
+
       if (isPrimaryModifier && normalizedKey === "v") {
         event.preventDefault();
         void pasteSelection(event.shiftKey ? "display" : "raw");
@@ -1429,7 +1524,7 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleWindowKeyDown, true);
     };
-  }, [copySelection, deleteSelection, pasteSelection]);
+  }, [copySelection, cutSelection, deleteSelection, pasteSelection]);
 
   return (
     <main className="app-shell">

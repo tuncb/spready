@@ -5,6 +5,8 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
+  CutRangeRequest,
+  CutRangeResult,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
@@ -54,6 +56,7 @@ declare global {
       applyTransaction: (
         request: ApplyTransactionRequest,
       ) => Promise<ApplyTransactionResult>;
+      cutRange: (request: CutRangeRequest) => Promise<CutRangeResult>;
       getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
       getSheetCsv: (sheetId?: string) => Promise<string>;
       getSheetDisplayRange: (
@@ -76,6 +79,7 @@ declare global {
       ) => Promise<SaveCsvFileResult>;
       showCellContextMenu: (request: {
         canCopy: boolean;
+        canCut: boolean;
         canDelete: boolean;
       }) => Promise<void>;
       writeClipboard: (request: ClipboardWriteRequest) => Promise<void>;

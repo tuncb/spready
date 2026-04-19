@@ -31,6 +31,7 @@ import { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
   CellDataRequest,
+  CutRangeRequest,
   SheetRangeRequest,
   WorkbookFileOperationResult,
 } from "./workbook-core";
@@ -67,6 +68,7 @@ type SaveCsvFileArgs = {
 
 type ShowCellContextMenuArgs = {
   canCopy: boolean;
+  canCut: boolean;
   canDelete: boolean;
 };
 
@@ -142,6 +144,21 @@ function buildCellContextMenu(
   args: ShowCellContextMenuArgs,
 ) {
   return Menu.buildFromTemplate([
+    {
+      enabled: args.canCut,
+      label: "Cut",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.cut, browserWindow);
+      },
+    },
+    {
+      enabled: args.canCut,
+      label: "Cut Values",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.cutValues, browserWindow);
+      },
+    },
+    { type: "separator" },
     {
       enabled: args.canCopy,
       label: "Copy",
@@ -350,6 +367,21 @@ function buildAppMenu() {
     {
       label: "Edit",
       submenu: [
+        {
+          accelerator: "CmdOrCtrl+X",
+          label: "Cut",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.cut);
+          },
+        },
+        {
+          accelerator: "CmdOrCtrl+Shift+X",
+          label: "Cut Values",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.cutValues);
+          },
+        },
+        { type: "separator" },
         {
           accelerator: "CmdOrCtrl+C",
           label: "Copy",
@@ -691,6 +723,10 @@ ipcMain.handle(
 
 ipcMain.handle("workbook:get-cell-data", (_event, args: CellDataRequest) =>
   workbookController.getCellData(args),
+);
+
+ipcMain.handle("workbook:cut-range", (_event, args: CutRangeRequest) =>
+  workbookController.cutRange(args),
 );
 
 ipcMain.handle(

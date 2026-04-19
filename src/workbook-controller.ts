@@ -16,10 +16,13 @@ import {
   type ApplyTransactionResult,
   type CellDataRequest,
   type CellDataResult,
+  type ClipboardRangePayload,
   type ClearRangeRequest,
   type CopyRangeRequest,
   type CopyRangeResult,
   type CreateNewWorkbookRequest,
+  type CutRangeRequest,
+  type CutRangeResult,
   type CsvFileOperationResult,
   type ExportCsvFileRequest,
   type ImportCsvFileRequest,
@@ -120,6 +123,36 @@ export class WorkbookController extends EventEmitter {
       ...range,
       mode,
       text: serializeTsv(range.values),
+    };
+  }
+
+  cutRange(request: CutRangeRequest): CutRangeResult {
+    const mode = request.mode ?? "raw";
+    const rawRange = this.getSheetRange(request);
+    const displayRange = this.getSheetDisplayRange(request);
+    const clipboard: ClipboardRangePayload = {
+      displayText: serializeTsv(displayRange.values),
+      displayValues: cloneRangeValues(displayRange.values),
+      rawText: serializeTsv(rawRange.values),
+      rawValues: cloneRangeValues(rawRange.values),
+    };
+    const selectedRange = mode === "display" ? displayRange : rawRange;
+    const clearResult = this.clearRange({
+      columnCount: rawRange.columnCount,
+      rowCount: rawRange.rowCount,
+      sheetId: rawRange.sheetId,
+      startColumn: rawRange.startColumn,
+      startRow: rawRange.startRow,
+    });
+
+    return {
+      ...selectedRange,
+      changed: clearResult.changed,
+      clipboard,
+      mode,
+      summary: clearResult.summary,
+      text: mode === "display" ? clipboard.displayText : clipboard.rawText,
+      version: clearResult.version,
     };
   }
 
@@ -377,4 +410,8 @@ function assertCellIndex(value: number, limit: number, label: string) {
       `${label} index must be a non-negative integer within sheet bounds.`,
     );
   }
+}
+
+function cloneRangeValues(values: string[][]): string[][] {
+  return values.map((row) => [...row]);
 }
