@@ -33,6 +33,12 @@ import {
   type WorkbookSummary,
   type WorkbookTransactionOperation,
 } from "./workbook-core";
+import { ToastViewport } from "./ToastViewport";
+import {
+  enqueueToast,
+  removeToast,
+  type ToastNotification,
+} from "./toast-state";
 
 const DEFAULT_COLUMN_WIDTH = 140;
 const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
@@ -435,7 +441,6 @@ function getDefaultWorkbookFilePath(summary: WorkbookSummary | null): string {
 }
 
 export default function App() {
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formulaInputValue, setFormulaInputValue] = useState("");
   const [gridSelection, setGridSelection] = useState<GridSelection>(
     createEmptyGridSelection,
@@ -445,6 +450,7 @@ export default function App() {
   const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(
     null,
   );
+  const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [viewNonce, setViewNonce] = useState(0);
 
   const exportPathRef = useRef<string>();
@@ -477,6 +483,17 @@ export default function App() {
         : null,
     [activeSheet, gridSelection],
   );
+  const dismissToast = useCallback((toastId: string) => {
+    setToasts((current) => removeToast(current, toastId));
+  }, []);
+  const pushErrorToast = useCallback((error: unknown) => {
+    setToasts((current) =>
+      enqueueToast(current, {
+        kind: "error",
+        title: getErrorMessage(error),
+      }),
+    );
+  }, []);
 
   const applyTransaction = useCallback(
     async (
@@ -487,7 +504,6 @@ export default function App() {
       const result = await window.appShell.applyTransaction({ operations });
 
       setSheetSummary(result.summary);
-      setErrorMessage(null);
 
       return result;
     },
@@ -524,10 +540,10 @@ export default function App() {
         displayRangeCacheRef.current = displayRange;
         setViewNonce((current) => current + 1);
       } catch (error) {
-        setErrorMessage(getErrorMessage(error));
+        pushErrorToast(error);
       }
     },
-    [activeSheet],
+    [activeSheet, pushErrorToast],
   );
 
   const refreshSelectedCellData = useCallback(async () => {
@@ -555,11 +571,10 @@ export default function App() {
 
       setSelectedCellData(cellData);
       setFormulaInputValue(cellData.input);
-      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     }
-  }, [activeSheet, selectedCell]);
+  }, [activeSheet, pushErrorToast, selectedCell]);
 
   const getCellContent = useCallback(
     (cell: Item): GridCell => {
@@ -666,7 +681,7 @@ export default function App() {
           value: newValue.data,
         },
       ]).catch((error) => {
-        setErrorMessage(getErrorMessage(error));
+        pushErrorToast(error);
         void loadVisibleRange(lastVisibleRegionRef.current);
         void refreshSelectedCellData();
       });
@@ -675,6 +690,7 @@ export default function App() {
       activeSheet,
       applyTransaction,
       loadVisibleRange,
+      pushErrorToast,
       refreshSelectedCellData,
       selectedCell,
     ],
@@ -745,7 +761,7 @@ export default function App() {
           values: nextValues,
         },
       ]).catch((error) => {
-        setErrorMessage(getErrorMessage(error));
+        pushErrorToast(error);
         void loadVisibleRange(lastVisibleRegionRef.current);
         void refreshSelectedCellData();
       });
@@ -756,6 +772,7 @@ export default function App() {
       activeSheet,
       applyTransaction,
       loadVisibleRange,
+      pushErrorToast,
       refreshSelectedCellData,
       selectedCell,
     ],
@@ -854,14 +871,13 @@ export default function App() {
           },
           text: mode === "display" ? displayText : rawText,
         });
-        setErrorMessage(null);
         return true;
       } catch (error) {
-        setErrorMessage(getErrorMessage(error));
+        pushErrorToast(error);
         return false;
       }
     },
-    [currentSelectionRange],
+    [currentSelectionRange, pushErrorToast],
   );
 
   const cutSelection = useCallback(
@@ -930,16 +946,16 @@ export default function App() {
           );
         }
 
-        setErrorMessage(null);
         return true;
       } catch (error) {
-        setErrorMessage(getErrorMessage(error));
+        pushErrorToast(error);
         return false;
       }
     },
     [
       currentSelectionRange,
       gridSelection,
+      pushErrorToast,
       replaceFormulaInputSelection,
       selectedCell,
     ],
@@ -1020,7 +1036,7 @@ export default function App() {
       }
 
       void applyTransaction(operations).catch((error) => {
-        setErrorMessage(getErrorMessage(error));
+        pushErrorToast(error);
         void loadVisibleRange(lastVisibleRegionRef.current);
         void refreshSelectedCellData();
       });
@@ -1033,6 +1049,7 @@ export default function App() {
       deleteFormulaInputSelection,
       gridSelection,
       loadVisibleRange,
+      pushErrorToast,
       refreshSelectedCellData,
       selectedCell,
     ],
@@ -1055,10 +1072,10 @@ export default function App() {
           canDelete: true,
         })
         .catch((error) => {
-          setErrorMessage(getErrorMessage(error));
+          pushErrorToast(error);
         });
     },
-    [gridSelection],
+    [gridSelection, pushErrorToast],
   );
 
   const commitFormulaBar = useCallback(async () => {
@@ -1109,7 +1126,7 @@ export default function App() {
         },
       ]);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
       void loadVisibleRange(lastVisibleRegionRef.current);
       void refreshSelectedCellData();
     }
@@ -1118,6 +1135,7 @@ export default function App() {
     applyTransaction,
     formulaInputValue,
     loadVisibleRange,
+    pushErrorToast,
     refreshSelectedCellData,
     selectedCell,
     selectedCellData?.input,
@@ -1135,9 +1153,9 @@ export default function App() {
         type: "insertColumns",
       },
     ]).catch((error) => {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     });
-  }, [activeSheet, applyTransaction]);
+  }, [activeSheet, applyTransaction, pushErrorToast]);
 
   const addRow = useCallback(() => {
     if (!activeSheet) {
@@ -1151,9 +1169,9 @@ export default function App() {
         type: "insertRows",
       },
     ]).catch((error) => {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     });
-  }, [activeSheet, applyTransaction]);
+  }, [activeSheet, applyTransaction, pushErrorToast]);
 
   const addSheet = useCallback(() => {
     void applyTransaction([
@@ -1162,9 +1180,9 @@ export default function App() {
         type: "addSheet",
       },
     ]).catch((error) => {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     });
-  }, [applyTransaction]);
+  }, [applyTransaction, pushErrorToast]);
 
   const deleteSheet = useCallback(() => {
     if (!activeSheet) {
@@ -1177,9 +1195,9 @@ export default function App() {
         type: "deleteSheet",
       },
     ]).catch((error) => {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     });
-  }, [activeSheet, applyTransaction]);
+  }, [activeSheet, applyTransaction, pushErrorToast]);
 
   const handleActiveSheetChange = useCallback(
     (event: ChangeEvent<HTMLSelectElement>) => {
@@ -1189,10 +1207,10 @@ export default function App() {
           type: "setActiveSheet",
         },
       ]).catch((error) => {
-        setErrorMessage(getErrorMessage(error));
+        pushErrorToast(error);
       });
     },
-    [applyTransaction],
+    [applyTransaction, pushErrorToast],
   );
 
   const handleFormulaInputChange = useCallback(
@@ -1236,9 +1254,9 @@ export default function App() {
         },
       ]);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     }
-  }, [applyTransaction]);
+  }, [applyTransaction, pushErrorToast]);
 
   const handleExport = useCallback(async () => {
     if (!activeSheet) {
@@ -1266,9 +1284,9 @@ export default function App() {
         },
       ]);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     }
-  }, [activeSheet, applyTransaction]);
+  }, [activeSheet, applyTransaction, pushErrorToast]);
 
   const handleOpenWorkbook = useCallback(async () => {
     try {
@@ -1279,11 +1297,10 @@ export default function App() {
       }
 
       setSheetSummary(result.summary);
-      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     }
-  }, []);
+  }, [pushErrorToast]);
 
   const handleSaveWorkbookAs = useCallback(async () => {
     try {
@@ -1296,11 +1313,10 @@ export default function App() {
       }
 
       setSheetSummary(result.summary);
-      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     }
-  }, [sheetSummary]);
+  }, [pushErrorToast, sheetSummary]);
 
   const handleSaveWorkbook = useCallback(async () => {
     try {
@@ -1314,11 +1330,10 @@ export default function App() {
       );
 
       setSheetSummary(result.summary);
-      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      pushErrorToast(error);
     }
-  }, [handleSaveWorkbookAs, sheetSummary]);
+  }, [handleSaveWorkbookAs, pushErrorToast, sheetSummary]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1331,26 +1346,24 @@ export default function App() {
         }
 
         setSheetSummary(summary);
-        setErrorMessage(null);
       })
       .catch((error) => {
         if (!isMounted) {
           return;
         }
 
-        setErrorMessage(getErrorMessage(error));
+        pushErrorToast(error);
       });
 
     const unsubscribeWorkbook = window.appShell.onWorkbookChanged((summary) => {
       setSheetSummary(summary);
-      setErrorMessage(null);
     });
 
     return () => {
       isMounted = false;
       unsubscribeWorkbook();
     };
-  }, []);
+  }, [pushErrorToast]);
 
   useEffect(() => {
     setGridSelection(createEmptyGridSelection());
@@ -1528,12 +1541,6 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      {errorMessage ? (
-        <div className="app-shell__error" role="status">
-          {errorMessage}
-        </div>
-      ) : null}
-
       <section className="formula-bar" aria-label="Formula bar">
         <div className="formula-bar__address">
           {selectedCellAddress || "Cell"}
@@ -1620,6 +1627,8 @@ export default function App() {
           <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
         </div>
       </footer>
+
+      <ToastViewport onDismiss={dismissToast} toasts={toasts} />
     </main>
   );
 }
