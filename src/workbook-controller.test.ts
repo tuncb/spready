@@ -217,3 +217,41 @@ test("WorkbookController saves and opens native workbook files", async () => {
     await fs.rm(tempDirectory, { force: true, recursive: true });
   }
 });
+
+test("WorkbookController creates a new workbook and guards unsaved replacement", async () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "draft",
+      },
+    ],
+  });
+
+  assert.equal(controller.getSummary().hasUnsavedChanges, true);
+
+  assert.throws(
+    () => controller.createNewWorkbook(),
+    /discardUnsavedChanges: true/,
+  );
+
+  const resetResult = controller.createNewWorkbook({
+    discardUnsavedChanges: true,
+  });
+
+  assert.equal(resetResult.changed, true);
+  assert.equal(resetResult.summary.documentFilePath, undefined);
+  assert.equal(resetResult.summary.hasUnsavedChanges, false);
+  assert.equal(resetResult.summary.sheets.length, 1);
+  assert.equal(
+    controller.getCellData({
+      columnIndex: 0,
+      rowIndex: 0,
+    }).input,
+    "",
+  );
+});

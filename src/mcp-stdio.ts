@@ -321,6 +321,13 @@ const guideResource = {
     {
       defaultsToActiveSheet: false,
       description:
+        "Create a new blank workbook and replace the in-app workbook state.",
+      name: "create_new_workbook",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description:
         "Open a native Spready workbook file and replace the in-app workbook state.",
       name: "open_workbook_file",
       readOnly: false,
@@ -391,6 +398,7 @@ const guideResource = {
   })),
   usageConventions: [
     "Rows and columns are zero-based.",
+    "Use create_new_workbook for a fresh blank workbook.",
     "Use open_workbook_file and save_workbook_file for full multi-sheet workbook persistence.",
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
@@ -406,6 +414,7 @@ const guideResource = {
     `Subscribe to ${WORKBOOK_SUMMARY_RESOURCE_URI} if your client supports live workbook summary updates.`,
   ],
   workflow: [
+    "Create a new workbook with create_new_workbook when the task should start from a blank workbook.",
     "Open an existing workbook with open_workbook_file when the task starts from a .spready document.",
     "Inspect the workbook with get_workbook_summary.",
     "Narrow the target area with get_used_range or get_sheet_range.",
@@ -435,6 +444,7 @@ ${guideResource.workflow
 ## Tools
 
 - get_workbook_summary: Return workbook metadata including active sheet, version, and sheet sizes.
+- create_new_workbook: Create a new blank workbook and replace the in-app workbook state.
 - open_workbook_file: Open a native Spready workbook file and replace the in-app workbook state.
 - save_workbook_file: Save the current workbook as a native Spready workbook file.
 - get_used_range: Return the used range bounds for a sheet. Omitting sheetId uses the active sheet.
@@ -678,6 +688,30 @@ async function main() {
   );
 
   server.registerTool(
+    "create_new_workbook",
+    {
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Create a new blank workbook and replace the in-app workbook state.",
+      inputSchema: z.object({
+        discardUnsavedChanges: z
+          .boolean()
+          .optional()
+          .describe(
+            "Set to true to replace the current workbook even when it has unsaved changes.",
+          ),
+      }),
+      outputSchema: applyTransactionResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.createNewWorkbook(args)),
+  );
+
+  server.registerTool(
     "open_workbook_file",
     {
       annotations: {
@@ -758,6 +792,15 @@ async function main() {
             readOnly: true,
             useWhen:
               "Always use this first before exploring or editing a workbook, and inspect hasUnsavedChanges before replacing it.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Create a new blank workbook and replace the in-app workbook state.",
+            name: "create_new_workbook",
+            readOnly: false,
+            useWhen:
+              "Use this when the task should start from a blank workbook. Pass discardUnsavedChanges only after you have explicitly decided to replace unsaved work.",
           },
           {
             defaultsToActiveSheet: false,
@@ -1089,6 +1132,7 @@ async function main() {
               text:
                 `Use the Spready MCP server to accomplish this workbook task: ${goal}\n\n` +
                 "Workflow:\n" +
+                "- Use create_new_workbook when the task should start from a blank workbook.\n" +
                 "- Use open_workbook_file when the task starts from an existing .spready workbook.\n" +
                 "- Start with get_workbook_summary.\n" +
                 "- If get_workbook_summary reports hasUnsavedChanges, save first or pass discardUnsavedChanges only if losing local changes is intended.\n" +

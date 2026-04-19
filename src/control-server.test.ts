@@ -138,3 +138,57 @@ test("SpreadyControlServer saves and opens native workbook files over TCP", asyn
     await fs.rm(tempDirectory, { force: true, recursive: true });
   }
 });
+
+test("SpreadyControlServer creates a new workbook over TCP with unsaved-change guard", async () => {
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
+
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    await client.applyTransaction({
+      operations: [
+        {
+          columnIndex: 0,
+          rowIndex: 0,
+          type: "setCell",
+          value: "draft",
+        },
+      ],
+    });
+
+    await assert.rejects(
+      () => client.createNewWorkbook(),
+      /discardUnsavedChanges: true/,
+    );
+
+    const result = await client.createNewWorkbook({
+      discardUnsavedChanges: true,
+    });
+
+    assert.equal(result.changed, true);
+    assert.equal(result.summary.documentFilePath, undefined);
+    assert.equal(result.summary.hasUnsavedChanges, false);
+    assert.equal(
+      (
+        await client.getCellData({
+          columnIndex: 0,
+          rowIndex: 0,
+        })
+      ).input,
+      "",
+    );
+  } finally {
+    await client.close();
+    await server.stop();
+  }
+});

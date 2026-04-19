@@ -6,6 +6,7 @@ import {
   applyWorkbookTransaction,
   createWorkbookState,
   getSheetColumnCount,
+  type CreateNewWorkbookRequest,
   type CsvFileOperationResult,
   type ExportCsvFileRequest,
   getWorkbookSheet,
@@ -100,6 +101,29 @@ export class WorkbookController extends EventEmitter {
 
   getUsedRange(sheetId?: string): UsedRangeResult {
     return getSheetUsedRange(this.#state, sheetId);
+  }
+
+  createNewWorkbook(
+    request: CreateNewWorkbookRequest = {},
+  ): ApplyTransactionResult {
+    if (this.#state.hasUnsavedChanges && !request.discardUnsavedChanges) {
+      throw new Error(
+        "Workbook has unsaved changes. Save it first or retry with discardUnsavedChanges: true.",
+      );
+    }
+
+    const nextState = createWorkbookState();
+
+    nextState.version = this.#state.version + 1;
+    this.#commitState(nextState);
+
+    const summary = getWorkbookSummary(this.#state);
+
+    return {
+      changed: true,
+      summary,
+      version: summary.version,
+    };
   }
 
   applyTransaction(request: ApplyTransactionRequest): ApplyTransactionResult {

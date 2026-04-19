@@ -4,6 +4,7 @@ import type { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
   ControlServerInfo,
+  CreateNewWorkbookRequest,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
   OpenWorkbookFileRequest,
@@ -230,6 +231,10 @@ export class SpreadyControlServer {
         return this.#controller.applyTransaction(
           params as ApplyTransactionRequest,
         );
+      case "createNewWorkbook":
+        return this.#controller.createNewWorkbook(
+          (params as CreateNewWorkbookRequest | undefined) ?? {},
+        );
       case "exportCsvFile":
         return this.#controller.exportCsvFile(params as ExportCsvFileRequest);
       case "getCellData":
@@ -267,6 +272,7 @@ export class SpreadyControlServer {
       case "listMethods":
         return [
           "applyTransaction",
+          "createNewWorkbook",
           "exportCsvFile",
           "getCellData",
           "getControlInfo",

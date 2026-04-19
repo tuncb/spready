@@ -121,6 +121,7 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `getSheetRange`
 - `getUsedRange`
 - `getSheetCsv`
+- `createNewWorkbook`
 - `openWorkbookFile`
 - `saveWorkbookFile`
 - `importCsvFile`
@@ -159,6 +160,18 @@ Export a specific sheet to CSV without changing the active sheet:
 ```
 
 ### Workbook file examples
+
+Create a new blank workbook, replacing the current workbook only if discarding unsaved changes is intentional:
+
+```json
+{
+  "id": 4,
+  "method": "createNewWorkbook",
+  "params": {
+    "discardUnsavedChanges": true
+  }
+}
+```
 
 Open a native Spready workbook file:
 
@@ -239,6 +252,7 @@ The stdio MCP wrapper currently exposes:
 
 - `describe_capabilities`
 - `get_workbook_summary`
+- `create_new_workbook`
 - `get_used_range`
 - `get_cell_data`
 - `get_sheet_display_range`
@@ -260,6 +274,8 @@ the active sheet.
 `open_workbook_file` and `save_workbook_file` operate on the full multi-sheet workbook and use the `.spready` document format.
 
 When `get_workbook_summary` reports `hasUnsavedChanges: true`, remote clients should either save first or pass `discardUnsavedChanges: true` to `open_workbook_file` only when replacing local changes is intended.
+
+`create_new_workbook` follows the same rule and requires `discardUnsavedChanges: true` when replacing a dirty in-memory workbook.
 
 ### Resources
 

@@ -219,6 +219,10 @@ export interface OpenWorkbookFileRequest {
   filePath: string;
 }
 
+export interface CreateNewWorkbookRequest {
+  discardUnsavedChanges?: boolean;
+}
+
 export interface SaveWorkbookFileRequest {
   filePath: string;
 }

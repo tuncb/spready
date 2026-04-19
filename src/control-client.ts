@@ -8,6 +8,7 @@ import type {
   CellDataRequest,
   CellDataResult,
   ControlServerInfo,
+  CreateNewWorkbookRequest,
   CsvFileOperationResult,
   ExportCsvFileRequest,
   ImportCsvFileRequest,
@@ -149,6 +150,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async applyTransaction(request: ApplyTransactionRequest) {
     return this.call<ApplyTransactionResult>("applyTransaction", request);
+  }
+
+  async createNewWorkbook(request?: CreateNewWorkbookRequest) {
+    return this.call<ApplyTransactionResult>("createNewWorkbook", request);
   }
 
   async exportCsvFile(request: ExportCsvFileRequest) {

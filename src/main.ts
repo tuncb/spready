@@ -19,6 +19,7 @@ import {
   clearDiscoveredControlInfo,
   writeDiscoveredControlInfo,
 } from "./control-discovery";
+import { formatWorkbookWindowTitle } from "./window-title";
 import { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
@@ -83,8 +84,10 @@ function sendMenuAction(
 
 function broadcastWorkbookChanged() {
   const summary = workbookController.getSummary();
+  const title = formatWorkbookWindowTitle(summary, APP_DISPLAY_NAME);
 
   for (const browserWindow of BrowserWindow.getAllWindows()) {
+    browserWindow.setTitle(title);
     browserWindow.webContents.send("workbook:changed", summary);
   }
 }
@@ -195,11 +198,42 @@ async function resolveUnsavedChanges(
   return "cancel";
 }
 
+async function createNewWorkbookWithPrompt(
+  browserWindow?: BrowserWindow | null,
+) {
+  try {
+    const unsavedChangesResolution = await resolveUnsavedChanges(browserWindow);
+
+    if (unsavedChangesResolution === "cancel") {
+      return;
+    }
+
+    workbookController.createNewWorkbook({
+      discardUnsavedChanges: unsavedChangesResolution === "discard",
+    });
+  } catch (error) {
+    dialog.showErrorBox(
+      "New workbook failed",
+      error instanceof Error
+        ? error.message
+        : "The new workbook could not be created.",
+    );
+  }
+}
+
 function buildAppMenu() {
   const template: MenuItemConstructorOptions[] = [
     {
       label: "File",
       submenu: [
+        {
+          label: "New Workbook",
+          accelerator: "CmdOrCtrl+N",
+          click: () => {
+            void createNewWorkbookWithPrompt();
+          },
+        },
+        { type: "separator" },
         {
           label: "Open Workbook",
           accelerator: "CmdOrCtrl+O",
@@ -308,6 +342,9 @@ const createWindow = () => {
       sandbox: true,
     },
   });
+  mainWindow.setTitle(
+    formatWorkbookWindowTitle(workbookController.getSummary(), APP_DISPLAY_NAME),
+  );
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
