@@ -2,12 +2,22 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  adjustWorkbookChartForDeletedColumns,
+  adjustWorkbookChartForDeletedRows,
+  adjustWorkbookChartForInsertedColumns,
+  adjustWorkbookChartForInsertedRows,
   applyWorkbookTransaction,
+  createWorkbookChartSummary,
   createSheet,
   createWorkbookState,
   getColumnTitle,
+  getWorkbookChartDimensionCount,
+  getWorkbookChartStatus,
+  getWorkbookChartValidationIssues,
+  getSheetColumnCount,
   getSheetCsv,
   getSheetRange,
+  getSheetRowCount,
   getSheetUsedRange,
   getWorkbookSummary,
   normalizeSheet,
@@ -15,6 +25,9 @@ import {
   parseTsv,
   serializeTsv,
   serializeCsv,
+  type WorkbookChart,
+  type WorkbookChartCartesianSpec,
+  type WorkbookChartSheetReference,
   type WorkbookSheet,
   type WorkbookState,
 } from "./workbook-core";
@@ -27,6 +40,44 @@ function getActiveSheet(state: WorkbookState): WorkbookSheet {
   assert.ok(activeSheet, "Expected an active sheet in workbook state.");
 
   return activeSheet;
+}
+
+function createBarChart(
+  overrides: Partial<Omit<WorkbookChart, "spec">> = {},
+): WorkbookChart & { spec: WorkbookChartCartesianSpec } {
+  return {
+    id: "chart-1",
+    name: "Revenue",
+    sheetId: "sheet-1",
+    spec: {
+      categoryDimension: 0,
+      chartType: "bar",
+      family: "cartesian",
+      source: {
+        range: {
+          columnCount: 3,
+          rowCount: 4,
+          sheetId: "sheet-1",
+          startColumn: 1,
+          startRow: 2,
+        },
+        seriesLayoutBy: "column",
+        sourceHeader: true,
+      },
+      valueDimensions: [1, 2],
+    },
+    ...overrides,
+  };
+}
+
+function getChartSheetReferences(
+  workbook: Pick<WorkbookState, "sheets">,
+): WorkbookChartSheetReference[] {
+  return workbook.sheets.map((sheet) => ({
+    columnCount: getSheetColumnCount(sheet),
+    id: sheet.id,
+    rowCount: getSheetRowCount(sheet),
+  }));
 }
 
 test("createSheet and normalizeSheet build rectangular matrices", () => {
@@ -105,6 +156,170 @@ test("getColumnTitle covers spreadsheet-style alphabet boundaries", () => {
   assert.equal(getColumnTitle(52), "BA");
   assert.equal(getColumnTitle(701), "ZZ");
   assert.equal(getColumnTitle(702), "AAA");
+});
+
+test("workbook chart helpers validate same-sheet range contracts and summarize status", () => {
+  const sheets: WorkbookChartSheetReference[] = [
+    {
+      columnCount: 10,
+      id: "sheet-1",
+      rowCount: 12,
+    },
+  ];
+  const validChart = createBarChart();
+  const invalidChart: WorkbookChart = {
+    ...validChart,
+    id: "chart-2",
+    sheetId: "sheet-2",
+    spec: {
+      ...validChart.spec,
+      source: {
+        ...validChart.spec.source,
+        range: {
+          ...validChart.spec.source.range,
+          columnCount: 0,
+          sheetId: "sheet-1",
+        },
+      },
+      valueDimensions: [],
+    },
+  };
+  const rowLayoutChart: WorkbookChart = {
+    ...validChart,
+    id: "chart-3",
+    spec: {
+      ...validChart.spec,
+      source: {
+        ...validChart.spec.source,
+        seriesLayoutBy: "row",
+      },
+    },
+  };
+
+  assert.equal(getWorkbookChartDimensionCount(validChart), 3);
+  assert.equal(getWorkbookChartDimensionCount(rowLayoutChart), 4);
+  assert.deepEqual(getWorkbookChartValidationIssues(validChart, sheets), []);
+  assert.equal(getWorkbookChartStatus(validChart, sheets), "ok");
+  assert.deepEqual(createWorkbookChartSummary(validChart, sheets), {
+    chartType: "bar",
+    id: "chart-1",
+    name: "Revenue",
+    sheetId: "sheet-1",
+    status: "ok",
+  });
+  assert.deepEqual(
+    getWorkbookChartValidationIssues(invalidChart, sheets).map(
+      (issue) => issue.code,
+    ),
+    [
+      "CROSS_SHEET_SOURCE",
+      "EMPTY_RANGE",
+      "MISSING_SHEET",
+      "EMPTY_VALUE_DIMENSIONS",
+      "INVALID_DIMENSION",
+    ],
+  );
+  assert.equal(getWorkbookChartStatus(invalidChart, sheets), "invalid");
+});
+
+test("workbook chart helpers rewrite source ranges for structural row and column edits", () => {
+  const baseChart = createBarChart();
+
+  assert.deepEqual(
+    adjustWorkbookChartForInsertedRows(baseChart, "sheet-1", 1, 2).spec.source
+      .range,
+    {
+      columnCount: 3,
+      rowCount: 4,
+      sheetId: "sheet-1",
+      startColumn: 1,
+      startRow: 4,
+    },
+  );
+  assert.deepEqual(
+    adjustWorkbookChartForInsertedRows(baseChart, "sheet-1", 4, 2).spec.source
+      .range,
+    {
+      columnCount: 3,
+      rowCount: 6,
+      sheetId: "sheet-1",
+      startColumn: 1,
+      startRow: 2,
+    },
+  );
+  assert.deepEqual(
+    adjustWorkbookChartForDeletedRows(baseChart, "sheet-1", 0, 3).spec.source
+      .range,
+    {
+      columnCount: 3,
+      rowCount: 3,
+      sheetId: "sheet-1",
+      startColumn: 1,
+      startRow: 0,
+    },
+  );
+  assert.deepEqual(
+    adjustWorkbookChartForInsertedColumns(baseChart, "sheet-1", 0, 2).spec
+      .source.range,
+    {
+      columnCount: 3,
+      rowCount: 4,
+      sheetId: "sheet-1",
+      startColumn: 3,
+      startRow: 2,
+    },
+  );
+  assert.deepEqual(
+    adjustWorkbookChartForDeletedColumns(baseChart, "sheet-1", 2, 5).spec.source
+      .range,
+    {
+      columnCount: 1,
+      rowCount: 4,
+      sheetId: "sheet-1",
+      startColumn: 1,
+      startRow: 2,
+    },
+  );
+});
+
+test("workbook chart helpers preserve invalid charts explicitly when structural deletes remove all source data", () => {
+  const sheets: WorkbookChartSheetReference[] = [
+    {
+      columnCount: 10,
+      id: "sheet-1",
+      rowCount: 12,
+    },
+  ];
+  const chart = createBarChart();
+  const withoutRows = adjustWorkbookChartForDeletedRows(
+    chart,
+    "sheet-1",
+    0,
+    20,
+  );
+  const withoutColumns = adjustWorkbookChartForDeletedColumns(
+    chart,
+    "sheet-1",
+    0,
+    20,
+  );
+
+  assert.deepEqual(withoutRows.spec.source.range, {
+    columnCount: 3,
+    rowCount: 0,
+    sheetId: "sheet-1",
+    startColumn: 1,
+    startRow: 0,
+  });
+  assert.deepEqual(withoutColumns.spec.source.range, {
+    columnCount: 0,
+    rowCount: 4,
+    sheetId: "sheet-1",
+    startColumn: 0,
+    startRow: 2,
+  });
+  assert.equal(getWorkbookChartStatus(withoutRows, sheets), "invalid");
+  assert.equal(getWorkbookChartStatus(withoutColumns, sheets), "invalid");
 });
 
 test("getWorkbookSummary, getSheetRange, and getSheetUsedRange reflect workbook contents", () => {
@@ -359,6 +574,98 @@ test("applyWorkbookTransaction supports structural edits and keeps a minimum 1x1
   }).state;
 
   assert.deepEqual(getActiveSheet(collapsedState).cells, [[""]]);
+});
+
+test("applyWorkbookTransaction rewrites persisted chart ranges for structural edits", () => {
+  const workbook = createWorkbookState();
+  const chart = createBarChart({ sheetId: workbook.activeSheetId });
+
+  chart.spec.source.range.sheetId = workbook.activeSheetId;
+  workbook.charts = [chart];
+  workbook.nextChartNumber = 2;
+
+  const insertedRows = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        count: 2,
+        rowIndex: 1,
+        sheetId: workbook.activeSheetId,
+        type: "insertRows",
+      },
+    ],
+  }).state;
+  const deletedColumns = applyWorkbookTransaction(insertedRows, {
+    operations: [
+      {
+        columnIndex: 2,
+        count: 1,
+        sheetId: workbook.activeSheetId,
+        type: "deleteColumns",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(insertedRows.charts[0]?.spec.source.range, {
+    columnCount: 3,
+    rowCount: 4,
+    sheetId: workbook.activeSheetId,
+    startColumn: 1,
+    startRow: 4,
+  });
+  assert.deepEqual(deletedColumns.charts[0]?.spec.source.range, {
+    columnCount: 2,
+    rowCount: 4,
+    sheetId: workbook.activeSheetId,
+    startColumn: 1,
+    startRow: 4,
+  });
+});
+
+test("applyWorkbookTransaction preserves charts explicitly when deleting their sheet", () => {
+  let workbook = createWorkbookState();
+  const primarySheetId = workbook.activeSheetId;
+
+  workbook = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        activate: false,
+        name: "Sheet 2",
+        sheetId: "sheet-2",
+        type: "addSheet",
+      },
+    ],
+  }).state;
+  const chart = createBarChart({ sheetId: primarySheetId });
+
+  chart.spec.source.range.sheetId = primarySheetId;
+  workbook.charts = [chart];
+  workbook.nextChartNumber = 2;
+
+  const deletedSheetWorkbook = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        nextActiveSheetId: "sheet-2",
+        sheetId: primarySheetId,
+        type: "deleteSheet",
+      },
+    ],
+  }).state;
+
+  assert.equal(deletedSheetWorkbook.charts.length, 1);
+  assert.equal(
+    getWorkbookChartStatus(
+      deletedSheetWorkbook.charts[0],
+      getChartSheetReferences(deletedSheetWorkbook),
+    ),
+    "invalid",
+  );
+  assert.deepEqual(
+    getWorkbookChartValidationIssues(
+      deletedSheetWorkbook.charts[0],
+      getChartSheetReferences(deletedSheetWorkbook),
+    ).map((issue) => issue.code),
+    ["MISSING_SHEET"],
+  );
 });
 
 test("applyWorkbookTransaction resizes and replaces sheet contents from CSV metadata-aware updates", () => {

@@ -3,13 +3,14 @@ import * as z from "zod/v4";
 import {
   createSheet,
   syncSheetIdSequence,
+  type WorkbookChart,
   type WorkbookSheet,
   type WorkbookState,
 } from "./workbook-core";
 
 export const WORKBOOK_DOCUMENT_EXTENSION = ".spready";
 export const WORKBOOK_DOCUMENT_FORMAT = "spready-workbook";
-export const WORKBOOK_DOCUMENT_VERSION = 1;
+export const WORKBOOK_DOCUMENT_VERSION = 2;
 
 export interface WorkbookDocumentCell {
   column: number;
@@ -28,11 +29,15 @@ export interface WorkbookDocumentSheet {
   rowCount: number;
 }
 
+export type WorkbookDocumentChart = WorkbookChart;
+
 export interface WorkbookDocument {
   format: typeof WORKBOOK_DOCUMENT_FORMAT;
   formatVersion: typeof WORKBOOK_DOCUMENT_VERSION;
   workbook: {
     activeSheetId: string;
+    charts: WorkbookDocumentChart[];
+    nextChartNumber: number;
     nextSheetNumber: number;
     sheets: WorkbookDocumentSheet[];
   };
@@ -57,11 +62,55 @@ const workbookDocumentSheetSchema = z.object({
   rowCount: z.int().min(1),
 });
 
+const workbookDocumentChartRangeSchema = z.object({
+  columnCount: z.int().min(0),
+  rowCount: z.int().min(0),
+  sheetId: z.string().min(1),
+  startColumn: z.int().min(0),
+  startRow: z.int().min(0),
+});
+
+const workbookDocumentChartSourceSchema = z.object({
+  range: workbookDocumentChartRangeSchema,
+  seriesLayoutBy: z.enum(["column", "row"]),
+  sourceHeader: z.boolean(),
+});
+
+const workbookDocumentCartesianChartSpecSchema = z.object({
+  categoryDimension: z.int().min(0),
+  chartType: z.enum(["bar", "line", "area", "scatter"]),
+  family: z.literal("cartesian"),
+  smooth: z.boolean().optional(),
+  source: workbookDocumentChartSourceSchema,
+  stacked: z.boolean().optional(),
+  valueDimensions: z.array(z.int().min(0)),
+});
+
+const workbookDocumentPieChartSpecSchema = z.object({
+  chartType: z.literal("pie"),
+  family: z.literal("pie"),
+  nameDimension: z.int().min(0),
+  source: workbookDocumentChartSourceSchema,
+  valueDimension: z.int().min(0),
+});
+
+const workbookDocumentChartSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  sheetId: z.string().min(1),
+  spec: z.discriminatedUnion("family", [
+    workbookDocumentCartesianChartSpecSchema,
+    workbookDocumentPieChartSpecSchema,
+  ]),
+});
+
 const workbookDocumentSchema = z.object({
   format: z.literal(WORKBOOK_DOCUMENT_FORMAT),
   formatVersion: z.literal(WORKBOOK_DOCUMENT_VERSION),
   workbook: z.object({
     activeSheetId: z.string().min(1),
+    charts: z.array(workbookDocumentChartSchema),
+    nextChartNumber: z.int().min(1),
     nextSheetNumber: z.int().min(1),
     sheets: z.array(workbookDocumentSheetSchema).min(1),
   }),
@@ -75,8 +124,12 @@ export function createWorkbookDocument(
     formatVersion: WORKBOOK_DOCUMENT_VERSION,
     workbook: {
       activeSheetId: workbook.activeSheetId,
+      charts: workbook.charts.map((chart) => ({ ...chart })),
+      nextChartNumber: workbook.nextChartNumber,
       nextSheetNumber: workbook.nextSheetNumber,
-      sheets: workbook.sheets.map((sheet) => createWorkbookDocumentSheet(sheet)),
+      sheets: workbook.sheets.map((sheet) =>
+        createWorkbookDocumentSheet(sheet),
+      ),
     },
   };
 }
@@ -95,14 +148,27 @@ export function parseWorkbookDocument(content: string): WorkbookState {
   }
 
   const document = parseWorkbookDocumentJson(parsedJson);
+  const chartIds = new Set<string>();
   const sheetIds = new Set<string>();
 
   for (const sheet of document.workbook.sheets) {
     if (sheetIds.has(sheet.id)) {
-      throw new Error(`Workbook file contains a duplicate sheet id "${sheet.id}".`);
+      throw new Error(
+        `Workbook file contains a duplicate sheet id "${sheet.id}".`,
+      );
     }
 
     sheetIds.add(sheet.id);
+  }
+
+  for (const chart of document.workbook.charts) {
+    if (chartIds.has(chart.id)) {
+      throw new Error(
+        `Workbook file contains a duplicate chart id "${chart.id}".`,
+      );
+    }
+
+    chartIds.add(chart.id);
   }
 
   if (!sheetIds.has(document.workbook.activeSheetId)) {
@@ -113,7 +179,11 @@ export function parseWorkbookDocument(content: string): WorkbookState {
 
   const workbook: WorkbookState = {
     activeSheetId: document.workbook.activeSheetId,
+    charts: document.workbook.charts.map((chart) =>
+      restoreWorkbookChart(chart),
+    ),
     hasUnsavedChanges: false,
+    nextChartNumber: document.workbook.nextChartNumber,
     nextSheetNumber: document.workbook.nextSheetNumber,
     sheets: document.workbook.sheets.map((sheet) =>
       restoreWorkbookSheet(sheet),
@@ -126,7 +196,9 @@ export function parseWorkbookDocument(content: string): WorkbookState {
   return workbook;
 }
 
-function createWorkbookDocumentSheet(sheet: WorkbookSheet): WorkbookDocumentSheet {
+function createWorkbookDocumentSheet(
+  sheet: WorkbookSheet,
+): WorkbookDocumentSheet {
   const cells: WorkbookDocumentCell[] = [];
 
   for (let rowIndex = 0; rowIndex < sheet.cells.length; rowIndex += 1) {
@@ -218,5 +290,22 @@ function restoreWorkbookSheet(sheet: WorkbookDocumentSheet): WorkbookSheet {
     id: sheet.id,
     name: sheet.name,
     sourceFilePath: sheet.metadata?.sourceFilePath,
+  };
+}
+
+function restoreWorkbookChart(chart: WorkbookDocumentChart): WorkbookChart {
+  return {
+    id: chart.id,
+    name: chart.name,
+    sheetId: chart.sheetId,
+    spec: {
+      ...chart.spec,
+      source: {
+        ...chart.spec.source,
+        range: {
+          ...chart.spec.source.range,
+        },
+      },
+    },
   };
 }

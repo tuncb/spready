@@ -20,6 +20,7 @@ import {
 import { flushSync } from "react-dom";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
+import { WorkbookChartDock } from "./WorkbookChartDock";
 import {
   getColumnTitle,
   isFormulaInput,
@@ -27,6 +28,9 @@ import {
   serializeTsv,
   type CellDataResult,
   type ClipboardRangeMode,
+  type WorkbookChartPreview,
+  type WorkbookChartResult,
+  type WorkbookSheetChartsResult,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
@@ -445,8 +449,17 @@ export default function App() {
   const [gridSelection, setGridSelection] = useState<GridSelection>(
     createEmptyGridSelection,
   );
+  const [isChartDetailLoading, setIsChartDetailLoading] = useState(false);
+  const [isSheetChartsLoading, setIsSheetChartsLoading] = useState(false);
+  const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
+  const [selectedChartPreview, setSelectedChartPreview] =
+    useState<WorkbookChartPreview | null>(null);
+  const [selectedChartResult, setSelectedChartResult] =
+    useState<WorkbookChartResult | null>(null);
   const [selectedCellData, setSelectedCellData] =
     useState<CellDataResult | null>(null);
+  const [sheetCharts, setSheetCharts] =
+    useState<WorkbookSheetChartsResult | null>(null);
   const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(
     null,
   );
@@ -458,7 +471,9 @@ export default function App() {
   const displayRangeCacheRef = useRef<SheetDisplayRangeResult | null>(null);
   const lastVisibleRegionRef = useRef<VisibleRegion | null>(null);
   const pendingCellDataRequestIdRef = useRef(0);
+  const pendingChartDetailRequestIdRef = useRef(0);
   const pendingRangeRequestIdRef = useRef(0);
+  const pendingSheetChartsRequestIdRef = useRef(0);
   const rawRangeCacheRef = useRef<SheetRangeResult | null>(null);
 
   const activeSheet = useMemo(
@@ -473,6 +488,31 @@ export default function App() {
     () => getSelectedCellAddress(selectedCell),
     [selectedCell],
   );
+  const activeSheetChartEntries = useMemo(() => {
+    const activeSheetCharts = (sheetSummary?.charts ?? []).filter(
+      (chart) => chart.sheetId === activeSheet?.id,
+    );
+
+    if (!sheetCharts) {
+      return activeSheetCharts.map((chart) => ({
+        chartType: chart.chartType,
+        id: chart.id,
+        name: chart.name,
+        status: chart.status,
+      }));
+    }
+
+    const chartStatuses = new Map(
+      activeSheetCharts.map((chart) => [chart.id, chart.status]),
+    );
+
+    return sheetCharts.charts.map((chart) => ({
+      chartType: chart.spec.chartType,
+      id: chart.id,
+      name: chart.name,
+      status: chartStatuses.get(chart.id) ?? "invalid",
+    }));
+  }, [activeSheet?.id, sheetCharts, sheetSummary?.charts]);
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
@@ -1388,6 +1428,11 @@ export default function App() {
 
   useEffect(() => {
     if (!activeSheet) {
+      setSheetCharts(null);
+      setSelectedChartId(null);
+      setSelectedChartPreview(null);
+      setSelectedChartResult(null);
+      setIsSheetChartsLoading(false);
       return;
     }
 
@@ -1406,6 +1451,87 @@ export default function App() {
     loadVisibleRange,
     sheetSummary?.version,
   ]);
+
+  useEffect(() => {
+    if (!activeSheet) {
+      return;
+    }
+
+    const requestId = pendingSheetChartsRequestIdRef.current + 1;
+
+    pendingSheetChartsRequestIdRef.current = requestId;
+    setIsSheetChartsLoading(true);
+
+    void window.appShell
+      .getSheetCharts(activeSheet.id)
+      .then((result) => {
+        if (pendingSheetChartsRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setSheetCharts(result);
+        setSelectedChartId((current) =>
+          result.charts.some((chart) => chart.id === current)
+            ? current
+            : (result.charts[0]?.id ?? null),
+        );
+      })
+      .catch((error) => {
+        if (pendingSheetChartsRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setSheetCharts(null);
+        setSelectedChartId(null);
+        pushErrorToast(error);
+      })
+      .finally(() => {
+        if (pendingSheetChartsRequestIdRef.current === requestId) {
+          setIsSheetChartsLoading(false);
+        }
+      });
+  }, [activeSheet, pushErrorToast, sheetSummary?.version]);
+
+  useEffect(() => {
+    if (!selectedChartId) {
+      setSelectedChartPreview(null);
+      setSelectedChartResult(null);
+      setIsChartDetailLoading(false);
+      return;
+    }
+
+    const requestId = pendingChartDetailRequestIdRef.current + 1;
+
+    pendingChartDetailRequestIdRef.current = requestId;
+    setIsChartDetailLoading(true);
+
+    void Promise.all([
+      window.appShell.getChart(selectedChartId),
+      window.appShell.getChartPreview(selectedChartId),
+    ])
+      .then(([chartResult, chartPreview]) => {
+        if (pendingChartDetailRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setSelectedChartResult(chartResult);
+        setSelectedChartPreview(chartPreview);
+      })
+      .catch((error) => {
+        if (pendingChartDetailRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setSelectedChartPreview(null);
+        setSelectedChartResult(null);
+        pushErrorToast(error);
+      })
+      .finally(() => {
+        if (pendingChartDetailRequestIdRef.current === requestId) {
+          setIsChartDetailLoading(false);
+        }
+      });
+  }, [pushErrorToast, selectedChartId, sheetSummary?.version]);
 
   useEffect(() => {
     return window.appShell.onMenuAction((action) => {
@@ -1567,42 +1693,55 @@ export default function App() {
         </div>
       </section>
 
-      <section className="sheet-surface" aria-label="Spreadsheet surface">
-        <DataEditor
-          onCellContextMenu={handleCellContextMenu}
-          columns={columns}
-          getCellContent={getCellContent}
-          getCellsForSelection={getCellsForSelection}
-          gridSelection={gridSelection}
-          height="100%"
-          onCellEdited={handleCellEdited}
-          onDelete={(selection) => {
-            deleteSelection(selection);
-            return false;
-          }}
-          onGridSelectionChange={setGridSelection}
-          onPaste={handlePaste}
-          onSelectionCleared={() => {
-            setGridSelection(createEmptyGridSelection());
-          }}
-          onVisibleRegionChanged={(region) => {
-            lastVisibleRegionRef.current = {
-              height: region.height,
-              width: region.width,
-              x: region.x,
-              y: region.y,
-            };
+      <div className="app-shell__workspace">
+        <section className="sheet-surface" aria-label="Spreadsheet surface">
+          <DataEditor
+            onCellContextMenu={handleCellContextMenu}
+            columns={columns}
+            getCellContent={getCellContent}
+            getCellsForSelection={getCellsForSelection}
+            gridSelection={gridSelection}
+            height="100%"
+            onCellEdited={handleCellEdited}
+            onDelete={(selection) => {
+              deleteSelection(selection);
+              return false;
+            }}
+            onGridSelectionChange={setGridSelection}
+            onPaste={handlePaste}
+            onSelectionCleared={() => {
+              setGridSelection(createEmptyGridSelection());
+            }}
+            onVisibleRegionChanged={(region) => {
+              lastVisibleRegionRef.current = {
+                height: region.height,
+                width: region.width,
+                x: region.x,
+                y: region.y,
+              };
 
-            void loadVisibleRange(lastVisibleRegionRef.current);
-          }}
-          rowMarkers={{ kind: "number", startIndex: 1, width: 60 }}
-          rows={rowCount}
-          smoothScrollX
-          smoothScrollY
-          theme={GRID_THEME}
-          width="100%"
+              void loadVisibleRange(lastVisibleRegionRef.current);
+            }}
+            rowMarkers={{ kind: "number", startIndex: 1, width: 60 }}
+            rows={rowCount}
+            smoothScrollX
+            smoothScrollY
+            theme={GRID_THEME}
+            width="100%"
+          />
+        </section>
+
+        <WorkbookChartDock
+          activeSheetName={activeSheet?.name ?? "No active sheet"}
+          chartEntries={activeSheetChartEntries}
+          chartPreview={selectedChartPreview}
+          chartResult={selectedChartResult}
+          isDetailLoading={isChartDetailLoading}
+          isListLoading={isSheetChartsLoading}
+          onSelectChart={setSelectedChartId}
+          selectedChartId={selectedChartId}
         />
-      </section>
+      </div>
 
       <footer className="app-shell__status-bar" aria-label="Workbook status">
         <div className="app-shell__meta">
@@ -1624,6 +1763,7 @@ export default function App() {
 
         <div className="app-shell__stats" aria-label="Workbook state">
           <span>{`${rowCount}x${columnCount}`}</span>
+          <span>{`${activeSheetChartEntries.length} charts`}</span>
           <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
         </div>
       </footer>

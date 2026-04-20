@@ -4,9 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
+import { applyWorkbookTransaction, createWorkbookState } from "./workbook-core";
 import { SpreadyControlClient } from "./control-client";
 import { SpreadyControlServer } from "./control-server";
 import { WorkbookController } from "./workbook-controller";
+import { serializeWorkbookDocument } from "./workbook-document";
 
 test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
   const controller = new WorkbookController();
@@ -157,6 +159,226 @@ test("SpreadyControlServer exposes expanded formula compatibility over TCP", asy
   } finally {
     await client.close();
     await server.stop();
+  }
+});
+
+test("SpreadyControlServer exposes chart reads and preview data over TCP", async () => {
+  let workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Quarter", "Revenue", "Cost"],
+          ["Q1", "10", "4"],
+          ["Q2", "15", "7"],
+          ["Q3", "20", "8"],
+        ],
+      },
+      {
+        activate: false,
+        columnCount: 6,
+        name: "Metrics",
+        rowCount: 6,
+        type: "addSheet",
+      },
+    ],
+  }).state;
+  const metricsSheet = workbook.sheets[1];
+
+  workbook = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        sheetId: metricsSheet.id,
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Metric", "Q1", "Q2", "Q3"],
+          ["Revenue", "10", "=10/0", "30"],
+          ["Cost", "4", "5", "6"],
+        ],
+      },
+    ],
+  }).state;
+  workbook.charts = [
+    {
+      id: "chart-1",
+      name: "Quarterly Revenue",
+      sheetId: workbook.sheets[0].id,
+      spec: {
+        categoryDimension: 0,
+        chartType: "bar",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 3,
+            rowCount: 4,
+            sheetId: workbook.sheets[0].id,
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+    },
+    {
+      id: "chart-2",
+      name: "Broken Chart",
+      sheetId: workbook.sheets[0].id,
+      spec: {
+        categoryDimension: 0,
+        chartType: "line",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 0,
+            rowCount: 0,
+            sheetId: workbook.sheets[0].id,
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+    },
+    {
+      id: "chart-3",
+      name: "Metrics By Quarter",
+      sheetId: metricsSheet.id,
+      spec: {
+        categoryDimension: 0,
+        chartType: "line",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 4,
+            rowCount: 3,
+            sheetId: metricsSheet.id,
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "row",
+          sourceHeader: true,
+        },
+        valueDimensions: [1, 2],
+      },
+    },
+  ];
+  workbook.nextChartNumber = 4;
+
+  const tempDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "spready-tcp-"),
+  );
+  const filePath = path.join(tempDirectory, "charts.spready");
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
+
+  await fs.writeFile(filePath, serializeWorkbookDocument(workbook), "utf8");
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    const openResult = await client.openWorkbookFile({
+      discardUnsavedChanges: true,
+      filePath,
+    });
+    const methods = await client.call<string[]>("listMethods");
+    const activeSheetCharts = await client.getSheetCharts();
+    const metricsCharts = await client.getSheetCharts(metricsSheet.id);
+    const chartResult = await client.getChart("chart-1");
+    const invalidPreview = await client.getChartPreview("chart-2");
+    const rowLayoutPreview = await client.getChartPreview("chart-3");
+
+    assert.ok(methods.includes("getChart"));
+    assert.ok(methods.includes("getChartPreview"));
+    assert.ok(methods.includes("getSheetCharts"));
+    assert.equal(openResult.summary.charts.length, 3);
+    assert.deepEqual(
+      activeSheetCharts.charts.map((chart) => chart.id),
+      ["chart-1", "chart-2"],
+    );
+    assert.deepEqual(
+      metricsCharts.charts.map((chart) => chart.id),
+      ["chart-3"],
+    );
+    assert.equal(chartResult.status, "ok");
+    assert.deepEqual(chartResult.validationIssues, []);
+    assert.deepEqual(
+      invalidPreview.validationIssues.map((issue) => issue.code),
+      ["EMPTY_RANGE", "INVALID_DIMENSION"],
+    );
+    assert.equal(invalidPreview.status, "invalid");
+    assert.deepEqual(rowLayoutPreview.dataset.source, [
+      ["Metric", "Revenue", "Cost"],
+      ["Q1", 10, 4],
+      ["Q2", null, 5],
+      ["Q3", 30, 6],
+    ]);
+    assert.deepEqual(rowLayoutPreview.warnings, [
+      "Chart preview skipped one or more formula errors by converting them to null values.",
+    ]);
+    assert.deepEqual(rowLayoutPreview.option, {
+      dataset: {
+        dimensions: rowLayoutPreview.dataset.dimensions,
+        source: rowLayoutPreview.dataset.source,
+        sourceHeader: true,
+      },
+      legend: {
+        show: true,
+      },
+      series: [
+        {
+          encode: {
+            itemName: "Metric",
+            tooltip: ["Metric", "Revenue"],
+            x: "Metric",
+            y: "Revenue",
+          },
+          name: "Revenue",
+          type: "line",
+        },
+        {
+          encode: {
+            itemName: "Metric",
+            tooltip: ["Metric", "Cost"],
+            x: "Metric",
+            y: "Cost",
+          },
+          name: "Cost",
+          type: "line",
+        },
+      ],
+      title: {
+        text: "Metrics By Quarter",
+      },
+      tooltip: {
+        trigger: "axis",
+      },
+      xAxis: {
+        type: "category",
+      },
+      yAxis: {
+        type: "value",
+      },
+    });
+  } finally {
+    await client.close();
+    await server.stop();
+    await fs.rm(tempDirectory, { force: true, recursive: true });
   }
 });
 

@@ -251,10 +251,22 @@ export class SpreadyControlServer {
         return this.#controller.getCellData(
           params as { columnIndex: number; rowIndex: number; sheetId?: string },
         );
+      case "getChart":
+        return this.#controller.getChart(
+          (params as { chartId: string }).chartId,
+        );
+      case "getChartPreview":
+        return this.#controller.getChartPreview(
+          (params as { chartId: string }).chartId,
+        );
       case "getControlInfo":
         return this.getInfo();
       case "getSheetCsv":
         return this.#controller.getSheetCsv(
+          (params as { sheetId?: string } | undefined)?.sheetId,
+        );
+      case "getSheetCharts":
+        return this.#controller.getSheetCharts(
           (params as { sheetId?: string } | undefined)?.sheetId,
         );
       case "getSheetDisplayRange":
@@ -290,8 +302,11 @@ export class SpreadyControlServer {
           "createNewWorkbook",
           "exportCsvFile",
           "getCellData",
+          "getChart",
+          "getChartPreview",
           "getControlInfo",
           "getSheetCsv",
+          "getSheetCharts",
           "getSheetDisplayRange",
           "getSheetRange",
           "getUsedRange",

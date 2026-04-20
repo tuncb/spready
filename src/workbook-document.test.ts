@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  applyWorkbookTransaction,
-  createWorkbookState,
-} from "./workbook-core";
+import { applyWorkbookTransaction, createWorkbookState } from "./workbook-core";
 import {
   parseWorkbookDocument,
   serializeWorkbookDocument,
@@ -54,6 +51,53 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
   }).state;
 
   workbook.documentFilePath = "C:\\workbooks\\budget.spready";
+  workbook.charts = [
+    {
+      id: "chart-1",
+      name: "Quarterly Revenue",
+      sheetId: workbook.sheets[0].id,
+      spec: {
+        categoryDimension: 0,
+        chartType: "bar",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 2,
+            rowCount: 2,
+            sheetId: workbook.sheets[0].id,
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+    },
+    {
+      id: "chart-2",
+      name: "Broken Imported Chart",
+      sheetId: "missing-sheet",
+      spec: {
+        chartType: "pie",
+        family: "pie",
+        nameDimension: 0,
+        source: {
+          range: {
+            columnCount: 0,
+            rowCount: 0,
+            sheetId: "missing-sheet",
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: false,
+        },
+        valueDimension: 0,
+      },
+    },
+  ];
+  workbook.nextChartNumber = 3;
 
   const serialized = serializeWorkbookDocument(workbook);
   const parsed = parseWorkbookDocument(serialized);
@@ -66,7 +110,9 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
   assert.equal(parsed.version, 0);
   assert.equal(parsed.documentFilePath, undefined);
   assert.equal(parsed.activeSheetId, "sheet-12");
+  assert.equal(parsed.nextChartNumber, 3);
   assert.equal(parsed.nextSheetNumber, workbook.nextSheetNumber);
+  assert.deepEqual(parsed.charts, workbook.charts);
   assert.deepEqual(
     parsed.sheets.map((sheet) => ({
       columnCount: sheet.cells[0]?.length ?? 0,
@@ -97,7 +143,11 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
     "2026",
     "=B2*2",
   ]);
-  assert.deepEqual(parsed.sheets[0].cells[1].slice(0, 3), ["North", "1200", ""]);
+  assert.deepEqual(parsed.sheets[0].cells[1].slice(0, 3), [
+    "North",
+    "1200",
+    "",
+  ]);
   assert.deepEqual(parsed.sheets[1].cells[0].slice(0, 2), ["2026", "=A1+1"]);
   assert.equal(parsed.sheets[1].cells[3][2], "");
 });
@@ -111,6 +161,8 @@ test("workbook documents reject invalid workbook references and cell entries", (
           formatVersion: WORKBOOK_DOCUMENT_VERSION,
           workbook: {
             activeSheetId: "missing",
+            charts: [],
+            nextChartNumber: 1,
             nextSheetNumber: 2,
             sheets: [
               {
@@ -135,6 +187,8 @@ test("workbook documents reject invalid workbook references and cell entries", (
           formatVersion: WORKBOOK_DOCUMENT_VERSION,
           workbook: {
             activeSheetId: "sheet-1",
+            charts: [],
+            nextChartNumber: 1,
             nextSheetNumber: 2,
             sheets: [
               {
@@ -149,5 +203,76 @@ test("workbook documents reject invalid workbook references and cell entries", (
         }),
       ),
     /out-of-bounds cell 0:4/,
+  );
+
+  assert.throws(
+    () =>
+      parseWorkbookDocument(
+        JSON.stringify({
+          format: WORKBOOK_DOCUMENT_FORMAT,
+          formatVersion: WORKBOOK_DOCUMENT_VERSION,
+          workbook: {
+            activeSheetId: "sheet-1",
+            charts: [
+              {
+                id: "chart-1",
+                name: "Chart A",
+                sheetId: "sheet-1",
+                spec: {
+                  categoryDimension: 0,
+                  chartType: "bar",
+                  family: "cartesian",
+                  source: {
+                    range: {
+                      columnCount: 2,
+                      rowCount: 2,
+                      sheetId: "sheet-1",
+                      startColumn: 0,
+                      startRow: 0,
+                    },
+                    seriesLayoutBy: "column",
+                    sourceHeader: true,
+                  },
+                  valueDimensions: [1],
+                },
+              },
+              {
+                id: "chart-1",
+                name: "Chart B",
+                sheetId: "sheet-1",
+                spec: {
+                  chartType: "pie",
+                  family: "pie",
+                  nameDimension: 0,
+                  source: {
+                    range: {
+                      columnCount: 2,
+                      rowCount: 2,
+                      sheetId: "sheet-1",
+                      startColumn: 0,
+                      startRow: 0,
+                    },
+                    seriesLayoutBy: "column",
+                    sourceHeader: true,
+                  },
+                  valueDimension: 1,
+                },
+              },
+            ],
+            nextChartNumber: 2,
+            nextSheetNumber: 2,
+            sheets: [
+              {
+                cells: [],
+                columnCount: 2,
+                id: "sheet-1",
+                name: "Sheet 1",
+                rowCount: 2,
+              },
+            ],
+          },
+        }),
+      ),
+    /duplicate chart id "chart-1"/,
   );
 });

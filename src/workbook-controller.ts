@@ -4,8 +4,13 @@ import { EventEmitter } from "node:events";
 
 import {
   applyWorkbookTransaction,
+  cloneWorkbookChart,
   createWorkbookState,
   getSheetColumnCount,
+  getWorkbookChartById,
+  getWorkbookChartStatus,
+  getWorkbookChartValidationIssues,
+  getWorkbookSheetCharts,
   getWorkbookSheet,
   getSheetCsv,
   getSheetRange,
@@ -31,6 +36,10 @@ import {
   type OpenWorkbookFileRequest,
   type PasteRangeRequest,
   type SaveWorkbookFileRequest,
+  type WorkbookChartPreview,
+  type WorkbookChartResult,
+  type WorkbookChartSheetReference,
+  type WorkbookSheetChartsResult,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
@@ -44,6 +53,7 @@ import {
   getCellEvaluation,
   type SheetEvaluationSnapshot,
 } from "./formula-engine";
+import { buildWorkbookChartPreview } from "./workbook-charting";
 import {
   parseWorkbookDocument,
   serializeWorkbookDocument,
@@ -56,6 +66,37 @@ export class WorkbookController extends EventEmitter {
 
   getSummary(): WorkbookSummary {
     return getWorkbookSummary(this.#state);
+  }
+
+  getSheetCharts(sheetId?: string): WorkbookSheetChartsResult {
+    return getWorkbookSheetCharts(this.#state, sheetId);
+  }
+
+  getChart(chartId: string): WorkbookChartResult {
+    const chart = getWorkbookChartById(this.#state, chartId);
+
+    return {
+      chart: cloneWorkbookChart(chart),
+      status: getWorkbookChartStatus(chart, this.#getChartSheetReferences()),
+      validationIssues: getWorkbookChartValidationIssues(
+        chart,
+        this.#getChartSheetReferences(),
+      ),
+    };
+  }
+
+  getChartPreview(chartId: string): WorkbookChartPreview {
+    const chart = getWorkbookChartById(this.#state, chartId);
+    const chartSheet = this.#state.sheets.find(
+      (sheet) => sheet.id === chart.sheetId,
+    );
+
+    return buildWorkbookChartPreview(
+      cloneWorkbookChart(chart),
+      chartSheet,
+      chartSheet ? this.#getEvaluationSnapshot(chartSheet.id) : undefined,
+      this.#getChartSheetReferences(),
+    );
   }
 
   getSheetCsv(sheetId?: string): string {
@@ -348,6 +389,14 @@ export class WorkbookController extends EventEmitter {
 
     this.#sheetEvaluationSnapshots.set(sheet.id, nextSnapshot);
     return nextSnapshot;
+  }
+
+  #getChartSheetReferences(): WorkbookChartSheetReference[] {
+    return this.#state.sheets.map((sheet) => ({
+      columnCount: getSheetColumnCount(sheet),
+      id: sheet.id,
+      rowCount: getSheetRowCount(sheet),
+    }));
   }
 
   #commitState(nextState: WorkbookState) {

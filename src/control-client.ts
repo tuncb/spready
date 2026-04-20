@@ -11,6 +11,8 @@ import type {
   ControlServerInfo,
   CopyRangeRequest,
   CopyRangeResult,
+  WorkbookChartPreview,
+  WorkbookChartResult,
   CreateNewWorkbookRequest,
   CutRangeRequest,
   CutRangeResult,
@@ -25,6 +27,7 @@ import type {
   SheetRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookSheetChartsResult,
   WorkbookSummary,
 } from "./workbook-core";
 
@@ -182,8 +185,20 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<CellDataResult>("getCellData", request);
   }
 
+  async getChart(chartId: string) {
+    return this.call<WorkbookChartResult>("getChart", { chartId });
+  }
+
+  async getChartPreview(chartId: string) {
+    return this.call<WorkbookChartPreview>("getChartPreview", { chartId });
+  }
+
   async getSheetCsv(sheetId?: string) {
     return this.call<string>("getSheetCsv", { sheetId });
+  }
+
+  async getSheetCharts(sheetId?: string) {
+    return this.call<WorkbookSheetChartsResult>("getSheetCharts", { sheetId });
   }
 
   async getSheetDisplayRange(request: SheetRangeRequest) {

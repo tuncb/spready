@@ -9,10 +9,16 @@ import * as z from "zod/v4";
 
 import { CONTROL_DISCOVERY_FILE_PATH } from "./control-discovery";
 import { resolveControlTarget, SpreadyControlClient } from "./control-client";
+import {
+  chartGuideTools,
+  registerChartTools,
+  workbookChartSummarySchema,
+} from "./mcp-chart-tools";
 
 const workbookSummarySchema = z.object({
   activeSheetId: z.string(),
   activeSheetName: z.string(),
+  charts: z.array(workbookChartSummarySchema),
   documentFilePath: z.string().optional(),
   hasUnsavedChanges: z.boolean(),
   sheets: z.array(
@@ -405,6 +411,12 @@ const guideResource = {
       name: "get_sheet_range",
       readOnly: true,
     },
+    ...chartGuideTools.map((tool) => ({
+      defaultsToActiveSheet: tool.defaultsToActiveSheet,
+      description: tool.description,
+      name: tool.name,
+      readOnly: tool.readOnly,
+    })),
     {
       defaultsToActiveSheet: true,
       description:
@@ -470,6 +482,7 @@ const guideResource = {
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.",
+    "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
     "Evaluated display reads include same-sheet arithmetic, comparisons, text operators, ranges, core worksheet functions, and same-sheet lookup functions such as INDEX, MATCH, and XLOOKUP.",
     "Current formula exclusions include absolute references with $, cross-sheet references, defined names, and LET.",
     "Use copy_range when you need a tab-delimited clipboard-style payload for one explicit rectangular range.",
@@ -523,6 +536,9 @@ ${guideResource.workflow
 - get_cell_data: Return one cell's raw input plus its evaluated display value. Omitting sheetId uses the active sheet.
 - get_sheet_display_range: Read one rectangular range of evaluated display values. Prefer this for formula-aware grid views.
 - get_sheet_range: Read one rectangular range. Prefer this over loading a large sheet.
+- get_sheet_charts: Return the chart definitions owned by a sheet. Omitting sheetId uses the active sheet.
+- get_chart: Return one chart definition plus validation status and issues.
+- get_chart_preview: Return one chart's normalized preview dataset, warnings, and derived ECharts option.
 - copy_range: Return one rectangular range plus tab-delimited text using raw input or displayed values.
 - cut_range: Return clipboard payloads for one rectangular range and clear the same source cells.
 - get_sheet_csv: Return trimmed CSV for one sheet. Omitting sheetId uses the active sheet.
@@ -933,6 +949,7 @@ async function main() {
             useWhen:
               "Use this for targeted inspection of raw workbook input strings.",
           },
+          ...chartGuideTools,
           {
             defaultsToActiveSheet: true,
             description:
@@ -1112,6 +1129,8 @@ async function main() {
     },
     async (args) => createTextResult(await controlClient.getSheetRange(args)),
   );
+
+  registerChartTools(server, controlClient);
 
   server.registerTool(
     "copy_range",

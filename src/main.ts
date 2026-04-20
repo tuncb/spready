@@ -725,6 +725,16 @@ ipcMain.handle("workbook:get-cell-data", (_event, args: CellDataRequest) =>
   workbookController.getCellData(args),
 );
 
+ipcMain.handle("workbook:get-chart", (_event, args: { chartId: string }) =>
+  workbookController.getChart(args.chartId),
+);
+
+ipcMain.handle(
+  "workbook:get-chart-preview",
+  (_event, args: { chartId: string }) =>
+    workbookController.getChartPreview(args.chartId),
+);
+
 ipcMain.handle("workbook:cut-range", (_event, args: CutRangeRequest) =>
   workbookController.cutRange(args),
 );
@@ -743,6 +753,12 @@ ipcMain.handle(
   "workbook:get-sheet-csv",
   (_event, args?: { sheetId?: string }) =>
     workbookController.getSheetCsv(args?.sheetId),
+);
+
+ipcMain.handle(
+  "workbook:get-sheet-charts",
+  (_event, args?: { sheetId?: string }) =>
+    workbookController.getSheetCharts(args?.sheetId),
 );
 
 ipcMain.handle("workbook:save-file", (_event, args: { filePath: string }) =>

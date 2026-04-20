@@ -4,7 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
+import { applyWorkbookTransaction, createWorkbookState } from "./workbook-core";
 import { WorkbookController } from "./workbook-controller";
+import { serializeWorkbookDocument } from "./workbook-document";
 
 test("WorkbookController exposes raw range reads separately from display-range and cell-data reads", () => {
   const controller = new WorkbookController();
@@ -260,6 +262,326 @@ test("WorkbookController supports raw-vs-display range copy plus explicit cut, p
       ["1", "", ""],
     ],
   );
+});
+
+test("WorkbookController exposes persisted chart reads and normalized preview data", async () => {
+  let workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Quarter", "Revenue", "Cost"],
+          ["Q1", "10", "4"],
+          ["Q2", "15", "7"],
+          ["Q3", "20", "8"],
+        ],
+      },
+      {
+        activate: false,
+        columnCount: 6,
+        name: "Metrics",
+        rowCount: 6,
+        type: "addSheet",
+      },
+    ],
+  }).state;
+  const metricsSheet = workbook.sheets[1];
+
+  workbook = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        sheetId: metricsSheet.id,
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Metric", "Q1", "Q2", "Q3"],
+          ["Revenue", "10", "=10/0", "30"],
+          ["Cost", "4", "5", "6"],
+        ],
+      },
+    ],
+  }).state;
+  workbook.charts = [
+    {
+      id: "chart-1",
+      name: "Quarterly Revenue",
+      sheetId: workbook.sheets[0].id,
+      spec: {
+        categoryDimension: 0,
+        chartType: "bar",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 3,
+            rowCount: 4,
+            sheetId: workbook.sheets[0].id,
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+    },
+    {
+      id: "chart-2",
+      name: "Broken Chart",
+      sheetId: workbook.sheets[0].id,
+      spec: {
+        categoryDimension: 0,
+        chartType: "line",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 0,
+            rowCount: 0,
+            sheetId: workbook.sheets[0].id,
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+    },
+    {
+      id: "chart-3",
+      name: "Metrics By Quarter",
+      sheetId: metricsSheet.id,
+      spec: {
+        categoryDimension: 0,
+        chartType: "line",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 4,
+            rowCount: 3,
+            sheetId: metricsSheet.id,
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "row",
+          sourceHeader: true,
+        },
+        valueDimensions: [1, 2],
+      },
+    },
+  ];
+  workbook.nextChartNumber = 4;
+
+  const tempDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "spready-controller-charts-"),
+  );
+  const filePath = path.join(tempDirectory, "charts.spready");
+
+  try {
+    await fs.writeFile(filePath, serializeWorkbookDocument(workbook), "utf8");
+
+    const controller = new WorkbookController();
+    const openResult = await controller.openWorkbookFile({
+      discardUnsavedChanges: true,
+      filePath,
+    });
+    const activeSheetCharts = controller.getSheetCharts();
+    const metricsCharts = controller.getSheetCharts(metricsSheet.id);
+    const chartResult = controller.getChart("chart-1");
+    const preview = controller.getChartPreview("chart-1");
+    const invalidPreview = controller.getChartPreview("chart-2");
+    const rowLayoutPreview = controller.getChartPreview("chart-3");
+
+    assert.equal(openResult.summary.charts.length, 3);
+    assert.deepEqual(
+      openResult.summary.charts.map((chart) => ({
+        id: chart.id,
+        status: chart.status,
+      })),
+      [
+        {
+          id: "chart-1",
+          status: "ok",
+        },
+        {
+          id: "chart-2",
+          status: "invalid",
+        },
+        {
+          id: "chart-3",
+          status: "ok",
+        },
+      ],
+    );
+    assert.equal(activeSheetCharts.sheetId, workbook.sheets[0].id);
+    assert.deepEqual(
+      activeSheetCharts.charts.map((chart) => chart.id),
+      ["chart-1", "chart-2"],
+    );
+    assert.equal(metricsCharts.sheetId, metricsSheet.id);
+    assert.deepEqual(
+      metricsCharts.charts.map((chart) => chart.id),
+      ["chart-3"],
+    );
+    assert.deepEqual(chartResult, {
+      chart: workbook.charts[0],
+      status: "ok",
+      validationIssues: [],
+    });
+    assert.deepEqual(preview.dataset, {
+      dimensions: [
+        {
+          name: "Quarter",
+          type: "ordinal",
+        },
+        {
+          name: "Revenue",
+          type: "number",
+        },
+        {
+          name: "Cost",
+          type: "number",
+        },
+      ],
+      seriesLayoutBy: "column",
+      source: [
+        ["Quarter", "Revenue", "Cost"],
+        ["Q1", 10, 4],
+        ["Q2", 15, 7],
+        ["Q3", 20, 8],
+      ],
+      sourceHeader: true,
+    });
+    assert.deepEqual(preview.option, {
+      dataset: {
+        dimensions: preview.dataset.dimensions,
+        source: preview.dataset.source,
+        sourceHeader: true,
+      },
+      legend: {
+        show: false,
+      },
+      series: [
+        {
+          encode: {
+            itemName: "Quarter",
+            tooltip: ["Quarter", "Revenue"],
+            x: "Quarter",
+            y: "Revenue",
+          },
+          name: "Revenue",
+          type: "bar",
+        },
+      ],
+      title: {
+        text: "Quarterly Revenue",
+      },
+      tooltip: {
+        trigger: "axis",
+      },
+      xAxis: {
+        type: "category",
+      },
+      yAxis: {
+        type: "value",
+      },
+    });
+    assert.deepEqual(preview.validationIssues, []);
+    assert.deepEqual(preview.warnings, []);
+    assert.deepEqual(
+      invalidPreview.validationIssues.map((issue) => issue.code),
+      ["EMPTY_RANGE", "INVALID_DIMENSION"],
+    );
+    assert.equal(invalidPreview.status, "invalid");
+    assert.deepEqual(invalidPreview.dataset, {
+      dimensions: [],
+      seriesLayoutBy: "column",
+      source: [],
+      sourceHeader: false,
+    });
+    assert.deepEqual(invalidPreview.option, {
+      series: [],
+      title: {
+        text: "Broken Chart",
+      },
+    });
+    assert.deepEqual(rowLayoutPreview.dataset, {
+      dimensions: [
+        {
+          name: "Metric",
+          type: "ordinal",
+        },
+        {
+          name: "Revenue",
+          type: "number",
+        },
+        {
+          name: "Cost",
+          type: "number",
+        },
+      ],
+      seriesLayoutBy: "column",
+      source: [
+        ["Metric", "Revenue", "Cost"],
+        ["Q1", 10, 4],
+        ["Q2", null, 5],
+        ["Q3", 30, 6],
+      ],
+      sourceHeader: true,
+    });
+    assert.deepEqual(rowLayoutPreview.option, {
+      dataset: {
+        dimensions: rowLayoutPreview.dataset.dimensions,
+        source: rowLayoutPreview.dataset.source,
+        sourceHeader: true,
+      },
+      legend: {
+        show: true,
+      },
+      series: [
+        {
+          encode: {
+            itemName: "Metric",
+            tooltip: ["Metric", "Revenue"],
+            x: "Metric",
+            y: "Revenue",
+          },
+          name: "Revenue",
+          type: "line",
+        },
+        {
+          encode: {
+            itemName: "Metric",
+            tooltip: ["Metric", "Cost"],
+            x: "Metric",
+            y: "Cost",
+          },
+          name: "Cost",
+          type: "line",
+        },
+      ],
+      title: {
+        text: "Metrics By Quarter",
+      },
+      tooltip: {
+        trigger: "axis",
+      },
+      xAxis: {
+        type: "category",
+      },
+      yAxis: {
+        type: "value",
+      },
+    });
+    assert.deepEqual(rowLayoutPreview.validationIssues, []);
+    assert.deepEqual(rowLayoutPreview.warnings, [
+      "Chart preview skipped one or more formula errors by converting them to null values.",
+    ]);
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
 });
 
 test("WorkbookController saves and opens native workbook files", async () => {

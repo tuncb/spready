@@ -9,11 +9,14 @@ import type {
   CellDataResult,
   CutRangeRequest,
   CutRangeResult,
+  WorkbookChartPreview,
+  WorkbookChartResult,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookSheetChartsResult,
   WorkbookSummary,
 } from "./workbook-core";
 
@@ -69,6 +72,14 @@ contextBridge.exposeInMainWorld("appShell", {
       "workbook:get-cell-data",
       request,
     ) as Promise<CellDataResult>,
+  getChart: (chartId: string) =>
+    ipcRenderer.invoke("workbook:get-chart", {
+      chartId,
+    }) as Promise<WorkbookChartResult>,
+  getChartPreview: (chartId: string) =>
+    ipcRenderer.invoke("workbook:get-chart-preview", {
+      chartId,
+    }) as Promise<WorkbookChartPreview>,
   cutRange: (request: CutRangeRequest) =>
     ipcRenderer.invoke(
       "workbook:cut-range",
@@ -78,6 +89,10 @@ contextBridge.exposeInMainWorld("appShell", {
     ipcRenderer.invoke("workbook:get-sheet-csv", {
       sheetId,
     }) as Promise<string>,
+  getSheetCharts: (sheetId?: string) =>
+    ipcRenderer.invoke("workbook:get-sheet-charts", {
+      sheetId,
+    }) as Promise<WorkbookSheetChartsResult>,
   getSheetDisplayRange: (request: SheetRangeRequest) =>
     ipcRenderer.invoke(
       "workbook:get-display-range",

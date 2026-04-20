@@ -7,11 +7,14 @@ import type {
   CellDataResult,
   CutRangeRequest,
   CutRangeResult,
+  WorkbookChartPreview,
+  WorkbookChartResult,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookSheetChartsResult,
   WorkbookSummary,
 } from "./workbook-core";
 
@@ -58,7 +61,10 @@ declare global {
       ) => Promise<ApplyTransactionResult>;
       cutRange: (request: CutRangeRequest) => Promise<CutRangeResult>;
       getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
+      getChart: (chartId: string) => Promise<WorkbookChartResult>;
+      getChartPreview: (chartId: string) => Promise<WorkbookChartPreview>;
       getSheetCsv: (sheetId?: string) => Promise<string>;
+      getSheetCharts: (sheetId?: string) => Promise<WorkbookSheetChartsResult>;
       getSheetDisplayRange: (
         request: SheetRangeRequest,
       ) => Promise<SheetDisplayRangeResult>;
