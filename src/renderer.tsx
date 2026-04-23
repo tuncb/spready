@@ -5,7 +5,6 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import App from './App';
-import { ChartEditorWindow } from './ChartEditorWindow';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -15,10 +14,6 @@ if (!app) {
 
 createRoot(app).render(
   <StrictMode>
-    {new URLSearchParams(window.location.search).get('view') === 'chart-editor' ? (
-      <ChartEditorWindow />
-    ) : (
-      <App />
-    )}
+    <App />
   </StrictMode>,
 );

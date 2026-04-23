@@ -537,6 +537,7 @@ const guideResource = {
     "Use paste_range, cut_range, and clear_range for explicit clipboard-like range edits without relying on UI selection state.",
     "Prefer one apply_transaction call with batched operations over repeated single-cell writes.",
     "Use dryRun on apply_transaction to validate risky changes before mutating the workbook.",
+    "Use expectedVersion on apply_transaction when the task should fail instead of overwriting concurrent workbook changes.",
     "CSV file paths are resolved on the same machine running the Spready desktop app and MCP wrapper.",
     `Subscribe to ${WORKBOOK_SUMMARY_RESOURCE_URI} if your client supports live workbook summary updates.`,
   ],
@@ -587,6 +588,7 @@ ${guideResource.workflow
 - paste_range: Paste tab-delimited text or explicit values into the sheet starting at one cell. Omitting sheetId uses the active sheet.
 - clear_range: Clear one explicit rectangular range without resizing the sheet. Omitting sheetId uses the active sheet.
 - apply_transaction: Apply one atomic batch of workbook mutations. Supports dryRun.
+  Optionally pass expectedVersion to reject stale writes when the workbook changed since you last read it.
 - import_csv_file: Load a local CSV file into a sheet. Omitting sheetId uses the active sheet.
 - export_csv_file: Save one sheet as a local CSV file. Omitting sheetId uses the active sheet.
 
@@ -1412,6 +1414,13 @@ async function main() {
           .describe(
             "Validate and simulate the transaction without mutating the workbook.",
           ),
+        expectedVersion: z
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Optional optimistic concurrency precondition. The transaction fails if the current workbook version does not match this value.",
+          ),
         operations: z
           .array(transactionOperationSchema)
           .min(1)
@@ -1451,6 +1460,7 @@ async function main() {
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
                 "- Read only the ranges you need with get_used_range, get_sheet_range, or get_sheet_display_range.\n" +
                 "- Use apply_transaction for writes, preferably as one batched request.\n" +
+                "- Pass expectedVersion on apply_transaction when a task must reject stale writes after concurrent edits.\n" +
                 "- Use save_workbook_file when the final result should persist as a native workbook document.\n" +
                 "- Use dryRun before risky or destructive mutations.\n" +
                 `- If you need server details, call describe_capabilities or read ${SERVER_GUIDE_RESOURCE_URI}.`,

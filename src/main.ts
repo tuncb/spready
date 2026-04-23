@@ -15,7 +15,6 @@ import {
 import started from "electron-squirrel-startup";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
-import type { ChartEditorWindowRequest } from "./chart-editor-state";
 import {
   SPREADY_CLIPBOARD_FORMAT,
   type ClipboardReadResult,
@@ -55,7 +54,7 @@ const controlServer = new SpreadyControlServer(
     ? DEFAULT_CONTROL_PORT
     : configuredControlPort,
 );
-let chartEditorWindow: BrowserWindow | null = null;
+let isChartDialogOpen = false;
 
 if (started) {
   app.quit();
@@ -109,6 +108,10 @@ function sendMenuAction(
   action: AppMenuAction,
   browserWindow?: BrowserWindow | null,
 ) {
+  if (isChartDialogOpen) {
+    return;
+  }
+
   getTargetWindow(browserWindow)?.webContents.send("app-menu:action", action);
 }
 
@@ -117,13 +120,19 @@ function broadcastWorkbookChanged() {
   const title = formatWorkbookWindowTitle(summary, APP_DISPLAY_NAME);
 
   for (const browserWindow of BrowserWindow.getAllWindows()) {
-    if (browserWindow === chartEditorWindow) {
-      continue;
-    }
-
     browserWindow.setTitle(title);
     browserWindow.webContents.send("workbook:changed", summary);
   }
+}
+
+function runMenuCommand(
+  command: () => void | Promise<void>,
+) {
+  if (isChartDialogOpen) {
+    return;
+  }
+
+  void command();
 }
 
 async function showAboutDialog(browserWindow?: BrowserWindow | null) {
@@ -314,15 +323,17 @@ async function createNewWorkbookWithPrompt(
 }
 
 function buildAppMenu() {
+  const menuEnabled = !isChartDialogOpen;
   const template: MenuItemConstructorOptions[] = [
     {
+      enabled: menuEnabled,
       label: "File",
       submenu: [
         {
           label: "New Workbook",
           accelerator: "CmdOrCtrl+N",
           click: () => {
-            void createNewWorkbookWithPrompt();
+            runMenuCommand(() => createNewWorkbookWithPrompt());
           },
         },
         { type: "separator" },
@@ -330,34 +341,44 @@ function buildAppMenu() {
           label: "Open Workbook",
           accelerator: "CmdOrCtrl+O",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.openWorkbook);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.openWorkbook);
+            });
           },
         },
         {
           label: "Save Workbook",
           accelerator: "CmdOrCtrl+S",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.saveWorkbook);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.saveWorkbook);
+            });
           },
         },
         {
           label: "Save Workbook As",
           accelerator: "CmdOrCtrl+Shift+S",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.saveWorkbookAs);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.saveWorkbookAs);
+            });
           },
         },
         { type: "separator" },
         {
           label: "Import CSV",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.importCsv);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.importCsv);
+            });
           },
         },
         {
           label: "Export CSV",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.exportCsv);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.exportCsv);
+            });
           },
         },
         { type: "separator" },
@@ -365,26 +386,33 @@ function buildAppMenu() {
           label: "Exit",
           accelerator: "Alt+F4",
           click: () => {
-            app.quit();
+            runMenuCommand(() => {
+              app.quit();
+            });
           },
         },
       ],
     },
     {
+      enabled: menuEnabled,
       label: "Edit",
       submenu: [
         {
           accelerator: "CmdOrCtrl+X",
           label: "Cut",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.cut);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.cut);
+            });
           },
         },
         {
           accelerator: "CmdOrCtrl+Shift+X",
           label: "Cut Values",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.cutValues);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.cutValues);
+            });
           },
         },
         { type: "separator" },
@@ -392,14 +420,18 @@ function buildAppMenu() {
           accelerator: "CmdOrCtrl+C",
           label: "Copy",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.copy);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.copy);
+            });
           },
         },
         {
           accelerator: "CmdOrCtrl+Shift+C",
           label: "Copy Values",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.copyValues);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.copyValues);
+            });
           },
         },
         { type: "separator" },
@@ -407,49 +439,63 @@ function buildAppMenu() {
           accelerator: "CmdOrCtrl+V",
           label: "Paste",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.paste);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.paste);
+            });
           },
         },
         {
           accelerator: "CmdOrCtrl+Shift+V",
           label: "Paste Values",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.pasteValues);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.pasteValues);
+            });
           },
         },
         { type: "separator" },
         {
           label: "Delete",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.deleteSelection);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.deleteSelection);
+            });
           },
         },
       ],
     },
     {
+      enabled: menuEnabled,
       label: "Insert",
       submenu: [
         {
           label: "Chart",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.insertChart);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.insertChart);
+            });
           },
         },
       ],
     },
     {
+      enabled: menuEnabled,
       label: "Sheet",
       submenu: [
         {
           label: "Add Row",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.addRow);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.addRow);
+            });
           },
         },
         {
           label: "Add Column",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.addColumn);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.addColumn);
+            });
           },
         },
         { type: "separator" },
@@ -457,24 +503,29 @@ function buildAppMenu() {
           label: "New Sheet",
           accelerator: "CmdOrCtrl+Shift+N",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.newSheet);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.newSheet);
+            });
           },
         },
         {
           label: "Delete Sheet",
           click: () => {
-            sendMenuAction(APP_MENU_ACTIONS.deleteSheet);
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.deleteSheet);
+            });
           },
         },
       ],
     },
     {
+      enabled: menuEnabled,
       label: "Help",
       submenu: [
         {
           label: "About",
           click: () => {
-            void showAboutDialog();
+            runMenuCommand(() => showAboutDialog());
           },
         },
       ],
@@ -482,99 +533,6 @@ function buildAppMenu() {
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
-
-async function openChartEditorWindow(
-  request: ChartEditorWindowRequest,
-  browserWindow?: BrowserWindow | null,
-) {
-  if (chartEditorWindow && !chartEditorWindow.isDestroyed()) {
-    if (chartEditorWindow.isMinimized()) {
-      chartEditorWindow.restore();
-    }
-
-    if (!chartEditorWindow.isVisible()) {
-      chartEditorWindow.show();
-    }
-
-    chartEditorWindow.focus();
-    return;
-  }
-
-  const parentWindow = getTargetWindow(browserWindow);
-
-  const nextChartEditorWindow = new BrowserWindow({
-    width: 580,
-    height: 720,
-    minWidth: 540,
-    minHeight: 640,
-    parent: parentWindow ?? undefined,
-    modal: parentWindow !== null,
-    show: false,
-    autoHideMenuBar: true,
-    backgroundColor: "#f3efe8",
-    maximizable: false,
-    minimizable: false,
-    resizable: false,
-    title: request.mode === "edit" ? "Edit Chart" : "Create Chart",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      sandbox: true,
-    },
-  });
-  chartEditorWindow = nextChartEditorWindow;
-  nextChartEditorWindow.removeMenu();
-
-  const showChartEditor = () => {
-    if (nextChartEditorWindow.isDestroyed()) {
-      return;
-    }
-
-    if (nextChartEditorWindow.isMinimized()) {
-      nextChartEditorWindow.restore();
-    }
-
-    nextChartEditorWindow.show();
-    nextChartEditorWindow.focus();
-  };
-
-  nextChartEditorWindow.webContents.once("did-finish-load", showChartEditor);
-  nextChartEditorWindow.once("ready-to-show", showChartEditor);
-  nextChartEditorWindow.once("closed", () => {
-    if (chartEditorWindow === nextChartEditorWindow) {
-      chartEditorWindow = null;
-    }
-  });
-
-  const query: Record<string, string> =
-    request.mode === "edit"
-      ? {
-          chartId: request.chartId,
-          mode: request.mode,
-          view: "chart-editor",
-        }
-      : {
-          ...(request.sheetId ? { sheetId: request.sheetId } : {}),
-          mode: request.mode,
-          view: "chart-editor",
-        };
-
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    const targetUrl = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-
-    Object.entries(query).forEach(([key, value]) => {
-      targetUrl.searchParams.set(key, value);
-    });
-    await nextChartEditorWindow.loadURL(targetUrl.toString());
-  } else {
-    await nextChartEditorWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-      {
-        query,
-      },
-    );
-  }
 }
 
 const createWindow = () => {
@@ -800,12 +758,14 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
-  "window:open-chart-editor",
-  async (event, request: ChartEditorWindowRequest) => {
-    await openChartEditorWindow(
-      request,
-      BrowserWindow.fromWebContents(event.sender),
-    );
+  "menu:set-chart-dialog-open",
+  (_event, isOpen: boolean) => {
+    if (isChartDialogOpen === isOpen) {
+      return;
+    }
+
+    isChartDialogOpen = isOpen;
+    buildAppMenu();
   },
 );
 

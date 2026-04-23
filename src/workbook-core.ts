@@ -344,6 +344,7 @@ export type WorkbookTransactionOperation =
 
 export interface ApplyTransactionRequest {
   dryRun?: boolean;
+  expectedVersion?: number;
   operations: WorkbookTransactionOperation[];
 }
 

@@ -515,6 +515,54 @@ test("SpreadyControlServer applies chart lifecycle transactions over TCP", async
   }
 });
 
+test("SpreadyControlServer rejects stale expectedVersion writes over TCP", async () => {
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
+
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    await client.applyTransaction({
+      operations: [
+        {
+          columnIndex: 0,
+          rowIndex: 0,
+          type: "setCell",
+          value: "draft",
+        },
+      ],
+    });
+
+    await assert.rejects(
+      () =>
+        client.applyTransaction({
+          expectedVersion: 0,
+          operations: [
+            {
+              columnIndex: 1,
+              rowIndex: 0,
+              type: "setCell",
+              value: "stale",
+            },
+          ],
+        }),
+      /Expected workbook version 0, but current version is 1\./,
+    );
+  } finally {
+    await client.close();
+    await server.stop();
+  }
+});
+
 test("SpreadyControlServer saves and opens native workbook files over TCP", async () => {
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);

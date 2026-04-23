@@ -20,6 +20,8 @@ import {
 import { flushSync } from "react-dom";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
+import { type ChartEditorWindowRequest } from "./chart-editor-state";
+import { ChartEditorDialog } from "./ChartEditorWindow";
 import { WorkbookChartDock } from "./WorkbookChartDock";
 import {
   getColumnTitle,
@@ -85,6 +87,11 @@ type VisibleRegion = {
   width: number;
   x: number;
   y: number;
+};
+
+type ChartEditorSession = {
+  expectedVersion: number;
+  request: ChartEditorWindowRequest;
 };
 
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
@@ -445,6 +452,8 @@ function getDefaultWorkbookFilePath(summary: WorkbookSummary | null): string {
 }
 
 export default function App() {
+  const [chartEditorSession, setChartEditorSession] =
+    useState<ChartEditorSession | null>(null);
   const [formulaInputValue, setFormulaInputValue] = useState("");
   const [gridSelection, setGridSelection] = useState<GridSelection>(
     createEmptyGridSelection,
@@ -475,6 +484,7 @@ export default function App() {
   const pendingRangeRequestIdRef = useRef(0);
   const pendingSheetChartsRequestIdRef = useRef(0);
   const rawRangeCacheRef = useRef<SheetRangeResult | null>(null);
+  const isChartEditorOpen = chartEditorSession !== null;
 
   const activeSheet = useMemo(
     () =>
@@ -1375,29 +1385,47 @@ export default function App() {
     }
   }, [handleSaveWorkbookAs, pushErrorToast, sheetSummary]);
 
+  const closeChartEditor = useCallback(() => {
+    setChartEditorSession(null);
+  }, []);
+
+  const handleChartEditorVersionConflict = useCallback(
+    (message: string) => {
+      setChartEditorSession(null);
+      pushErrorToast(new Error(message));
+    },
+    [pushErrorToast],
+  );
+
   const openCreateChartEditor = useCallback(() => {
-    if (!activeSheet) {
+    if (!activeSheet || !sheetSummary || isChartEditorOpen) {
       return;
     }
 
-    void window.appShell.openChartEditor({
-      mode: "create",
-      sheetId: activeSheet.id,
-    }).catch((error) => {
-      pushErrorToast(error);
+    setChartEditorSession({
+      expectedVersion: sheetSummary.version,
+      request: {
+        mode: "create",
+        sheetId: activeSheet.id,
+      },
     });
-  }, [activeSheet, pushErrorToast]);
+  }, [activeSheet, isChartEditorOpen, sheetSummary]);
 
   const openEditChartEditor = useCallback(
     (chartId: string) => {
-      void window.appShell.openChartEditor({
-        chartId,
-        mode: "edit",
-      }).catch((error) => {
-        pushErrorToast(error);
+      if (!sheetSummary || isChartEditorOpen) {
+        return;
+      }
+
+      setChartEditorSession({
+        expectedVersion: sheetSummary.version,
+        request: {
+          chartId,
+          mode: "edit",
+        },
       });
     },
-    [pushErrorToast],
+    [isChartEditorOpen, sheetSummary],
   );
 
   useEffect(() => {
@@ -1429,6 +1457,26 @@ export default function App() {
       unsubscribeWorkbook();
     };
   }, [pushErrorToast]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    void window.appShell
+      .setChartDialogOpen(isChartEditorOpen)
+      .catch((error) => {
+        if (!isCancelled) {
+          pushErrorToast(error);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+
+      if (isChartEditorOpen) {
+        void window.appShell.setChartDialogOpen(false);
+      }
+    };
+  }, [isChartEditorOpen, pushErrorToast]);
 
   useEffect(() => {
     setGridSelection(createEmptyGridSelection());
@@ -1560,6 +1608,10 @@ export default function App() {
 
   useEffect(() => {
     return window.appShell.onMenuAction((action) => {
+      if (isChartEditorOpen) {
+        return;
+      }
+
       const handleMenuAction = (nextAction: AppMenuAction) => {
         switch (nextAction) {
           case APP_MENU_ACTIONS.cut:
@@ -1630,12 +1682,17 @@ export default function App() {
     handleOpenWorkbook,
     handleSaveWorkbook,
     handleSaveWorkbookAs,
+    isChartEditorOpen,
     openCreateChartEditor,
     pasteSelection,
   ]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (isChartEditorOpen) {
+        return;
+      }
+
       const isPrimaryModifier = event.ctrlKey || event.metaKey;
       const activeElement = document.activeElement;
       const isFormulaInputFocused = activeElement === formulaInputRef.current;
@@ -1692,7 +1749,13 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleWindowKeyDown, true);
     };
-  }, [copySelection, cutSelection, deleteSelection, pasteSelection]);
+  }, [
+    copySelection,
+    cutSelection,
+    deleteSelection,
+    isChartEditorOpen,
+    pasteSelection,
+  ]);
 
   return (
     <main className="app-shell">
@@ -1797,6 +1860,20 @@ export default function App() {
           <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
         </div>
       </footer>
+
+      {chartEditorSession ? (
+        <ChartEditorDialog
+          expectedVersion={chartEditorSession.expectedVersion}
+          key={
+            chartEditorSession.request.mode === "edit"
+              ? `edit:${chartEditorSession.request.chartId}:${chartEditorSession.expectedVersion}`
+              : `create:${chartEditorSession.request.sheetId ?? "active"}:${chartEditorSession.expectedVersion}`
+          }
+          onClose={closeChartEditor}
+          onVersionConflict={handleChartEditorVersionConflict}
+          request={chartEditorSession.request}
+        />
+      ) : null}
 
       <ToastViewport onDismiss={dismissToast} toasts={toasts} />
     </main>

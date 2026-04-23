@@ -256,6 +256,15 @@ export class WorkbookController extends EventEmitter {
   }
 
   applyTransaction(request: ApplyTransactionRequest): ApplyTransactionResult {
+    if (
+      request.expectedVersion !== undefined &&
+      request.expectedVersion !== this.#state.version
+    ) {
+      throw new Error(
+        `Expected workbook version ${request.expectedVersion}, but current version is ${this.#state.version}.`,
+      );
+    }
+
     const execution = applyWorkbookTransaction(this.#state, request);
     const nextState =
       execution.changed && !request.dryRun

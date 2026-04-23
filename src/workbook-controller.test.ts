@@ -703,6 +703,38 @@ test("WorkbookController applies chart lifecycle transactions through the shared
   assert.throws(() => controller.getChart("chart-1"), /was not found/);
 });
 
+test("WorkbookController rejects stale applyTransaction requests with expectedVersion", () => {
+  const controller = new WorkbookController();
+  const initialVersion = controller.getSummary().version;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "draft",
+      },
+    ],
+  });
+
+  assert.throws(
+    () =>
+      controller.applyTransaction({
+        expectedVersion: initialVersion,
+        operations: [
+          {
+            columnIndex: 1,
+            rowIndex: 0,
+            type: "setCell",
+            value: "stale",
+          },
+        ],
+      }),
+    /Expected workbook version 0, but current version is 1\./,
+  );
+});
+
 test("WorkbookController saves and opens native workbook files", async () => {
   const controller = new WorkbookController();
 
