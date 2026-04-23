@@ -727,7 +727,7 @@ async function main() {
   const server = new McpServer(
     {
       name: "spready-stdio",
-      version: "0.0.3",
+      version: "0.0.4",
     },
     {
       capabilities: {

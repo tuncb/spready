@@ -1,7 +1,7 @@
 {
   "name": "spready",
   "productName": "Spready",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Lean Electron Forge shell",
   "main": ".vite/build/main.js",
   "private": true,
