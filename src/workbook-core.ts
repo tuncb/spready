@@ -237,6 +237,12 @@ export type WorkbookTransactionOperation =
       sheetId?: string;
     }
   | {
+      chartId?: string;
+      name?: string;
+      spec: WorkbookChartSpec;
+      type: "addChart";
+    }
+  | {
       type: "clearRange";
       columnCount: number;
       rowCount: number;
@@ -262,6 +268,10 @@ export type WorkbookTransactionOperation =
       sheetId: string;
     }
   | {
+      chartId: string;
+      type: "deleteChart";
+    }
+  | {
       type: "insertColumns";
       columnIndex: number;
       count: number;
@@ -277,6 +287,11 @@ export type WorkbookTransactionOperation =
       type: "renameSheet";
       name: string;
       sheetId?: string;
+    }
+  | {
+      chartId: string;
+      name: string;
+      type: "renameChart";
     }
   | {
       type: "replaceSheet";
@@ -301,6 +316,11 @@ export type WorkbookTransactionOperation =
   | {
       type: "setActiveSheet";
       sheetId: string;
+    }
+  | {
+      chartId: string;
+      spec: WorkbookChartSpec;
+      type: "setChartSpec";
     }
   | {
       type: "setSheetSourceFile";
@@ -659,27 +679,7 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
 export function cloneWorkbookChart(chart: WorkbookChart): WorkbookChart {
   return {
     ...chart,
-    spec:
-      chart.spec.family === "cartesian"
-        ? {
-            ...chart.spec,
-            source: {
-              ...chart.spec.source,
-              range: {
-                ...chart.spec.source.range,
-              },
-            },
-            valueDimensions: [...chart.spec.valueDimensions],
-          }
-        : {
-            ...chart.spec,
-            source: {
-              ...chart.spec.source,
-              range: {
-                ...chart.spec.source.range,
-              },
-            },
-          },
+    spec: cloneWorkbookChartSpec(chart.spec),
   };
 }
 
@@ -1114,6 +1114,29 @@ export function applyWorkbookTransaction(
         break;
       }
 
+      case "addChart": {
+        const chartId =
+          normalizeOptionalChartId(operation.chartId) ??
+          createChartId(nextState.nextChartNumber);
+
+        if (findChartIndex(nextState, chartId) >= 0) {
+          throw new Error(`Chart "${chartId}" already exists.`);
+        }
+
+        const chart = createWorkbookChart(
+          chartId,
+          operation.name?.trim() || `Chart ${nextState.nextChartNumber}`,
+          operation.spec,
+        );
+
+        assertCreatableWorkbookChart(chart, nextState, "added");
+
+        nextState.charts = [...nextState.charts, chart];
+        nextState.nextChartNumber += 1;
+        changed = true;
+        break;
+      }
+
       case "clearRange": {
         const sheet = getMutableSheet(
           nextState,
@@ -1272,6 +1295,21 @@ export function applyWorkbookTransaction(
         break;
       }
 
+      case "deleteChart": {
+        const chartId = normalizeRequiredChartId(operation.chartId);
+        const deleteIndex = findChartIndex(nextState, chartId);
+
+        if (deleteIndex < 0) {
+          throw new Error(`Chart "${chartId}" was not found.`);
+        }
+
+        nextState.charts = nextState.charts.filter(
+          (_chart, index) => index !== deleteIndex,
+        );
+        changed = true;
+        break;
+      }
+
       case "insertColumns": {
         assertPositiveCount(operation.count, "Column insert count");
 
@@ -1349,6 +1387,35 @@ export function applyWorkbookTransaction(
         }
 
         sheet.name = nextName;
+        changed = true;
+        break;
+      }
+
+      case "renameChart": {
+        const chartId = normalizeRequiredChartId(operation.chartId);
+        const chartIndex = findChartIndex(nextState, chartId);
+
+        if (chartIndex < 0) {
+          throw new Error(`Chart "${chartId}" was not found.`);
+        }
+
+        const nextName = operation.name.trim();
+
+        if (
+          nextName.length === 0 ||
+          nextState.charts[chartIndex].name === nextName
+        ) {
+          break;
+        }
+
+        nextState.charts = nextState.charts.map((chart, index) =>
+          index === chartIndex
+            ? {
+                ...chart,
+                name: nextName,
+              }
+            : chart,
+        );
         changed = true;
         break;
       }
@@ -1442,6 +1509,34 @@ export function applyWorkbookTransaction(
         }
 
         nextState.activeSheetId = operation.sheetId;
+        changed = true;
+        break;
+      }
+
+      case "setChartSpec": {
+        const chartId = normalizeRequiredChartId(operation.chartId);
+        const chartIndex = findChartIndex(nextState, chartId);
+
+        if (chartIndex < 0) {
+          throw new Error(`Chart "${chartId}" was not found.`);
+        }
+
+        const currentChart = nextState.charts[chartIndex];
+        const nextChart: WorkbookChart = {
+          ...currentChart,
+          sheetId: operation.spec.source.range.sheetId,
+          spec: cloneWorkbookChartSpec(operation.spec),
+        };
+
+        assertCreatableWorkbookChart(nextChart, nextState, "updated");
+
+        if (workbookChartsEqual(currentChart, nextChart)) {
+          break;
+        }
+
+        nextState.charts = nextState.charts.map((chart, index) =>
+          index === chartIndex ? nextChart : chart,
+        );
         changed = true;
         break;
       }
@@ -1579,6 +1674,164 @@ function assertNonNegativeIndex(value: number, label: string) {
 
 function clampToRange(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(Math.floor(value), max));
+}
+
+function cloneWorkbookChartSpec(spec: WorkbookChartSpec): WorkbookChartSpec {
+  return spec.family === "cartesian"
+    ? {
+        ...spec,
+        source: {
+          ...spec.source,
+          range: {
+            ...spec.source.range,
+          },
+        },
+        valueDimensions: [...spec.valueDimensions],
+      }
+    : {
+        ...spec,
+        source: {
+          ...spec.source,
+          range: {
+            ...spec.source.range,
+          },
+        },
+      };
+}
+
+function createWorkbookChart(
+  id: string,
+  name: string,
+  spec: WorkbookChartSpec,
+): WorkbookChart {
+  const nextSpec = cloneWorkbookChartSpec(spec);
+
+  return {
+    id,
+    name,
+    sheetId: nextSpec.source.range.sheetId,
+    spec: nextSpec,
+  };
+}
+
+function createChartId(nextChartNumber: number): string {
+  return `chart-${nextChartNumber}`;
+}
+
+function findChartIndex(workbook: WorkbookState, chartId: string): number {
+  return workbook.charts.findIndex((chart) => chart.id === chartId);
+}
+
+function normalizeOptionalChartId(chartId?: string): string | undefined {
+  const nextChartId = chartId?.trim();
+
+  return nextChartId && nextChartId.length > 0 ? nextChartId : undefined;
+}
+
+function normalizeRequiredChartId(chartId: string): string {
+  const nextChartId = chartId.trim();
+
+  if (nextChartId.length === 0) {
+    throw new Error("Chart id must be a non-empty string.");
+  }
+
+  return nextChartId;
+}
+
+function getWorkbookChartSheetReferences(
+  workbook: Pick<WorkbookState, "sheets">,
+): WorkbookChartSheetReference[] {
+  return workbook.sheets.map((sheet) => ({
+    columnCount: getSheetColumnCount(sheet),
+    id: sheet.id,
+    rowCount: getSheetRowCount(sheet),
+  }));
+}
+
+function assertCreatableWorkbookChart(
+  chart: WorkbookChart,
+  workbook: Pick<WorkbookState, "sheets">,
+  verb: "added" | "updated",
+) {
+  const issues = getWorkbookChartValidationIssues(
+    chart,
+    getWorkbookChartSheetReferences(workbook),
+  );
+
+  if (issues.length === 0) {
+    return;
+  }
+
+  throw new Error(
+    `Chart "${chart.id}" cannot be ${verb}: ${issues
+      .map((issue) => issue.message)
+      .join(" ")}`,
+  );
+}
+
+function workbookChartsEqual(
+  left: WorkbookChart,
+  right: WorkbookChart,
+): boolean {
+  return (
+    left.id === right.id &&
+    left.name === right.name &&
+    left.sheetId === right.sheetId &&
+    workbookChartSpecsEqual(left.spec, right.spec)
+  );
+}
+
+function workbookChartSpecsEqual(
+  left: WorkbookChartSpec,
+  right: WorkbookChartSpec,
+): boolean {
+  if (
+    left.family !== right.family ||
+    left.chartType !== right.chartType ||
+    left.source.seriesLayoutBy !== right.source.seriesLayoutBy ||
+    left.source.sourceHeader !== right.source.sourceHeader ||
+    !workbookChartRangesEqual(left.source.range, right.source.range)
+  ) {
+    return false;
+  }
+
+  if (left.family === "cartesian" && right.family === "cartesian") {
+    return (
+      left.categoryDimension === right.categoryDimension &&
+      left.smooth === right.smooth &&
+      left.stacked === right.stacked &&
+      arraysEqual(left.valueDimensions, right.valueDimensions)
+    );
+  }
+
+  if (left.family === "pie" && right.family === "pie") {
+    return (
+      left.nameDimension === right.nameDimension &&
+      left.valueDimension === right.valueDimension
+    );
+  }
+
+  return false;
+}
+
+function workbookChartRangesEqual(
+  left: WorkbookChartRange,
+  right: WorkbookChartRange,
+): boolean {
+  return (
+    left.sheetId === right.sheetId &&
+    left.startRow === right.startRow &&
+    left.startColumn === right.startColumn &&
+    left.rowCount === right.rowCount &&
+    left.columnCount === right.columnCount
+  );
+}
+
+function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
 }
 
 function updateWorkbookChartRange(

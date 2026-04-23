@@ -584,6 +584,125 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
   }
 });
 
+test("WorkbookController applies chart lifecycle transactions through the shared write path", () => {
+  const controller = new WorkbookController();
+
+  const addResult = controller.applyTransaction({
+    operations: [
+      {
+        spec: {
+          categoryDimension: 0,
+          chartType: "bar",
+          family: "cartesian",
+          source: {
+            range: {
+              columnCount: 2,
+              rowCount: 4,
+              sheetId: controller.getSummary().activeSheetId,
+              startColumn: 0,
+              startRow: 0,
+            },
+            seriesLayoutBy: "column",
+            sourceHeader: true,
+          },
+          valueDimensions: [1],
+        },
+        type: "addChart",
+      },
+    ],
+  });
+
+  assert.equal(addResult.changed, true);
+  assert.deepEqual(
+    controller.getSheetCharts().charts.map((chart) => ({
+      id: chart.id,
+      name: chart.name,
+      sheetId: chart.sheetId,
+      type: chart.spec.chartType,
+    })),
+    [
+      {
+        id: "chart-1",
+        name: "Chart 1",
+        sheetId: controller.getSummary().activeSheetId,
+        type: "bar",
+      },
+    ],
+  );
+
+  controller.applyTransaction({
+    operations: [
+      {
+        chartId: "chart-1",
+        name: "  Trend  ",
+        type: "renameChart",
+      },
+      {
+        chartId: "chart-1",
+        spec: {
+          categoryDimension: 0,
+          chartType: "line",
+          family: "cartesian",
+          source: {
+            range: {
+              columnCount: 2,
+              rowCount: 4,
+              sheetId: controller.getSummary().activeSheetId,
+              startColumn: 1,
+              startRow: 2,
+            },
+            seriesLayoutBy: "column",
+            sourceHeader: true,
+          },
+          smooth: true,
+          valueDimensions: [1],
+        },
+        type: "setChartSpec",
+      },
+    ],
+  });
+
+  assert.deepEqual(controller.getChart("chart-1"), {
+    chart: {
+      id: "chart-1",
+      name: "Trend",
+      sheetId: controller.getSummary().activeSheetId,
+      spec: {
+        categoryDimension: 0,
+        chartType: "line",
+        family: "cartesian",
+        smooth: true,
+        source: {
+          range: {
+            columnCount: 2,
+            rowCount: 4,
+            sheetId: controller.getSummary().activeSheetId,
+            startColumn: 1,
+            startRow: 2,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+    },
+    status: "ok",
+    validationIssues: [],
+  });
+
+  controller.applyTransaction({
+    operations: [
+      {
+        chartId: "chart-1",
+        type: "deleteChart",
+      },
+    ],
+  });
+
+  assert.deepEqual(controller.getSheetCharts().charts, []);
+  assert.throws(() => controller.getChart("chart-1"), /was not found/);
+});
+
 test("WorkbookController saves and opens native workbook files", async () => {
   const controller = new WorkbookController();
 

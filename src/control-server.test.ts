@@ -382,6 +382,139 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
   }
 });
 
+test("SpreadyControlServer applies chart lifecycle transactions over TCP", async () => {
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
+
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    const summary = controller.getSummary();
+    const addResult = await client.applyTransaction({
+      operations: [
+        {
+          spec: {
+            categoryDimension: 0,
+            chartType: "bar",
+            family: "cartesian",
+            source: {
+              range: {
+                columnCount: 2,
+                rowCount: 4,
+                sheetId: summary.activeSheetId,
+                startColumn: 0,
+                startRow: 0,
+              },
+              seriesLayoutBy: "column",
+              sourceHeader: true,
+            },
+            valueDimensions: [1],
+          },
+          type: "addChart",
+        },
+      ],
+    });
+
+    assert.equal(addResult.changed, true);
+    assert.equal(addResult.summary.charts.length, 1);
+    assert.deepEqual(
+      (await client.getSheetCharts()).charts.map((chart) => ({
+        id: chart.id,
+        name: chart.name,
+        type: chart.spec.chartType,
+      })),
+      [
+        {
+          id: "chart-1",
+          name: "Chart 1",
+          type: "bar",
+        },
+      ],
+    );
+
+    await client.applyTransaction({
+      operations: [
+        {
+          chartId: "chart-1",
+          name: "  Revenue Trend  ",
+          type: "renameChart",
+        },
+        {
+          chartId: "chart-1",
+          spec: {
+            categoryDimension: 0,
+            chartType: "line",
+            family: "cartesian",
+            source: {
+              range: {
+                columnCount: 2,
+                rowCount: 4,
+                sheetId: summary.activeSheetId,
+                startColumn: 1,
+                startRow: 1,
+              },
+              seriesLayoutBy: "column",
+              sourceHeader: true,
+            },
+            valueDimensions: [1],
+          },
+          type: "setChartSpec",
+        },
+      ],
+    });
+
+    assert.deepEqual(await client.getChart("chart-1"), {
+      chart: {
+        id: "chart-1",
+        name: "Revenue Trend",
+        sheetId: summary.activeSheetId,
+        spec: {
+          categoryDimension: 0,
+          chartType: "line",
+          family: "cartesian",
+          source: {
+            range: {
+              columnCount: 2,
+              rowCount: 4,
+              sheetId: summary.activeSheetId,
+              startColumn: 1,
+              startRow: 1,
+            },
+            seriesLayoutBy: "column",
+            sourceHeader: true,
+          },
+          valueDimensions: [1],
+        },
+      },
+      status: "ok",
+      validationIssues: [],
+    });
+
+    await client.applyTransaction({
+      operations: [
+        {
+          chartId: "chart-1",
+          type: "deleteChart",
+        },
+      ],
+    });
+
+    assert.deepEqual((await client.getSheetCharts()).charts, []);
+  } finally {
+    await client.close();
+    await server.stop();
+  }
+});
+
 test("SpreadyControlServer saves and opens native workbook files over TCP", async () => {
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);

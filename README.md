@@ -235,9 +235,13 @@ Save the current workbook as a native Spready workbook file:
 Supported transaction operations currently include:
 
 - `addSheet`
+- `addChart`
 - `setActiveSheet`
+- `setChartSpec`
 - `renameSheet`
+- `renameChart`
 - `deleteSheet`
+- `deleteChart`
 - `resizeSheet`
 - `insertRows`
 - `deleteRows`

@@ -12,6 +12,7 @@ import { resolveControlTarget, SpreadyControlClient } from "./control-client";
 import {
   chartGuideTools,
   registerChartTools,
+  workbookChartSchema,
   workbookChartSummarySchema,
 } from "./mcp-chart-tools";
 
@@ -113,6 +114,8 @@ const cutRangeResultSchema = copyRangeResultSchema.extend({
   version: z.int().min(0),
 });
 
+const workbookChartSpecSchema = workbookChartSchema.shape.spec;
+
 const transactionOperationSchema = z.discriminatedUnion("type", [
   z.object({
     activate: z.boolean().optional(),
@@ -121,6 +124,12 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     rowCount: z.int().min(1).optional(),
     sheetId: z.string().min(1).optional(),
     type: z.literal("addSheet"),
+  }),
+  z.object({
+    chartId: z.string().min(1).optional(),
+    name: z.string().min(1).optional(),
+    spec: workbookChartSpecSchema,
+    type: z.literal("addChart"),
   }),
   z.object({
     columnCount: z.int().min(0),
@@ -148,6 +157,10 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     type: z.literal("deleteSheet"),
   }),
   z.object({
+    chartId: z.string().min(1),
+    type: z.literal("deleteChart"),
+  }),
+  z.object({
     columnIndex: z.int().min(0),
     count: z.int().min(1),
     sheetId: z.string().min(1).optional(),
@@ -163,6 +176,11 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     name: z.string().min(1),
     sheetId: z.string().min(1).optional(),
     type: z.literal("renameSheet"),
+  }),
+  z.object({
+    chartId: z.string().min(1),
+    name: z.string().min(1),
+    type: z.literal("renameChart"),
   }),
   z.object({
     name: z.string().min(1).optional(),
@@ -187,6 +205,11 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
   z.object({
     sheetId: z.string().min(1),
     type: z.literal("setActiveSheet"),
+  }),
+  z.object({
+    chartId: z.string().min(1),
+    spec: workbookChartSpecSchema,
+    type: z.literal("setChartSpec"),
   }),
   z.object({
     sheetId: z.string().min(1).optional(),
@@ -240,6 +263,11 @@ const transactionOperations = [
       "Add a new sheet, optionally naming it, sizing it, and making it active.",
   },
   {
+    type: "addChart",
+    description:
+      "Persist one validated chart definition and optionally set its id and display name.",
+  },
+  {
     type: "clearRange",
     description: "Clear a rectangular range without resizing the sheet.",
   },
@@ -258,6 +286,10 @@ const transactionOperations = [
       "Delete a sheet by id and optionally choose which sheet becomes active next.",
   },
   {
+    type: "deleteChart",
+    description: "Delete one persisted chart by id.",
+  },
+  {
     type: "insertColumns",
     description:
       "Insert one or more blank columns at a zero-based column index.",
@@ -269,6 +301,10 @@ const transactionOperations = [
   {
     type: "renameSheet",
     description: "Rename an existing sheet.",
+  },
+  {
+    type: "renameChart",
+    description: "Rename one persisted chart by id.",
   },
   {
     type: "replaceSheet",
@@ -285,6 +321,11 @@ const transactionOperations = [
   {
     type: "setActiveSheet",
     description: "Make a specific sheet active.",
+  },
+  {
+    type: "setChartSpec",
+    description:
+      "Replace one chart definition with a fully validated shared chart spec.",
   },
   {
     type: "setSheetSourceFile",
@@ -483,6 +524,7 @@ const guideResource = {
     "Read tools default to the active sheet when sheetId is omitted.",
     "Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
+    "Create, rename, reconfigure, and delete charts through apply_transaction chart operations; chart previews remain derived read models.",
     "Evaluated display reads include same-sheet arithmetic, comparisons, text operators, ranges, core worksheet functions, and same-sheet lookup functions such as INDEX, MATCH, and XLOOKUP.",
     "Current formula exclusions include absolute references with $, cross-sheet references, defined names, and LET.",
     "Use copy_range when you need a tab-delimited clipboard-style payload for one explicit rectangular range.",

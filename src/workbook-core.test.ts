@@ -668,6 +668,129 @@ test("applyWorkbookTransaction preserves charts explicitly when deleting their s
   );
 });
 
+test("applyWorkbookTransaction manages chart lifecycle operations", () => {
+  const initialState = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        activate: false,
+        columnCount: 4,
+        name: "Metrics",
+        rowCount: 6,
+        sheetId: "sheet-metrics",
+        type: "addSheet",
+      },
+    ],
+  }).state;
+  const primarySheetId = initialState.activeSheetId;
+
+  const afterAdd = applyWorkbookTransaction(initialState, {
+    operations: [
+      {
+        spec: {
+          categoryDimension: 0,
+          chartType: "bar",
+          family: "cartesian",
+          source: {
+            range: {
+              columnCount: 2,
+              rowCount: 4,
+              sheetId: primarySheetId,
+              startColumn: 0,
+              startRow: 0,
+            },
+            seriesLayoutBy: "column",
+            sourceHeader: true,
+          },
+          valueDimensions: [1],
+        },
+        type: "addChart",
+      },
+    ],
+  }).state;
+
+  assert.equal(afterAdd.nextChartNumber, 2);
+  assert.deepEqual(afterAdd.charts, [
+    {
+      id: "chart-1",
+      name: "Chart 1",
+      sheetId: primarySheetId,
+      spec: {
+        categoryDimension: 0,
+        chartType: "bar",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 2,
+            rowCount: 4,
+            sheetId: primarySheetId,
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+    },
+  ]);
+  assert.deepEqual(getWorkbookSummary(afterAdd).charts, [
+    {
+      chartType: "bar",
+      id: "chart-1",
+      name: "Chart 1",
+      sheetId: primarySheetId,
+      status: "ok",
+    },
+  ]);
+
+  const afterRenameAndRetarget = applyWorkbookTransaction(afterAdd, {
+    operations: [
+      {
+        chartId: "chart-1",
+        name: "  Margin Mix  ",
+        type: "renameChart",
+      },
+      {
+        chartId: "chart-1",
+        spec: {
+          chartType: "pie",
+          family: "pie",
+          nameDimension: 0,
+          source: {
+            range: {
+              columnCount: 2,
+              rowCount: 4,
+              sheetId: "sheet-metrics",
+              startColumn: 1,
+              startRow: 2,
+            },
+            seriesLayoutBy: "column",
+            sourceHeader: true,
+          },
+          valueDimension: 1,
+        },
+        type: "setChartSpec",
+      },
+    ],
+  }).state;
+
+  assert.equal(afterRenameAndRetarget.charts[0]?.name, "Margin Mix");
+  assert.equal(afterRenameAndRetarget.charts[0]?.sheetId, "sheet-metrics");
+  assert.equal(afterRenameAndRetarget.charts[0]?.spec.family, "pie");
+  assert.equal(afterRenameAndRetarget.nextChartNumber, 2);
+
+  const afterDelete = applyWorkbookTransaction(afterRenameAndRetarget, {
+    operations: [
+      {
+        chartId: "chart-1",
+        type: "deleteChart",
+      },
+    ],
+  }).state;
+
+  assert.equal(afterDelete.charts.length, 0);
+});
+
 test("applyWorkbookTransaction resizes and replaces sheet contents from CSV metadata-aware updates", () => {
   const initialState = applyWorkbookTransaction(createWorkbookState(), {
     operations: [
@@ -776,5 +899,106 @@ test("applyWorkbookTransaction and sheet reads reject invalid requests", () => {
         ],
       }),
     /Sheet "sheet-duplicate" already exists\./,
+  );
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(initialState, {
+        operations: [
+          {
+            chartId: "chart-1",
+            spec: {
+              categoryDimension: 0,
+              chartType: "bar",
+              family: "cartesian",
+              source: {
+                range: {
+                  columnCount: 0,
+                  rowCount: 1,
+                  sheetId: initialState.activeSheetId,
+                  startColumn: 0,
+                  startRow: 0,
+                },
+                seriesLayoutBy: "column",
+                sourceHeader: true,
+              },
+              valueDimensions: [1],
+            },
+            type: "addChart",
+          },
+        ],
+      }),
+    /Chart "chart-1" cannot be added:/,
+  );
+
+  const stateWithChart = applyWorkbookTransaction(initialState, {
+    operations: [
+      {
+        chartId: "chart-1",
+        spec: {
+          categoryDimension: 0,
+          chartType: "bar",
+          family: "cartesian",
+          source: {
+            range: {
+              columnCount: 2,
+              rowCount: 4,
+              sheetId: initialState.activeSheetId,
+              startColumn: 0,
+              startRow: 0,
+            },
+            seriesLayoutBy: "column",
+            sourceHeader: true,
+          },
+          valueDimensions: [1],
+        },
+        type: "addChart",
+      },
+    ],
+  }).state;
+
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(stateWithChart, {
+        operations: [
+          {
+            chartId: "chart-1",
+            type: "deleteChart",
+          },
+          {
+            chartId: "chart-1",
+            type: "deleteChart",
+          },
+        ],
+      }),
+    /Chart "chart-1" was not found\./,
+  );
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(stateWithChart, {
+        operations: [
+          {
+            chartId: "chart-1",
+            spec: {
+              chartType: "pie",
+              family: "pie",
+              nameDimension: 0,
+              source: {
+                range: {
+                  columnCount: 1,
+                  rowCount: 4,
+                  sheetId: initialState.activeSheetId,
+                  startColumn: 0,
+                  startRow: 0,
+                },
+                seriesLayoutBy: "column",
+                sourceHeader: true,
+              },
+              valueDimension: 1,
+            },
+            type: "setChartSpec",
+          },
+        ],
+      }),
+    /Chart "chart-1" cannot be updated:/,
   );
 });

@@ -28,6 +28,7 @@
 - Preview generation normalizes `seriesLayoutBy: "row"` sources into a column-oriented dataset before building ECharts options, so renderer consumers only need one dataset shape in v1.
 - Preview generation converts blank cells and formula errors to `null` points. Formula errors also emit preview warnings instead of failing the entire chart preview.
 - Invalid charts still return a preview payload with an empty dataset and a minimal title-only option, rather than throwing from the read path.
+- Chart writes use transaction operations inside `applyWorkbookTransaction` (`addChart`, `renameChart`, `setChartSpec`, `deleteChart`) instead of controller-specific or transport-specific chart mutation methods.
 - TCP chart support mirrors the controller method names and shared payloads directly: `getSheetCharts`, `getChart`, and `getChartPreview`. No chart-specific transport contract is introduced.
 - MCP chart support stays a thin read-only adapter over TCP with `get_sheet_charts`, `get_chart`, and `get_chart_preview`. MCP does not implement workbook or chart rules itself.
 - Structural row and column edits rewrite persisted chart source ranges inside `applyWorkbookTransaction`, not in the renderer or transport layers. Deleting a sheet keeps its charts as explicit invalid records rather than silently removing them.
