@@ -18,6 +18,7 @@ export type ChartEditorWindowRequest =
   | {
       mode: "create";
       sheetId?: string;
+      sourceRange?: WorkbookChartRange;
     }
   | {
       chartId: string;
@@ -48,11 +49,9 @@ export function createChartEditorFormState(
     return createChartEditorFormStateFromChart(chart);
   }
 
+  const requestSheetId = getChartEditorSheetId(request, summary, chart);
   const sheet =
-    summary.sheets.find(
-      (entry) =>
-        entry.id === (request.mode === "create" ? (request.sheetId ?? "") : ""),
-    ) ??
+    summary.sheets.find((entry) => entry.id === requestSheetId) ??
     summary.sheets.find((entry) => entry.id === summary.activeSheetId) ??
     summary.sheets[0];
   const minimumRowCount = Math.min(sheet?.rowCount ?? 2, 6);
@@ -62,6 +61,15 @@ export function createChartEditorFormState(
       : Math.max(2, minimumRowCount);
   const columnCount =
     usedRange.columnCount > 0 ? Math.max(2, usedRange.columnCount) : 2;
+  const sourceRange =
+    request.mode === "create" && request.sourceRange
+      ? request.sourceRange
+      : {
+          columnCount,
+          rowCount,
+          startColumn: usedRange.startColumn,
+          startRow: usedRange.startRow,
+        };
 
   return {
     categoryDimension: "0",
@@ -70,12 +78,7 @@ export function createChartEditorFormState(
     nameDimension: "0",
     seriesLayoutBy: "column",
     smooth: false,
-    sourceRange: formatChartEditorRange({
-      columnCount,
-      rowCount,
-      startColumn: usedRange.startColumn,
-      startRow: usedRange.startRow,
-    }),
+    sourceRange: formatChartEditorRange(sourceRange),
     sourceHeader: true,
     stacked: false,
     valueDimension: "1",
@@ -247,9 +250,13 @@ export function getChartEditorSheetId(
     return chart.sheetId;
   }
 
-  return request.mode === "create" && request.sheetId
-    ? request.sheetId
-    : summary.activeSheetId;
+  if (request.mode === "create") {
+    return (
+      request.sourceRange?.sheetId ?? request.sheetId ?? summary.activeSheetId
+    );
+  }
+
+  return summary.activeSheetId;
 }
 
 function parseIntegerField(value: string): number {

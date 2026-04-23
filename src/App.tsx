@@ -1441,9 +1441,18 @@ export default function App() {
       request: {
         mode: "create",
         sheetId: activeSheet.id,
+        sourceRange: currentSelectionRange
+          ? {
+              columnCount: currentSelectionRange.columnCount,
+              rowCount: currentSelectionRange.rowCount,
+              sheetId: activeSheet.id,
+              startColumn: currentSelectionRange.startColumn,
+              startRow: currentSelectionRange.startRow,
+            }
+          : undefined,
       },
     });
-  }, [activeSheet, isChartEditorOpen, sheetSummary]);
+  }, [activeSheet, currentSelectionRange, isChartEditorOpen, sheetSummary]);
 
   const openEditChartEditor = useCallback(
     (chartId: string) => {

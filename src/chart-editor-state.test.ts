@@ -112,6 +112,24 @@ test("chart editor state creates valid default create-form operations", () => {
   );
 });
 
+test("chart editor state uses selected cells as create-form source range", () => {
+  const request: ChartEditorWindowRequest = {
+    mode: "create",
+    sheetId: "sheet-1",
+    sourceRange: {
+      columnCount: 2,
+      rowCount: 4,
+      sheetId: "sheet-1",
+      startColumn: 0,
+      startRow: 0,
+    },
+  };
+  const formState = createChartEditorFormState(request, summary, usedRange);
+
+  assert.equal(formState.sourceRange, "A1:B4");
+  assert.equal(getChartEditorSheetId(request, summary), "sheet-1");
+});
+
 test("chart editor state builds edit operations from persisted chart info", () => {
   const request: ChartEditorWindowRequest = {
     chartId: "chart-1",
