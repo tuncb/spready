@@ -356,7 +356,7 @@ export function ChartEditorDialog({
 
                   <div className="chart-editor__field chart-editor__field--short">
                     <label htmlFor="chart-category-dimension">
-                      X or category dimension
+                      X axis / category column
                     </label>
                     <input
                       id="chart-category-dimension"
@@ -364,13 +364,14 @@ export function ChartEditorDialog({
                       onChange={(event) => {
                         updateField("categoryDimension", event.target.value);
                       }}
+                      placeholder="0"
                       value={formState.categoryDimension}
                     />
                   </div>
 
                   <div className="chart-editor__field chart-editor__field--medium">
                     <label htmlFor="chart-value-dimensions">
-                      Value dimensions
+                      Y value columns
                     </label>
                     <input
                       id="chart-value-dimensions"
