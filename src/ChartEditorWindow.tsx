@@ -117,6 +117,7 @@ export function ChartEditorDialog({
     validationIssues.length === 0
       ? "Valid configuration"
       : validationIssues.map((issue) => issue.message).join(" ");
+  const actionTitle = request.mode === "edit" ? "Edit chart" : "Insert chart";
   const canSave =
     !isLoading &&
     !isSaving &&
@@ -227,14 +228,8 @@ export function ChartEditorDialog({
           <section className="chart-editor-panel">
             <header className="chart-editor__header">
               <div>
-                <p className="chart-editor__eyebrow">
-                  {request.mode === "edit" ? "Edit chart" : "Insert chart"}
-                </p>
-                <h1 className="chart-editor__title" id="chart-editor-title">
-                  {request.mode === "edit" ? "Edit Chart" : "Create Chart"}
-                </h1>
-                <p className="chart-editor__subtitle">
-                  {formState.sourceRange}
+                <p className="chart-editor__eyebrow" id="chart-editor-title">
+                  {actionTitle}
                 </p>
               </div>
             </header>
@@ -447,11 +442,7 @@ export function ChartEditorDialog({
                   }}
                   type="button"
                 >
-                  {isSaving
-                    ? "Saving..."
-                    : request.mode === "edit"
-                      ? "Save Chart"
-                      : "Create Chart"}
+                  {isSaving ? "Saving..." : actionTitle}
                 </button>
               </div>
             </footer>
