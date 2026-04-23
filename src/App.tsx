@@ -414,6 +414,21 @@ function cellWouldBeCleared(
   );
 }
 
+function chartLayoutsEqual(
+  left: WorkbookChartLayout,
+  right: WorkbookChartLayout,
+): boolean {
+  return (
+    left.height === right.height &&
+    left.offsetX === right.offsetX &&
+    left.offsetY === right.offsetY &&
+    left.startColumn === right.startColumn &&
+    left.startRow === right.startRow &&
+    left.width === right.width &&
+    left.zIndex === right.zIndex
+  );
+}
+
 function replaceInputSelection(
   input: HTMLInputElement,
   nextText: string,
@@ -1459,6 +1474,30 @@ export default function App() {
           .filter((preview) => preview.chart.id !== chartId)
           .map((preview) => preview.chart.layout.zIndex),
       );
+      const nextLayout = {
+        ...layout,
+        zIndex: Math.max(layout.zIndex, currentMaxZIndex + 1),
+      };
+      const previousSheetChartPreviews = sheetChartPreviews;
+
+      setSheetChartPreviews((current) =>
+        current
+          ? {
+              ...current,
+              previews: current.previews.map((preview) =>
+                preview.chart.id === chartId
+                  ? {
+                      ...preview,
+                      chart: {
+                        ...preview.chart,
+                        layout: nextLayout,
+                      },
+                    }
+                  : preview,
+              ),
+            }
+          : current,
+      );
 
       try {
         const result = await window.appShell.applyTransaction({
@@ -1466,10 +1505,7 @@ export default function App() {
           operations: [
             {
               chartId,
-              layout: {
-                ...layout,
-                zIndex: Math.max(layout.zIndex, currentMaxZIndex + 1),
-              },
+              layout: nextLayout,
               type: "setChartLayout",
             },
           ],
@@ -1477,10 +1513,28 @@ export default function App() {
 
         setSheetSummary(result.summary);
       } catch (error) {
+        setSheetChartPreviews((current) => {
+          if (!current || !previousSheetChartPreviews) {
+            return current;
+          }
+
+          const currentPreview = current.previews.find(
+            (preview) => preview.chart.id === chartId,
+          );
+
+          if (
+            currentPreview &&
+            !chartLayoutsEqual(currentPreview.chart.layout, nextLayout)
+          ) {
+            return current;
+          }
+
+          return previousSheetChartPreviews;
+        });
         pushErrorToast(error);
       }
     },
-    [pushErrorToast, sheetChartPreviews?.previews, sheetSummary],
+    [pushErrorToast, sheetChartPreviews, sheetSummary],
   );
 
   useEffect(() => {
