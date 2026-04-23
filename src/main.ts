@@ -338,7 +338,7 @@ function buildAppMenu() {
         },
         { type: "separator" },
         {
-          label: "Open Workbook",
+          label: "Open Workbook...",
           accelerator: "CmdOrCtrl+O",
           click: () => {
             runMenuCommand(() => {
@@ -356,7 +356,7 @@ function buildAppMenu() {
           },
         },
         {
-          label: "Save Workbook As",
+          label: "Save Workbook As...",
           accelerator: "CmdOrCtrl+Shift+S",
           click: () => {
             runMenuCommand(() => {
@@ -366,7 +366,7 @@ function buildAppMenu() {
         },
         { type: "separator" },
         {
-          label: "Import CSV",
+          label: "Import CSV...",
           click: () => {
             runMenuCommand(() => {
               sendMenuAction(APP_MENU_ACTIONS.importCsv);
@@ -374,7 +374,7 @@ function buildAppMenu() {
           },
         },
         {
-          label: "Export CSV",
+          label: "Export CSV...",
           click: () => {
             runMenuCommand(() => {
               sendMenuAction(APP_MENU_ACTIONS.exportCsv);
@@ -469,7 +469,7 @@ function buildAppMenu() {
       label: "Insert",
       submenu: [
         {
-          label: "Chart",
+          label: "Chart...",
           click: () => {
             runMenuCommand(() => {
               sendMenuAction(APP_MENU_ACTIONS.insertChart);
@@ -523,7 +523,7 @@ function buildAppMenu() {
       label: "Help",
       submenu: [
         {
-          label: "About",
+          label: "About...",
           click: () => {
             runMenuCommand(() => showAboutDialog());
           },
