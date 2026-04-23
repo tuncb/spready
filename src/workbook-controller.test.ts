@@ -493,6 +493,13 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
         source: preview.dataset.source,
         sourceHeader: true,
       },
+      grid: {
+        bottom: 18,
+        containLabel: true,
+        left: 56,
+        right: 16,
+        top: 16,
+      },
       legend: {
         show: false,
       },
@@ -512,9 +519,16 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
         trigger: "axis",
       },
       xAxis: {
+        name: "Quarter",
+        nameGap: 28,
+        nameLocation: "middle",
         type: "category",
       },
       yAxis: {
+        name: "Revenue",
+        nameGap: 42,
+        nameLocation: "middle",
+        nameRotate: 90,
         type: "value",
       },
     });
@@ -567,6 +581,13 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
         source: rowLayoutPreview.dataset.source,
         sourceHeader: true,
       },
+      grid: {
+        bottom: 18,
+        containLabel: true,
+        left: 56,
+        right: 16,
+        top: 16,
+      },
       legend: {
         show: true,
       },
@@ -596,9 +617,16 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
         trigger: "axis",
       },
       xAxis: {
+        name: "Metric",
+        nameGap: 28,
+        nameLocation: "middle",
         type: "category",
       },
       yAxis: {
+        name: "Value",
+        nameGap: 42,
+        nameLocation: "middle",
+        nameRotate: 90,
         type: "value",
       },
     });
@@ -609,6 +637,81 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
   } finally {
     await fs.rm(tempDirectory, { force: true, recursive: true });
   }
+});
+
+test("WorkbookController labels pie chart previews with slice and value labels", () => {
+  const controller = new WorkbookController();
+  const sheetId = controller.getSummary().activeSheetId;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        sheetId,
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Quarter", "Revenue"],
+          ["Q1", "10"],
+          ["Q2", "12"],
+          ["Q3", "15"],
+        ],
+      },
+      {
+        chartId: "chart-pie-labels",
+        name: "Revenue Share",
+        spec: {
+          chartType: "pie",
+          family: "pie",
+          nameDimension: 0,
+          source: {
+            range: {
+              columnCount: 2,
+              rowCount: 4,
+              sheetId,
+              startColumn: 0,
+              startRow: 0,
+            },
+            seriesLayoutBy: "column",
+            sourceHeader: true,
+          },
+          valueDimension: 1,
+        },
+        type: "addChart",
+      },
+    ],
+  });
+
+  const preview = controller.getChartPreview("chart-pie-labels");
+
+  assert.deepEqual(preview.option, {
+    dataset: {
+      dimensions: preview.dataset.dimensions,
+      source: preview.dataset.source,
+      sourceHeader: true,
+    },
+    legend: {
+      show: true,
+    },
+    series: [
+      {
+        encode: {
+          itemName: "Quarter",
+          tooltip: ["Quarter", "Revenue"],
+          value: "Revenue",
+        },
+        label: {
+          formatter: "{b}: {d}%",
+        },
+        name: "Revenue",
+        type: "pie",
+      },
+    ],
+    tooltip: {
+      formatter: "{b}: {c} ({d}%)",
+      trigger: "item",
+    },
+  });
 });
 
 test("WorkbookController applies chart lifecycle transactions through the shared write path", () => {

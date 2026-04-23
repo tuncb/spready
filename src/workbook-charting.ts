@@ -256,12 +256,21 @@ function buildCartesianChartOption(
     dataset.dimensions[chart.spec.categoryDimension]?.type ?? "ordinal";
   const seriesType =
     chart.spec.chartType === "area" ? "line" : chart.spec.chartType;
+  const xAxisName = getDimensionLabel(dataset, chart.spec.categoryDimension);
+  const yAxisName = getValueAxisLabel(dataset, chart.spec.valueDimensions);
 
   return {
     dataset: {
       dimensions: dataset.dimensions,
       source: dataset.source,
       sourceHeader: dataset.sourceHeader,
+    },
+    grid: {
+      bottom: 18,
+      containLabel: true,
+      left: 56,
+      right: 16,
+      top: 16,
     },
     legend: {
       show: chart.spec.valueDimensions.length > 1,
@@ -289,6 +298,9 @@ function buildCartesianChartOption(
       trigger: chart.spec.chartType === "scatter" ? "item" : "axis",
     },
     xAxis: {
+      name: xAxisName,
+      nameGap: 28,
+      nameLocation: "middle",
       type:
         chart.spec.chartType === "scatter"
           ? toAxisType(categoryDimension)
@@ -297,6 +309,10 @@ function buildCartesianChartOption(
             : "category",
     },
     yAxis: {
+      name: yAxisName,
+      nameGap: 42,
+      nameLocation: "middle",
+      nameRotate: 90,
       type: "value",
     },
   };
@@ -308,6 +324,7 @@ function buildPieChartOption(
 ): Record<string, unknown> {
   const nameKey = getDimensionEncodeKey(dataset, chart.spec.nameDimension);
   const valueKey = getDimensionEncodeKey(dataset, chart.spec.valueDimension);
+  const valueName = getDimensionLabel(dataset, chart.spec.valueDimension);
 
   return {
     dataset: {
@@ -325,13 +342,38 @@ function buildPieChartOption(
           tooltip: [nameKey, valueKey],
           value: valueKey,
         },
+        label: {
+          formatter: "{b}: {d}%",
+        },
+        name: valueName,
         type: "pie",
       },
     ],
     tooltip: {
+      formatter: "{b}: {c} ({d}%)",
       trigger: "item",
     },
   };
+}
+
+function getDimensionLabel(
+  dataset: WorkbookChartPreviewDataset,
+  dimensionIndex: number,
+): string {
+  return (
+    dataset.dimensions[dimensionIndex]?.name ?? `Dimension ${dimensionIndex + 1}`
+  );
+}
+
+function getValueAxisLabel(
+  dataset: WorkbookChartPreviewDataset,
+  valueDimensions: readonly number[],
+): string {
+  if (valueDimensions.length === 1) {
+    return getDimensionLabel(dataset, valueDimensions[0]);
+  }
+
+  return "Value";
 }
 
 function getDimensionEncodeKey(

@@ -370,6 +370,13 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
         source: rowLayoutPreview.dataset.source,
         sourceHeader: true,
       },
+      grid: {
+        bottom: 18,
+        containLabel: true,
+        left: 56,
+        right: 16,
+        top: 16,
+      },
       legend: {
         show: true,
       },
@@ -399,9 +406,16 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
         trigger: "axis",
       },
       xAxis: {
+        name: "Metric",
+        nameGap: 28,
+        nameLocation: "middle",
         type: "category",
       },
       yAxis: {
+        name: "Value",
+        nameGap: 42,
+        nameLocation: "middle",
+        nameRotate: 90,
         type: "value",
       },
     });
