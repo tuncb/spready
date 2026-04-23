@@ -285,9 +285,6 @@ function buildCartesianChartOption(
         type: seriesType,
       };
     }),
-    title: {
-      text: chart.name,
-    },
     tooltip: {
       trigger: chart.spec.chartType === "scatter" ? "item" : "axis",
     },
@@ -331,9 +328,6 @@ function buildPieChartOption(
         type: "pie",
       },
     ],
-    title: {
-      text: chart.name,
-    },
     tooltip: {
       trigger: "item",
     },

@@ -395,9 +395,6 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
           type: "line",
         },
       ],
-      title: {
-        text: "Metrics By Quarter",
-      },
       tooltip: {
         trigger: "axis",
       },

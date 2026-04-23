@@ -36,3 +36,4 @@
 - Chart layout anchors move when rows or columns are inserted or deleted before the anchor. Chart sizes remain pixel-based and do not automatically resize with cell structural edits. When sheet dimensions shrink, chart anchors clamp to the remaining sheet bounds so embedded charts stay reachable.
 - Embedded chart UI renders charts over the spreadsheet grid rather than in a separate chart pane. ECharts options remain derived preview data; the persisted chart contract stores only Spready chart specs and layout.
 - When an embedded chart is selected, the Delete key and delete menu action delete that chart immediately via the existing `deleteChart` transaction. Formula-bar text deletion still takes precedence while the formula input is focused.
+- Valid embedded chart previews omit the ECharts `title` option because the overlay header owns the visible chart name. This avoids duplicate titles while keeping the chart name in the persisted chart contract and summary data.

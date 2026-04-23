@@ -508,9 +508,6 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
           type: "bar",
         },
       ],
-      title: {
-        text: "Quarterly Revenue",
-      },
       tooltip: {
         trigger: "axis",
       },
@@ -595,9 +592,6 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
           type: "line",
         },
       ],
-      title: {
-        text: "Metrics By Quarter",
-      },
       tooltip: {
         trigger: "axis",
       },
