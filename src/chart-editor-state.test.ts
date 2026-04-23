@@ -5,11 +5,16 @@ import {
   buildChartEditorOperations,
   createChartEditorFormState,
   createChartEditorFormStateFromChart,
+  formatChartEditorRange,
   getChartEditorSheetId,
   getChartEditorValidationIssues,
   type ChartEditorWindowRequest,
 } from "./chart-editor-state";
-import type { WorkbookChart, WorkbookSummary, UsedRangeResult } from "./workbook-core";
+import type {
+  WorkbookChart,
+  WorkbookSummary,
+  UsedRangeResult,
+} from "./workbook-core";
 
 const summary: WorkbookSummary = {
   activeSheetId: "sheet-1",
@@ -68,6 +73,7 @@ test("chart editor state creates valid default create-form operations", () => {
 
   assert.equal(formState.chartType, "scatter");
   assert.equal(formState.name, "New Scatter Chart");
+  assert.equal(formState.sourceRange, "A1:B6");
   assert.deepEqual(buildChartEditorOperations(request, "sheet-1", formState), [
     {
       name: "New Scatter Chart",
@@ -104,6 +110,7 @@ test("chart editor state builds edit operations from persisted chart info", () =
   };
   const formState = createChartEditorFormStateFromChart(chart);
 
+  assert.equal(formState.sourceRange, "A1:B6");
   assert.equal(getChartEditorSheetId(request, summary, chart), "sheet-1");
   assert.deepEqual(buildChartEditorOperations(request, "sheet-1", formState), [
     {
@@ -134,5 +141,68 @@ test("chart editor state reports invalid settings before submit", () => {
       (issue) => issue.message,
     ),
     ["Chart name is required."],
+  );
+});
+
+test("chart editor state parses current-sheet cell ranges into chart source coordinates", () => {
+  const request: ChartEditorWindowRequest = {
+    mode: "create",
+    sheetId: "sheet-1",
+  };
+  const formState = createChartEditorFormState(request, summary, usedRange);
+
+  formState.sourceRange = "C3 : A1";
+
+  assert.deepEqual(buildChartEditorOperations(request, "sheet-1", formState), [
+    {
+      name: "New Scatter Chart",
+      spec: {
+        categoryDimension: 0,
+        chartType: "scatter",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 3,
+            rowCount: 3,
+            sheetId: "sheet-1",
+            startColumn: 0,
+            startRow: 0,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+      type: "addChart",
+    },
+  ]);
+});
+
+test("chart editor state reports invalid current-sheet cell ranges before submit", () => {
+  const request: ChartEditorWindowRequest = {
+    mode: "create",
+    sheetId: "sheet-1",
+  };
+  const formState = createChartEditorFormState(request, summary, usedRange);
+
+  formState.sourceRange = "1:6";
+
+  assert.deepEqual(
+    getChartEditorValidationIssues(formState, "sheet-1", summary).map(
+      (issue) => issue.message,
+    ),
+    ['Invalid cell reference "1".'],
+  );
+});
+
+test("chart editor state formats source ranges as A1 notation", () => {
+  assert.equal(
+    formatChartEditorRange({
+      columnCount: 2,
+      rowCount: 4,
+      startColumn: 1,
+      startRow: 2,
+    }),
+    "B3:C6",
   );
 });

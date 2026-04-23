@@ -8,11 +8,7 @@ import {
   type ChartEditorFormState,
   type ChartEditorWindowRequest,
 } from "./chart-editor-state";
-import {
-  getColumnTitle,
-  type WorkbookChart,
-  type WorkbookSummary,
-} from "./workbook-core";
+import { type WorkbookChart, type WorkbookSummary } from "./workbook-core";
 
 interface ChartEditorDialogProps {
   expectedVersion: number;
@@ -108,10 +104,6 @@ export function ChartEditorDialog({
     summary && formState
       ? getChartEditorSheetId(request, summary, chart ?? undefined)
       : null;
-  const sheetName =
-    summary && sheetId
-      ? summary.sheets.find((sheet) => sheet.id === sheetId)?.name ?? sheetId
-      : "";
   const validationIssues =
     summary && formState && sheetId
       ? getChartEditorValidationIssues(
@@ -121,6 +113,10 @@ export function ChartEditorDialog({
           request.mode === "edit" ? request.chartId : undefined,
         )
       : [];
+  const validationStatus =
+    validationIssues.length === 0
+      ? "Valid configuration"
+      : "Fix issues before saving";
   const canSave =
     !isLoading &&
     !isSaving &&
@@ -128,8 +124,6 @@ export function ChartEditorDialog({
     formState !== null &&
     sheetId !== null &&
     validationIssues.length === 0;
-  const sourceRange =
-    formState === null ? "" : formatRangePreview(formState);
 
   const updateField = <Key extends keyof ChartEditorFormState>(
     field: Key,
@@ -208,7 +202,10 @@ export function ChartEditorDialog({
       }}
       ref={dialogRef}
     >
-      {isLoading || formState === null || summary === null || sheetId === null ? (
+      {isLoading ||
+      formState === null ||
+      summary === null ||
+      sheetId === null ? (
         <main className="chart-editor-window">
           <section className="chart-editor-panel">
             <div className="chart-editor__loading">
@@ -237,16 +234,14 @@ export function ChartEditorDialog({
                   {request.mode === "edit" ? "Edit Chart" : "Create Chart"}
                 </h1>
                 <p className="chart-editor__subtitle">
-                  {sheetName}
-                  {" · "}
-                  {sourceRange}
+                  {formState.sourceRange}
                 </p>
               </div>
             </header>
 
             <div className="chart-editor__body">
-              <section className="chart-editor__section">
-                <div className="chart-editor__field">
+              <section className="chart-editor__section chart-editor__section--basics">
+                <div className="chart-editor__field chart-editor__field--name">
                   <label htmlFor="chart-name">Chart name</label>
                   <input
                     id="chart-name"
@@ -257,7 +252,7 @@ export function ChartEditorDialog({
                   />
                 </div>
 
-                <div className="chart-editor__field">
+                <div className="chart-editor__field chart-editor__field--type">
                   <label htmlFor="chart-type">Chart type</label>
                   <select
                     id="chart-type"
@@ -277,8 +272,21 @@ export function ChartEditorDialog({
                 </div>
               </section>
 
-              <section className="chart-editor__section">
-                <div className="chart-editor__field">
+              <section className="chart-editor__section chart-editor__section--data">
+                <div className="chart-editor__field chart-editor__field--range">
+                  <label htmlFor="chart-source-range">Data range</label>
+                  <input
+                    autoCapitalize="characters"
+                    id="chart-source-range"
+                    onChange={(event) => {
+                      updateField("sourceRange", event.target.value);
+                    }}
+                    spellCheck={false}
+                    value={formState.sourceRange}
+                  />
+                </div>
+
+                <div className="chart-editor__field chart-editor__field--layout">
                   <label htmlFor="chart-layout">Series layout</label>
                   <select
                     id="chart-layout"
@@ -308,63 +316,13 @@ export function ChartEditorDialog({
                 </label>
               </section>
 
-              <section className="chart-editor__section chart-editor__section--grid">
-                <h2 className="chart-editor__section-title">Source range</h2>
-
-                <div className="chart-editor__field">
-                  <label htmlFor="chart-start-row">Start row</label>
-                  <input
-                    id="chart-start-row"
-                    inputMode="numeric"
-                    onChange={(event) => {
-                      updateField("startRow", event.target.value);
-                    }}
-                    value={formState.startRow}
-                  />
-                </div>
-
-                <div className="chart-editor__field">
-                  <label htmlFor="chart-start-column">Start column</label>
-                  <input
-                    id="chart-start-column"
-                    inputMode="numeric"
-                    onChange={(event) => {
-                      updateField("startColumn", event.target.value);
-                    }}
-                    value={formState.startColumn}
-                  />
-                </div>
-
-                <div className="chart-editor__field">
-                  <label htmlFor="chart-row-count">Row count</label>
-                  <input
-                    id="chart-row-count"
-                    inputMode="numeric"
-                    onChange={(event) => {
-                      updateField("rowCount", event.target.value);
-                    }}
-                    value={formState.rowCount}
-                  />
-                </div>
-
-                <div className="chart-editor__field">
-                  <label htmlFor="chart-column-count">Column count</label>
-                  <input
-                    id="chart-column-count"
-                    inputMode="numeric"
-                    onChange={(event) => {
-                      updateField("columnCount", event.target.value);
-                    }}
-                    value={formState.columnCount}
-                  />
-                </div>
-              </section>
-
               {formState.chartType === "pie" ? (
                 <section className="chart-editor__section chart-editor__section--grid">
-                  <h2 className="chart-editor__section-title">Pie dimensions</h2>
+                  <h2 className="chart-editor__section-title">
+                    Pie dimensions
+                  </h2>
 
-                  <div className="chart-editor__field">
+                  <div className="chart-editor__field chart-editor__field--short">
                     <label htmlFor="chart-name-dimension">Name dimension</label>
                     <input
                       id="chart-name-dimension"
@@ -376,8 +334,10 @@ export function ChartEditorDialog({
                     />
                   </div>
 
-                  <div className="chart-editor__field">
-                    <label htmlFor="chart-value-dimension">Value dimension</label>
+                  <div className="chart-editor__field chart-editor__field--short">
+                    <label htmlFor="chart-value-dimension">
+                      Value dimension
+                    </label>
                     <input
                       id="chart-value-dimension"
                       inputMode="numeric"
@@ -394,7 +354,7 @@ export function ChartEditorDialog({
                     Cartesian dimensions
                   </h2>
 
-                  <div className="chart-editor__field">
+                  <div className="chart-editor__field chart-editor__field--short">
                     <label htmlFor="chart-category-dimension">
                       X or category dimension
                     </label>
@@ -408,7 +368,7 @@ export function ChartEditorDialog({
                     />
                   </div>
 
-                  <div className="chart-editor__field">
+                  <div className="chart-editor__field chart-editor__field--medium">
                     <label htmlFor="chart-value-dimensions">
                       Value dimensions
                     </label>
@@ -470,35 +430,42 @@ export function ChartEditorDialog({
                     ))}
                   </ul>
                 </div>
-              ) : (
-                <div className="chart-editor__callout chart-editor__callout--ok">
-                  This chart configuration is valid and ready to save.
-                </div>
-              )}
+              ) : null}
             </div>
 
             <footer className="chart-editor__footer">
-              <button
-                className="chart-editor__button chart-editor__button--secondary"
-                onClick={onClose}
-                type="button"
+              <span
+                className={
+                  validationIssues.length === 0
+                    ? "chart-editor__status chart-editor__status--ok"
+                    : "chart-editor__status"
+                }
               >
-                Cancel
-              </button>
-              <button
-                className="chart-editor__button chart-editor__button--primary"
-                disabled={!canSave}
-                onClick={() => {
-                  void handleSubmit();
-                }}
-                type="button"
-              >
-                {isSaving
-                  ? "Saving..."
-                  : request.mode === "edit"
-                    ? "Save chart"
-                    : "Create chart"}
-              </button>
+                {validationStatus}
+              </span>
+              <div className="chart-editor__actions">
+                <button
+                  className="chart-editor__button chart-editor__button--secondary"
+                  onClick={onClose}
+                  type="button"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="chart-editor__button chart-editor__button--primary"
+                  disabled={!canSave}
+                  onClick={() => {
+                    void handleSubmit();
+                  }}
+                  type="button"
+                >
+                  {isSaving
+                    ? "Saving..."
+                    : request.mode === "edit"
+                      ? "Save Chart"
+                      : "Create Chart"}
+                </button>
+              </div>
             </footer>
           </section>
         </main>
@@ -507,37 +474,6 @@ export function ChartEditorDialog({
   );
 }
 
-function formatRangePreview(state: ChartEditorFormState): string {
-  const startRow = parseTextInteger(state.startRow);
-  const startColumn = parseTextInteger(state.startColumn);
-  const rowCount = parseTextInteger(state.rowCount);
-  const columnCount = parseTextInteger(state.columnCount);
-
-  if (
-    startRow === null ||
-    startColumn === null ||
-    rowCount === null ||
-    columnCount === null ||
-    rowCount < 1 ||
-    columnCount < 1
-  ) {
-    return "Invalid range";
-  }
-
-  const endColumn = startColumn + columnCount - 1;
-  const endRow = startRow + rowCount;
-
-  return `${getColumnTitle(startColumn)}${startRow + 1}:${getColumnTitle(
-    endColumn,
-  )}${endRow}`;
-}
-
 function isExpectedVersionConflict(message: string): boolean {
   return message.startsWith("Expected workbook version ");
-}
-
-function parseTextInteger(value: string): number | null {
-  const parsed = Number.parseInt(value.trim(), 10);
-
-  return Number.isNaN(parsed) ? null : parsed;
 }

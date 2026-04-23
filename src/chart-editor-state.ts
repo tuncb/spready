@@ -1,6 +1,9 @@
 import {
+  getColumnTitle,
   getWorkbookChartValidationIssues,
+  parseCellReference,
   type WorkbookChart,
+  type WorkbookChartRange,
   type WorkbookChartSpec,
   type WorkbookChartType,
   type WorkbookChartValidationIssue,
@@ -22,16 +25,13 @@ export type ChartEditorWindowRequest =
 export interface ChartEditorFormState {
   categoryDimension: string;
   chartType: WorkbookChartType;
-  columnCount: string;
   name: string;
   nameDimension: string;
-  rowCount: string;
   seriesLayoutBy: "column" | "row";
   smooth: boolean;
+  sourceRange: string;
   sourceHeader: boolean;
   stacked: boolean;
-  startColumn: string;
-  startRow: string;
   valueDimension: string;
   valueDimensions: string;
 }
@@ -48,7 +48,8 @@ export function createChartEditorFormState(
 
   const sheet =
     summary.sheets.find(
-      (entry) => entry.id === (request.mode === "create" ? request.sheetId ?? "" : ""),
+      (entry) =>
+        entry.id === (request.mode === "create" ? (request.sheetId ?? "") : ""),
     ) ??
     summary.sheets.find((entry) => entry.id === summary.activeSheetId) ??
     summary.sheets[0];
@@ -63,16 +64,18 @@ export function createChartEditorFormState(
   return {
     categoryDimension: "0",
     chartType: "scatter",
-    columnCount: `${columnCount}`,
     name: "New Scatter Chart",
     nameDimension: "0",
-    rowCount: `${rowCount}`,
     seriesLayoutBy: "column",
     smooth: false,
+    sourceRange: formatChartEditorRange({
+      columnCount,
+      rowCount,
+      startColumn: usedRange.startColumn,
+      startRow: usedRange.startRow,
+    }),
     sourceHeader: true,
     stacked: false,
-    startColumn: `${usedRange.startColumn}`,
-    startRow: `${usedRange.startRow}`,
     valueDimension: "1",
     valueDimensions: "1",
   };
@@ -89,18 +92,16 @@ export function createChartEditorFormStateFromChart(
         ? `${chart.spec.categoryDimension}`
         : "0",
     chartType: chart.spec.chartType,
-    columnCount: `${range.columnCount}`,
     name: chart.name,
     nameDimension:
       chart.spec.family === "pie" ? `${chart.spec.nameDimension}` : "0",
-    rowCount: `${range.rowCount}`,
     seriesLayoutBy: chart.spec.source.seriesLayoutBy,
-    smooth: chart.spec.family === "cartesian" ? chart.spec.smooth ?? false : false,
+    smooth:
+      chart.spec.family === "cartesian" ? (chart.spec.smooth ?? false) : false,
+    sourceRange: formatChartEditorRange(range),
     sourceHeader: chart.spec.source.sourceHeader,
     stacked:
-      chart.spec.family === "cartesian" ? chart.spec.stacked ?? false : false,
-    startColumn: `${range.startColumn}`,
-    startRow: `${range.startRow}`,
+      chart.spec.family === "cartesian" ? (chart.spec.stacked ?? false) : false,
     valueDimension:
       chart.spec.family === "pie" ? `${chart.spec.valueDimension}` : "1",
     valueDimensions:
@@ -114,14 +115,9 @@ export function buildChartEditorSpec(
   sheetId: string,
   state: ChartEditorFormState,
 ): WorkbookChartSpec {
+  const range = parseChartEditorRange(state.sourceRange, sheetId);
   const source = {
-    range: {
-      columnCount: parseIntegerField(state.columnCount),
-      rowCount: parseIntegerField(state.rowCount),
-      sheetId,
-      startColumn: parseIntegerField(state.startColumn),
-      startRow: parseIntegerField(state.startRow),
-    },
+    range,
     seriesLayoutBy: state.seriesLayoutBy,
     sourceHeader: state.sourceHeader,
   } as const;
@@ -223,7 +219,9 @@ export function getChartEditorValidationIssues(
       {
         code: "INVALID_DIMENSION",
         message:
-          error instanceof Error ? error.message : "Chart settings are invalid.",
+          error instanceof Error
+            ? error.message
+            : "Chart settings are invalid.",
       },
     ];
   }
@@ -259,4 +257,53 @@ function parseIntegerListField(value: string): number[] {
     .map((item) => item.trim())
     .filter((item) => item.length > 0)
     .map((item) => parseIntegerField(item));
+}
+
+export function formatChartEditorRange(
+  range: Pick<
+    WorkbookChartRange,
+    "columnCount" | "rowCount" | "startColumn" | "startRow"
+  >,
+): string {
+  if (range.columnCount < 1 || range.rowCount < 1) {
+    return "";
+  }
+
+  const endColumn = range.startColumn + range.columnCount - 1;
+  const endRow = range.startRow + range.rowCount;
+
+  return `${getColumnTitle(range.startColumn)}${range.startRow + 1}:${getColumnTitle(
+    endColumn,
+  )}${endRow}`;
+}
+
+function parseChartEditorRange(
+  value: string,
+  sheetId: string,
+): WorkbookChartRange {
+  const normalizedValue = value.trim();
+  const parts = normalizedValue.split(":").map((part) => part.trim());
+
+  if (
+    parts.length < 1 ||
+    parts.length > 2 ||
+    parts.some((part) => part === "")
+  ) {
+    throw new Error(`"${value}" is not a valid cell range.`);
+  }
+
+  const start = parseCellReference(parts[0]);
+  const end = parseCellReference(parts[1] ?? parts[0]);
+  const startRow = Math.min(start.rowIndex, end.rowIndex);
+  const startColumn = Math.min(start.columnIndex, end.columnIndex);
+  const endRow = Math.max(start.rowIndex, end.rowIndex);
+  const endColumn = Math.max(start.columnIndex, end.columnIndex);
+
+  return {
+    columnCount: endColumn - startColumn + 1,
+    rowCount: endRow - startRow + 1,
+    sheetId,
+    startColumn,
+    startRow,
+  };
 }

@@ -557,18 +557,22 @@ select {
 }
 
 .chart-editor-window {
-  width: min(100vw - 24px, 720px);
+  width: min(100vw - 24px, 620px);
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 18px;
+  padding: 10px;
   background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 34%),
+    radial-gradient(
+      circle at top left,
+      rgba(37, 99, 235, 0.12),
+      transparent 34%
+    ),
     linear-gradient(180deg, #f6f8fb, #eef2f7);
 }
 
 .chart-editor-panel {
-  width: min(100%, 720px);
+  width: min(100%, 620px);
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-height: 0;
@@ -580,15 +584,15 @@ select {
 
 .chart-editor__header,
 .chart-editor__footer {
-  padding: 18px 20px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--color-neutral-line-soft);
 }
 
 .chart-editor__footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   border-top: 1px solid var(--color-neutral-line-soft);
   border-bottom: none;
 }
@@ -605,12 +609,12 @@ select {
 .chart-editor__title {
   margin: 0;
   color: var(--color-text-dark);
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1.1;
 }
 
 .chart-editor__subtitle {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--color-text-medium);
   font-size: 12px;
   line-height: 1.6;
@@ -620,22 +624,28 @@ select {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px 20px;
+  gap: 12px;
+  padding: 14px 16px;
   overflow: auto;
 }
 
 .chart-editor__section {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--color-neutral-line-soft);
-  background: rgba(248, 250, 252, 0.72);
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--color-neutral-line-soft);
+}
+
+.chart-editor__section--basics {
+  grid-template-columns: minmax(260px, 1fr) minmax(150px, 180px);
+}
+
+.chart-editor__section--data {
+  grid-template-columns: minmax(160px, 220px) minmax(150px, 180px);
+  align-items: end;
 }
 
 .chart-editor__section--grid {
-  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
 }
@@ -651,6 +661,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
 }
 
 .chart-editor__field label {
@@ -661,8 +672,9 @@ select {
 
 .chart-editor__field input,
 .chart-editor__field select {
-  min-height: 38px;
-  padding: 8px 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 9px;
   border: 1px solid var(--color-neutral-line);
   border-radius: 0;
   background: #ffffff;
@@ -681,9 +693,15 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-height: 34px;
   color: var(--color-text-dark);
   font-size: 12px;
   font-weight: 500;
+}
+
+.chart-editor__section--data .chart-editor__checkbox {
+  grid-column: 1 / -1;
+  white-space: nowrap;
 }
 
 .chart-editor__callout,
@@ -713,9 +731,33 @@ select {
   padding-left: 18px;
 }
 
+.chart-editor__field--short {
+  max-width: 150px;
+}
+
+.chart-editor__field--medium {
+  max-width: 220px;
+}
+
+.chart-editor__status {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.chart-editor__status--ok {
+  color: #1d6b52;
+}
+
+.chart-editor__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .chart-editor__button {
-  min-height: 38px;
-  padding: 0 14px;
+  min-height: 34px;
+  padding: 0 12px;
   border: 1px solid var(--color-neutral-line);
   border-radius: 0;
   font: inherit;
@@ -875,7 +917,7 @@ select {
   }
 
   .chart-editor-window {
-    width: min(100vw - 12px, 720px);
+    width: min(100vw - 12px, 620px);
     padding: 6px;
   }
 
@@ -912,6 +954,26 @@ select {
   .chart-dock__echarts {
     min-height: 220px;
     height: 220px;
+  }
+
+  .chart-editor__section--basics,
+  .chart-editor__section--data,
+  .chart-editor__section--grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-editor__field--short,
+  .chart-editor__field--medium {
+    max-width: none;
+  }
+
+  .chart-editor__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chart-editor__actions {
+    justify-content: flex-end;
   }
 
   .formula-bar {
