@@ -64,6 +64,27 @@ const sheetDisplayRangeSchema = z.object({
   values: z.array(z.array(z.string())),
 });
 
+const workbookCellStyleSchema = z.object({
+  backgroundColor: z.string().min(1).optional(),
+  bold: z.boolean().optional(),
+  fontFamily: z.string().min(1).optional(),
+  fontSize: z.number().min(6).optional(),
+  horizontalAlign: z.enum(["center", "left", "right"]).optional(),
+  italic: z.boolean().optional(),
+  textColor: z.string().min(1).optional(),
+  wrapText: z.boolean().optional(),
+});
+
+const sheetStyleRangeSchema = z.object({
+  columnCount: z.int().min(0),
+  rowCount: z.int().min(0),
+  sheetId: z.string(),
+  sheetName: z.string(),
+  startColumn: z.int().min(0),
+  startRow: z.int().min(0),
+  styles: z.array(z.array(workbookCellStyleSchema.nullable())),
+});
+
 const cellDataSchema = z.object({
   columnIndex: z.int().min(0),
   display: z.string(),
@@ -85,6 +106,7 @@ const cellDataSchema = z.object({
   rowIndex: z.int().min(0),
   sheetId: z.string(),
   sheetName: z.string(),
+  style: workbookCellStyleSchema.optional(),
 });
 
 const clipboardRangeModeSchema = z.enum(["display", "raw"]);
@@ -140,6 +162,14 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     startColumn: z.int().min(0),
     startRow: z.int().min(0),
     type: z.literal("clearRange"),
+  }),
+  z.object({
+    columnCount: z.int().min(0),
+    rowCount: z.int().min(0),
+    sheetId: z.string().min(1).optional(),
+    startColumn: z.int().min(0),
+    startRow: z.int().min(0),
+    type: z.literal("clearRangeStyle"),
   }),
   z.object({
     columnIndex: z.int().min(0),
@@ -231,11 +261,27 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     value: z.string(),
   }),
   z.object({
+    columnIndex: z.int().min(0),
+    rowIndex: z.int().min(0),
+    sheetId: z.string().min(1).optional(),
+    style: workbookCellStyleSchema.optional(),
+    type: z.literal("setCellStyle"),
+  }),
+  z.object({
     sheetId: z.string().min(1).optional(),
     startColumn: z.int().min(0),
     startRow: z.int().min(0),
     type: z.literal("setRange"),
     values: z.array(z.array(z.string())),
+  }),
+  z.object({
+    columnCount: z.int().min(0),
+    rowCount: z.int().min(0),
+    sheetId: z.string().min(1).optional(),
+    startColumn: z.int().min(0),
+    startRow: z.int().min(0),
+    style: workbookCellStyleSchema.optional(),
+    type: z.literal("setRangeStyle"),
   }),
 ]);
 
@@ -277,6 +323,10 @@ const transactionOperations = [
   {
     type: "clearRange",
     description: "Clear a rectangular range without resizing the sheet.",
+  },
+  {
+    type: "clearRangeStyle",
+    description: "Clear rendered cell styling from a rectangular range.",
   },
   {
     type: "deleteColumns",
@@ -348,9 +398,19 @@ const transactionOperations = [
     description: "Write a single string value to one cell.",
   },
   {
+    type: "setCellStyle",
+    description:
+      "Replace rendered styling for one cell. Omit style to clear styling.",
+  },
+  {
     type: "setRange",
     description:
       "Write a rectangular 2D string array starting at a zero-based row and column.",
+  },
+  {
+    type: "setRangeStyle",
+    description:
+      "Replace rendered styling for a rectangular range. Omit style to clear styling.",
   },
 ] as const;
 
@@ -460,6 +520,13 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: true,
+      description:
+        "Read a rectangular range of rendered cell styles from a sheet.",
+      name: "get_sheet_style_range",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: true,
       description: "Read a rectangular range from a sheet.",
       name: "get_sheet_range",
       readOnly: true,
@@ -534,7 +601,7 @@ const guideResource = {
     "Use open_workbook_file and save_workbook_file for full multi-sheet workbook persistence.",
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
-    "Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.",
+    "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
     "Create, rename, reconfigure, and delete charts through apply_transaction chart operations; chart previews remain derived read models.",
     "Evaluated display reads include same-sheet arithmetic, comparisons, text operators, ranges, core worksheet functions, and same-sheet lookup functions such as INDEX, MATCH, and XLOOKUP.",
@@ -590,6 +657,7 @@ ${guideResource.workflow
 - get_used_range: Return the used range bounds for a sheet. Omitting sheetId uses the active sheet.
 - get_cell_data: Return one cell's raw input plus its evaluated display value. Omitting sheetId uses the active sheet.
 - get_sheet_display_range: Read one rectangular range of evaluated display values. Prefer this for formula-aware grid views.
+- get_sheet_style_range: Read one rectangular range of rendered cell styles.
 - get_sheet_range: Read one rectangular range. Prefer this over loading a large sheet.
 - get_sheet_charts: Return the chart definitions owned by a sheet. Omitting sheetId uses the active sheet.
 - get_chart: Return one chart definition plus validation status and issues.
@@ -737,7 +805,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input and get_sheet_display_range for evaluated grid values, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -999,6 +1067,15 @@ async function main() {
           },
           {
             defaultsToActiveSheet: true,
+            description:
+              "Read a rectangular range of rendered cell styles from a sheet.",
+            name: "get_sheet_style_range",
+            readOnly: true,
+            useWhen:
+              "Use this when text styling such as bold, italic, font size, or colors matters.",
+          },
+          {
+            defaultsToActiveSheet: true,
             description: "Read a rectangular range from a sheet.",
             name: "get_sheet_range",
             readOnly: true,
@@ -1159,6 +1236,32 @@ async function main() {
     },
     async (args) =>
       createTextResult(await controlClient.getSheetDisplayRange(args)),
+  );
+
+  server.registerTool(
+    "get_sheet_style_range",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description:
+        "Read a rectangular range of rendered cell styles from a sheet.",
+      inputSchema: z.object({
+        columnCount: z.int().min(1).describe("Number of columns to read."),
+        rowCount: z.int().min(1).describe("Number of rows to read."),
+        sheetId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional target sheet id. Defaults to the active sheet."),
+        startColumn: z.int().min(0).describe("Zero-based start column."),
+        startRow: z.int().min(0).describe("Zero-based start row."),
+      }),
+      outputSchema: sheetStyleRangeSchema,
+    },
+    async (args) =>
+      createTextResult(await controlClient.getSheetStyleRange(args)),
   );
 
   server.registerTool(
@@ -1468,9 +1571,9 @@ async function main() {
                 "- Start with get_workbook_summary.\n" +
                 "- If get_workbook_summary reports hasUnsavedChanges, save first or pass discardUnsavedChanges only if losing local changes is intended.\n" +
                 "- Use zero-based row and column indexes.\n" +
-                "- Use get_sheet_range for raw workbook input and get_sheet_display_range for evaluated grid values.\n" +
+                "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
-                "- Read only the ranges you need with get_used_range, get_sheet_range, or get_sheet_display_range.\n" +
+                "- Read only the ranges you need with get_used_range, get_sheet_range, get_sheet_display_range, or get_sheet_style_range.\n" +
                 "- Use apply_transaction for writes, preferably as one batched request.\n" +
                 "- Pass expectedVersion on apply_transaction when a task must reject stale writes after concurrent edits.\n" +
                 "- Use save_workbook_file when the final result should persist as a native workbook document.\n" +

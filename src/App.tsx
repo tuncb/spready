@@ -31,11 +31,13 @@ import {
   serializeTsv,
   type CellDataResult,
   type ClipboardRangeMode,
+  type WorkbookCellStyle,
   type WorkbookChartLayout,
   type WorkbookSheetChartPreviewsResult,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
+  type SheetStyleRangeResult,
   type WorkbookSummary,
   type WorkbookTransactionOperation,
 } from "./workbook-core";
@@ -47,6 +49,7 @@ import {
 } from "./toast-state";
 
 const DEFAULT_COLUMN_WIDTH = 140;
+const DEFAULT_CELL_FONT_SIZE = 13;
 const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
 const DEFAULT_VISIBLE_ROW_COUNT = 36;
 const DEFAULT_WORKBOOK_FILE_NAME = "Workbook.spready";
@@ -95,6 +98,7 @@ type ChartEditorSession = {
 };
 
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
+type StyleRangeCache = SheetStyleRangeResult;
 
 function buildRangeRequest(
   activeSheetId: string,
@@ -173,13 +177,44 @@ function createLoadingCell(): GridCell {
   };
 }
 
-function createTextCell(input: string, display: string): GridCell {
+function getCellThemeOverride(
+  style: WorkbookCellStyle | undefined,
+): Partial<Theme> | undefined {
+  if (!style) {
+    return undefined;
+  }
+
+  const fontParts = [
+    style.italic ? "italic" : undefined,
+    style.bold ? "700" : undefined,
+    style.bold || style.italic || style.fontSize
+      ? `${style.fontSize ?? DEFAULT_CELL_FONT_SIZE}px`
+      : undefined,
+  ].filter(Boolean);
+  const theme: Partial<Theme> = {
+    ...(style.backgroundColor ? { bgCell: style.backgroundColor } : {}),
+    ...(style.fontFamily ? { fontFamily: style.fontFamily } : {}),
+    ...(fontParts.length > 0 ? { baseFontStyle: fontParts.join(" ") } : {}),
+    ...(style.textColor ? { textDark: style.textColor } : {}),
+  };
+
+  return Object.keys(theme).length > 0 ? theme : undefined;
+}
+
+function createTextCell(
+  input: string,
+  display: string,
+  style?: WorkbookCellStyle,
+): GridCell {
   return {
     allowOverlay: true,
+    allowWrapping: style?.wrapText,
+    contentAlign: style?.horizontalAlign,
     copyData: input,
     data: input,
     displayData: display,
     kind: GridCellKind.Text,
+    themeOverride: getCellThemeOverride(style),
   };
 }
 
@@ -205,6 +240,30 @@ function getCachedCellValue(
   }
 
   return cache.values[rowOffset]?.[columnOffset];
+}
+
+function getCachedCellStyle(
+  cache: StyleRangeCache | null,
+  columnIndex: number,
+  rowIndex: number,
+  sheetId?: string,
+): WorkbookCellStyle | undefined {
+  if (!cache || cache.sheetId !== sheetId) {
+    return undefined;
+  }
+
+  if (rowIndex < cache.startRow || columnIndex < cache.startColumn) {
+    return undefined;
+  }
+
+  const rowOffset = rowIndex - cache.startRow;
+  const columnOffset = columnIndex - cache.startColumn;
+
+  if (rowOffset >= cache.rowCount || columnOffset >= cache.columnCount) {
+    return undefined;
+  }
+
+  return cache.styles[rowOffset]?.[columnOffset] ?? undefined;
 }
 
 function setCachedCellValue<Cache extends RangeCache>(
@@ -239,6 +298,97 @@ function setCachedCellValue<Cache extends RangeCache>(
     ...cache,
     values: nextValues,
   };
+}
+
+function setCachedCellStyle(
+  cache: StyleRangeCache | null,
+  range: SheetRangeRequest,
+  style: WorkbookCellStyle | undefined,
+): StyleRangeCache | null {
+  if (!cache || cache.sheetId !== range.sheetId) {
+    return cache;
+  }
+
+  const nextStyles = cache.styles.map((row) => [...row]);
+  let changed = false;
+
+  for (let rowOffset = 0; rowOffset < range.rowCount; rowOffset += 1) {
+    const rowIndex = range.startRow + rowOffset;
+
+    if (rowIndex < cache.startRow || rowIndex >= cache.startRow + cache.rowCount) {
+      continue;
+    }
+
+    for (
+      let columnOffset = 0;
+      columnOffset < range.columnCount;
+      columnOffset += 1
+    ) {
+      const columnIndex = range.startColumn + columnOffset;
+
+      if (
+        columnIndex < cache.startColumn ||
+        columnIndex >= cache.startColumn + cache.columnCount
+      ) {
+        continue;
+      }
+
+      nextStyles[rowIndex - cache.startRow][columnIndex - cache.startColumn] =
+        style ? { ...style } : null;
+      changed = true;
+    }
+  }
+
+  return changed
+    ? {
+        ...cache,
+        styles: nextStyles,
+      }
+    : cache;
+}
+
+function normalizeClientCellStyle(
+  style: WorkbookCellStyle,
+): WorkbookCellStyle | undefined {
+  const normalized: WorkbookCellStyle = {};
+
+  if (style.backgroundColor) {
+    normalized.backgroundColor = style.backgroundColor;
+  }
+
+  if (style.bold) {
+    normalized.bold = true;
+  }
+
+  if (style.fontFamily) {
+    normalized.fontFamily = style.fontFamily;
+  }
+
+  if (style.fontSize) {
+    normalized.fontSize = style.fontSize;
+  }
+
+  if (style.horizontalAlign) {
+    normalized.horizontalAlign = style.horizontalAlign;
+  }
+
+  if (style.italic) {
+    normalized.italic = true;
+  }
+
+  if (style.textColor) {
+    normalized.textColor = style.textColor;
+  }
+
+  if (style.wrapText) {
+    normalized.wrapText = true;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function getColorInputValue(value: string | undefined, fallback: string) {
+  return /^#[0-9a-f]{6}$/i.test(value ?? "") ? (value as string) : fallback;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -497,6 +647,7 @@ export default function App() {
   const pendingSheetChartPreviewsRequestIdRef = useRef(0);
   const rawRangeCacheRef = useRef<SheetRangeResult | null>(null);
   const sheetSurfaceRef = useRef<HTMLElement>(null);
+  const styleRangeCacheRef = useRef<SheetStyleRangeResult | null>(null);
   const isChartEditorOpen = chartEditorSession !== null;
 
   const activeSheet = useMemo(
@@ -541,6 +692,7 @@ export default function App() {
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
+  const selectedCellStyle = selectedCellData?.style;
   const currentSelectionRange = useMemo(
     () =>
       activeSheet
@@ -592,9 +744,10 @@ export default function App() {
       pendingRangeRequestIdRef.current = requestId;
 
       try {
-        const [rawRange, displayRange] = await Promise.all([
+        const [rawRange, displayRange, styleRange] = await Promise.all([
           window.appShell.getSheetRange(request),
           window.appShell.getSheetDisplayRange(request),
+          window.appShell.getSheetStyleRange(request),
         ]);
 
         if (pendingRangeRequestIdRef.current !== requestId) {
@@ -603,6 +756,7 @@ export default function App() {
 
         rawRangeCacheRef.current = rawRange;
         displayRangeCacheRef.current = displayRange;
+        styleRangeCacheRef.current = styleRange;
         setViewNonce((current) => current + 1);
       } catch (error) {
         pushErrorToast(error);
@@ -656,12 +810,18 @@ export default function App() {
         rowIndex,
         activeSheet?.id,
       );
+      const style = getCachedCellStyle(
+        styleRangeCacheRef.current,
+        columnIndex,
+        rowIndex,
+        activeSheet?.id,
+      );
 
       if (rawValue === undefined || displayValue === undefined) {
         return createLoadingCell();
       }
 
-      return createTextCell(rawValue, displayValue);
+      return createTextCell(rawValue, displayValue, style);
     },
     [activeSheet?.id, viewNonce],
   );
@@ -680,9 +840,10 @@ export default function App() {
           startColumn: selection.x,
           startRow: selection.y,
         };
-        const [rawRange, displayRange] = await Promise.all([
+        const [rawRange, displayRange, styleRange] = await Promise.all([
           window.appShell.getSheetRange(request),
           window.appShell.getSheetDisplayRange(request),
+          window.appShell.getSheetStyleRange(request),
         ]);
 
         return displayRange.values.map((row, rowOffset) =>
@@ -690,6 +851,7 @@ export default function App() {
             createTextCell(
               rawRange.values[rowOffset]?.[columnOffset] ?? displayValue,
               displayValue,
+              styleRange.styles[rowOffset]?.[columnOffset] ?? undefined,
             ),
           ),
         );
@@ -1225,6 +1387,63 @@ export default function App() {
     selectedCellData?.input,
   ]);
 
+  const applyStyleToSelection = useCallback(
+    (style: WorkbookCellStyle | undefined) => {
+      if (!currentSelectionRange) {
+        return false;
+      }
+
+      styleRangeCacheRef.current = setCachedCellStyle(
+        styleRangeCacheRef.current,
+        currentSelectionRange,
+        style,
+      );
+
+      setSelectedCellData((current) =>
+        current
+          ? {
+              ...current,
+              ...(style ? { style } : { style: undefined }),
+            }
+          : current,
+      );
+      setViewNonce((current) => current + 1);
+
+      void applyTransaction([
+        {
+          ...currentSelectionRange,
+          style,
+          type: "setRangeStyle",
+        },
+      ]).catch((error) => {
+        pushErrorToast(error);
+        void loadVisibleRange(lastVisibleRegionRef.current);
+        void refreshSelectedCellData();
+      });
+
+      return true;
+    },
+    [
+      applyTransaction,
+      currentSelectionRange,
+      loadVisibleRange,
+      pushErrorToast,
+      refreshSelectedCellData,
+    ],
+  );
+
+  const patchSelectedStyle = useCallback(
+    (patch: WorkbookCellStyle) => {
+      const nextStyle = normalizeClientCellStyle({
+        ...(selectedCellData?.style ?? {}),
+        ...patch,
+      });
+
+      return applyStyleToSelection(nextStyle);
+    },
+    [applyStyleToSelection, selectedCellData?.style],
+  );
+
   const addColumn = useCallback(() => {
     if (!activeSheet) {
       return;
@@ -1627,6 +1846,7 @@ export default function App() {
 
     rawRangeCacheRef.current = null;
     displayRangeCacheRef.current = null;
+    styleRangeCacheRef.current = null;
     setViewNonce((current) => current + 1);
 
     exportPathRef.current = activeSheet.sourceFilePath;
@@ -1722,6 +1942,16 @@ export default function App() {
           case APP_MENU_ACTIONS.pasteValues:
             void pasteSelection("display");
             return;
+          case APP_MENU_ACTIONS.toggleBold:
+            patchSelectedStyle({
+              bold: !selectedCellData?.style?.bold,
+            });
+            return;
+          case APP_MENU_ACTIONS.toggleItalic:
+            patchSelectedStyle({
+              italic: !selectedCellData?.style?.italic,
+            });
+            return;
           case APP_MENU_ACTIONS.deleteSelection:
             deleteSelection();
             return;
@@ -1759,7 +1989,10 @@ export default function App() {
     handleSaveWorkbookAs,
     isChartEditorOpen,
     openCreateChartEditor,
+    patchSelectedStyle,
     pasteSelection,
+    selectedCellData?.style?.bold,
+    selectedCellData?.style?.italic,
   ]);
 
   useEffect(() => {
@@ -1789,6 +2022,22 @@ export default function App() {
       }
 
       const normalizedKey = event.key.toLowerCase();
+
+      if (isPrimaryModifier && normalizedKey === "b") {
+        event.preventDefault();
+        patchSelectedStyle({
+          bold: !selectedCellData?.style?.bold,
+        });
+        return;
+      }
+
+      if (isPrimaryModifier && normalizedKey === "i") {
+        event.preventDefault();
+        patchSelectedStyle({
+          italic: !selectedCellData?.style?.italic,
+        });
+        return;
+      }
 
       if (isPrimaryModifier && normalizedKey === "c") {
         event.preventDefault();
@@ -1829,7 +2078,10 @@ export default function App() {
     cutSelection,
     deleteSelection,
     isChartEditorOpen,
+    patchSelectedStyle,
     pasteSelection,
+    selectedCellData?.style?.bold,
+    selectedCellData?.style?.italic,
   ]);
 
   return (
@@ -1837,6 +2089,140 @@ export default function App() {
       <section className="formula-bar" aria-label="Formula bar">
         <div className="formula-bar__address">
           {selectedCellAddress || "Cell"}
+        </div>
+        <div className="formula-bar__formatting" aria-label="Cell formatting">
+          <button
+            aria-label="Bold"
+            className={
+              selectedCellStyle?.bold
+                ? "format-button is-active"
+                : "format-button"
+            }
+            disabled={!selectedCell}
+            onClick={() => {
+              patchSelectedStyle({
+                bold: !selectedCellStyle?.bold,
+              });
+            }}
+            type="button"
+          >
+            B
+          </button>
+          <button
+            aria-label="Italic"
+            className={
+              selectedCellStyle?.italic
+                ? "format-button is-active"
+                : "format-button"
+            }
+            disabled={!selectedCell}
+            onClick={() => {
+              patchSelectedStyle({
+                italic: !selectedCellStyle?.italic,
+              });
+            }}
+            type="button"
+          >
+            I
+          </button>
+          <select
+            aria-label="Font family"
+            className="format-select format-select--family"
+            disabled={!selectedCell}
+            onChange={(event) => {
+              patchSelectedStyle({
+                fontFamily: event.target.value || undefined,
+              });
+            }}
+            value={selectedCellStyle?.fontFamily ?? ""}
+          >
+            <option value="">Aptos</option>
+            <option value="Arial">Arial</option>
+            <option value="Calibri">Calibri</option>
+            <option value="Consolas">Consolas</option>
+            <option value="Georgia">Georgia</option>
+            <option value="Times New Roman">Times</option>
+          </select>
+          <select
+            aria-label="Font size"
+            className="format-select format-select--size"
+            disabled={!selectedCell}
+            onChange={(event) => {
+              patchSelectedStyle({
+                fontSize:
+                  event.target.value === ""
+                    ? undefined
+                    : Number.parseInt(event.target.value, 10),
+              });
+            }}
+            value={selectedCellStyle?.fontSize?.toString() ?? ""}
+          >
+            <option value="">13</option>
+            {[10, 11, 12, 14, 16, 18, 20, 24, 28, 32].map((fontSize) => (
+              <option key={fontSize} value={fontSize}>
+                {fontSize}
+              </option>
+            ))}
+          </select>
+          <select
+            aria-label="Horizontal alignment"
+            className="format-select format-select--align"
+            disabled={!selectedCell}
+            onChange={(event) => {
+              patchSelectedStyle({
+                horizontalAlign:
+                  event.target.value === ""
+                    ? undefined
+                    : (event.target
+                        .value as WorkbookCellStyle["horizontalAlign"]),
+              });
+            }}
+            value={selectedCellStyle?.horizontalAlign ?? ""}
+          >
+            <option value="">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+          <input
+            aria-label="Text color"
+            className="format-color"
+            disabled={!selectedCell}
+            onChange={(event) => {
+              patchSelectedStyle({
+                textColor: event.target.value,
+              });
+            }}
+            type="color"
+            value={getColorInputValue(selectedCellStyle?.textColor, "#0f172a")}
+          />
+          <input
+            aria-label="Fill color"
+            className="format-color"
+            disabled={!selectedCell}
+            onChange={(event) => {
+              patchSelectedStyle({
+                backgroundColor: event.target.value,
+              });
+            }}
+            type="color"
+            value={getColorInputValue(
+              selectedCellStyle?.backgroundColor,
+              "#ffffff",
+            )}
+          />
+          <label className="format-check">
+            <input
+              checked={selectedCellStyle?.wrapText ?? false}
+              disabled={!selectedCell}
+              onChange={(event) => {
+                patchSelectedStyle({
+                  wrapText: event.target.checked,
+                });
+              }}
+              type="checkbox"
+            />
+            <span>Wrap</span>
+          </label>
         </div>
         <div className="formula-bar__field">
           <input

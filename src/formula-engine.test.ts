@@ -11,6 +11,7 @@ import { normalizeSheet, type WorkbookSheet } from "./workbook-core";
 function createSheet(rows: string[][]): WorkbookSheet {
   return {
     cells: normalizeSheet(rows),
+    cellStyles: {},
     id: "sheet-under-test",
     name: "Sheet Under Test",
   };

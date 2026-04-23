@@ -119,6 +119,7 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `getCellData`
 - `getSheetDisplayRange`
 - `getSheetRange`
+- `getSheetStyleRange`
 - `getUsedRange`
 - `getSheetCsv`
 - `copyRange`
@@ -249,8 +250,11 @@ Supported transaction operations currently include:
 - `insertColumns`
 - `deleteColumns`
 - `setCell`
+- `setCellStyle`
 - `setRange`
+- `setRangeStyle`
 - `clearRange`
+- `clearRangeStyle`
 - `replaceSheet`
 - `replaceSheetFromCsv`
 - `setSheetSourceFile`
@@ -267,6 +271,7 @@ The stdio MCP wrapper currently exposes:
 - `get_used_range`
 - `get_cell_data`
 - `get_sheet_display_range`
+- `get_sheet_style_range`
 - `get_sheet_range`
 - `get_sheet_csv`
 - `get_sheet_charts`
@@ -281,7 +286,8 @@ The stdio MCP wrapper currently exposes:
 
 `get_sheet_range` returns raw stored cell input, including formula strings like `=A1+B1`.
 `get_sheet_display_range` returns evaluated display values for the grid view.
-`get_cell_data` returns both the raw input and the evaluated display value for one cell.
+`get_sheet_style_range` returns sparse rendered cell styles for the grid view.
+`get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 
 Display reads evaluate the same-sheet formula engine used by the app UI, including arithmetic, comparisons, text operators, ranges, core math/logical/text functions, and same-sheet lookup functions such as `INDEX`, `MATCH`, and `XLOOKUP`.
 Raw reads continue to preserve the stored input exactly as written.

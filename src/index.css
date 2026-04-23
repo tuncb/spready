@@ -303,7 +303,7 @@ select {
   --formula-bar-side-width: 80px;
   grid-row: 1;
   display: grid;
-  grid-template-columns: var(--formula-bar-side-width) minmax(0, 1fr);
+  grid-template-columns: var(--formula-bar-side-width) auto minmax(0, 1fr);
   gap: 8px;
   align-items: stretch;
   padding: 6px 10px;
@@ -336,6 +336,85 @@ select {
 
 .formula-bar__field {
   min-width: 0;
+}
+
+.formula-bar__formatting {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.format-button,
+.format-select,
+.format-color {
+  height: 34px;
+  border: 1px solid var(--color-neutral-line);
+  border-radius: 0;
+  color: var(--color-text-dark);
+  background: var(--color-neutral-surface);
+}
+
+.format-button {
+  width: 34px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.format-button:nth-of-type(2) {
+  font-style: italic;
+}
+
+.format-button.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary-strong);
+  background: var(--color-primary-soft);
+}
+
+.format-select {
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.format-select--family {
+  width: 104px;
+}
+
+.format-select--size {
+  width: 64px;
+}
+
+.format-select--align {
+  width: 88px;
+}
+
+.format-color {
+  width: 34px;
+  padding: 3px;
+}
+
+.format-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--color-neutral-line);
+  color: var(--color-text-medium);
+  background: var(--color-neutral-surface);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.format-button:disabled,
+.format-select:disabled,
+.format-color:disabled,
+.format-check:has(input:disabled) {
+  color: var(--color-text-light);
+  background: var(--color-neutral-header);
+  cursor: default;
 }
 
 .formula-bar__input {

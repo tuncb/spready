@@ -480,6 +480,30 @@ function buildAppMenu() {
     },
     {
       enabled: menuEnabled,
+      label: "Format",
+      submenu: [
+        {
+          accelerator: "CmdOrCtrl+B",
+          label: "Bold",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.toggleBold);
+            });
+          },
+        },
+        {
+          accelerator: "CmdOrCtrl+I",
+          label: "Italic",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.toggleItalic);
+            });
+          },
+        },
+      ],
+    },
+    {
+      enabled: menuEnabled,
       label: "Sheet",
       submenu: [
         {
@@ -827,6 +851,12 @@ ipcMain.handle(
 
 ipcMain.handle("workbook:get-range", (_event, args: SheetRangeRequest) =>
   workbookController.getSheetRange(args),
+);
+
+ipcMain.handle(
+  "workbook:get-style-range",
+  (_event, args: SheetRangeRequest) =>
+    workbookController.getSheetStyleRange(args),
 );
 
 ipcMain.handle(

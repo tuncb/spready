@@ -12,6 +12,7 @@ import type {
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
+  SheetStyleRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
   WorkbookSheetChartPreviewsResult,
@@ -73,6 +74,9 @@ declare global {
         request: SheetRangeRequest,
       ) => Promise<SheetDisplayRangeResult>;
       getSheetRange: (request: SheetRangeRequest) => Promise<SheetRangeResult>;
+      getSheetStyleRange: (
+        request: SheetRangeRequest,
+      ) => Promise<SheetStyleRangeResult>;
       getUsedRange: (sheetId?: string) => Promise<UsedRangeResult>;
       getWorkbookSummary: () => Promise<WorkbookSummary>;
       name: string;

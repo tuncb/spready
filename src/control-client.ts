@@ -25,6 +25,7 @@ import type {
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
+  SheetStyleRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
   WorkbookSheetChartPreviewsResult,
@@ -215,6 +216,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async getSheetRange(request: SheetRangeRequest) {
     return this.call<SheetRangeResult>("getSheetRange", request);
+  }
+
+  async getSheetStyleRange(request: SheetRangeRequest) {
+    return this.call<SheetStyleRangeResult>("getSheetStyleRange", request);
   }
 
   async getUsedRange(sheetId?: string) {

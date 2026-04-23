@@ -16,6 +16,7 @@ export interface WorkbookSheet {
   id: string;
   name: string;
   cells: string[][];
+  cellStyles: Record<string, WorkbookCellStyle>;
   sourceFilePath?: string;
 }
 
@@ -223,6 +224,29 @@ export interface SheetDisplayRangeResult {
   values: string[][];
 }
 
+export type WorkbookCellHorizontalAlign = "center" | "left" | "right";
+
+export interface WorkbookCellStyle {
+  backgroundColor?: string;
+  bold?: boolean;
+  fontFamily?: string;
+  fontSize?: number;
+  horizontalAlign?: WorkbookCellHorizontalAlign;
+  italic?: boolean;
+  textColor?: string;
+  wrapText?: boolean;
+}
+
+export interface SheetStyleRangeResult {
+  sheetId: string;
+  sheetName: string;
+  startRow: number;
+  startColumn: number;
+  rowCount: number;
+  columnCount: number;
+  styles: Array<Array<WorkbookCellStyle | null>>;
+}
+
 export interface CellDataRequest {
   sheetId?: string;
   rowIndex: number;
@@ -238,6 +262,7 @@ export interface CellDataResult {
   display: string;
   isFormula: boolean;
   errorCode?: FormulaErrorCode;
+  style?: WorkbookCellStyle;
 }
 
 export interface UsedRangeResult {
@@ -267,6 +292,14 @@ export type WorkbookTransactionOperation =
     }
   | {
       type: "clearRange";
+      columnCount: number;
+      rowCount: number;
+      sheetId?: string;
+      startColumn: number;
+      startRow: number;
+    }
+  | {
+      type: "clearRangeStyle";
       columnCount: number;
       rowCount: number;
       sheetId?: string;
@@ -363,11 +396,27 @@ export type WorkbookTransactionOperation =
       value: string;
     }
   | {
+      type: "setCellStyle";
+      columnIndex: number;
+      rowIndex: number;
+      sheetId?: string;
+      style?: WorkbookCellStyle;
+    }
+  | {
       type: "setRange";
       sheetId?: string;
       startColumn: number;
       startRow: number;
       values: string[][];
+    }
+  | {
+      type: "setRangeStyle";
+      columnCount: number;
+      rowCount: number;
+      sheetId?: string;
+      startColumn: number;
+      startRow: number;
+      style?: WorkbookCellStyle;
     };
 
 export interface ApplyTransactionRequest {
@@ -779,6 +828,48 @@ export function getSheetRange(
         (_, columnOffset) => row[startColumn + columnOffset] ?? "",
       );
     }),
+  };
+}
+
+export function getSheetStyleRange(
+  workbook: WorkbookState,
+  request: SheetRangeRequest,
+): SheetStyleRangeResult {
+  const sheet = getSheetById(
+    workbook,
+    request.sheetId ?? workbook.activeSheetId,
+  );
+  const rowCount = getSheetRowCount(sheet);
+  const columnCount = getSheetColumnCount(sheet);
+  const startRow = clampToRange(request.startRow, 0, rowCount);
+  const startColumn = clampToRange(request.startColumn, 0, columnCount);
+  const requestedRowCount = Math.max(0, Math.floor(request.rowCount));
+  const requestedColumnCount = Math.max(0, Math.floor(request.columnCount));
+  const boundedRowCount = Math.max(
+    0,
+    Math.min(requestedRowCount, rowCount - startRow),
+  );
+  const boundedColumnCount = Math.max(
+    0,
+    Math.min(requestedColumnCount, columnCount - startColumn),
+  );
+
+  return {
+    columnCount: boundedColumnCount,
+    rowCount: boundedRowCount,
+    sheetId: sheet.id,
+    sheetName: sheet.name,
+    startColumn,
+    startRow,
+    styles: Array.from({ length: boundedRowCount }, (_, rowOffset) =>
+      Array.from({ length: boundedColumnCount }, (_, columnOffset) => {
+        const style = sheet.cellStyles[
+          getCellKey(startRow + rowOffset, startColumn + columnOffset)
+        ];
+
+        return style ? cloneWorkbookCellStyle(style) : null;
+      }),
+    ),
   };
 }
 
@@ -1210,6 +1301,28 @@ export function applyWorkbookTransaction(
         break;
       }
 
+      case "clearRangeStyle": {
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
+
+        if (
+          clearCellStylesInRange(
+            sheet,
+            operation.startRow,
+            operation.startColumn,
+            operation.rowCount,
+            operation.columnCount,
+          )
+        ) {
+          changed = true;
+        }
+
+        break;
+      }
+
       case "deleteColumns": {
         assertPositiveCount(operation.count, "Column delete count");
 
@@ -1242,6 +1355,12 @@ export function applyWorkbookTransaction(
             row.splice(deleteStart, requestedDeleteCount);
           }
         }
+
+        sheet.cellStyles = deleteColumnStyles(
+          sheet.cellStyles,
+          deleteStart,
+          requestedDeleteCount,
+        );
 
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForDeletedColumns(
@@ -1293,6 +1412,12 @@ export function applyWorkbookTransaction(
         } else {
           sheet.cells.splice(deleteStart, requestedDeleteCount);
         }
+
+        sheet.cellStyles = deleteRowStyles(
+          sheet.cellStyles,
+          deleteStart,
+          requestedDeleteCount,
+        );
 
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForDeletedRows(
@@ -1374,6 +1499,12 @@ export function applyWorkbookTransaction(
           row.splice(insertAt, 0, ...Array(operation.count).fill(""));
         }
 
+        sheet.cellStyles = insertColumnStyles(
+          sheet.cellStyles,
+          insertAt,
+          operation.count,
+        );
+
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForInsertedColumns(
             adjustWorkbookChartForInsertedColumns(
@@ -1412,6 +1543,11 @@ export function applyWorkbookTransaction(
           ...Array.from({ length: operation.count }, () =>
             Array(columnCount).fill(""),
           ),
+        );
+        sheet.cellStyles = insertRowStyles(
+          sheet.cellStyles,
+          insertAt,
+          operation.count,
         );
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForInsertedRows(
@@ -1492,6 +1628,11 @@ export function applyWorkbookTransaction(
           changed = true;
         }
 
+        if (Object.keys(sheet.cellStyles).length > 0) {
+          sheet.cellStyles = {};
+          changed = true;
+        }
+
         if (operation.name?.trim() && operation.name.trim() !== sheet.name) {
           sheet.name = operation.name.trim();
           changed = true;
@@ -1518,6 +1659,11 @@ export function applyWorkbookTransaction(
           nextState.charts = nextState.charts.map((chart) =>
             clampWorkbookChartLayoutToSheet(chart, sheet),
           );
+          changed = true;
+        }
+
+        if (Object.keys(sheet.cellStyles).length > 0) {
+          sheet.cellStyles = {};
           changed = true;
         }
 
@@ -1554,6 +1700,11 @@ export function applyWorkbookTransaction(
 
         sheet.cells = resizeMatrix(
           sheet.cells,
+          targetRowCount,
+          targetColumnCount,
+        );
+        sheet.cellStyles = filterCellStylesInBounds(
+          sheet.cellStyles,
           targetRowCount,
           targetColumnCount,
         );
@@ -1684,6 +1835,37 @@ export function applyWorkbookTransaction(
         break;
       }
 
+      case "setCellStyle": {
+        assertNonNegativeIndex(operation.rowIndex, "Row index");
+        assertNonNegativeIndex(operation.columnIndex, "Column index");
+
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
+        const normalizedStyle = normalizeWorkbookCellStyle(operation.style);
+
+        ensureSheetSize(
+          sheet,
+          operation.rowIndex + 1,
+          operation.columnIndex + 1,
+        );
+
+        if (
+          setCellStyle(
+            sheet,
+            operation.rowIndex,
+            operation.columnIndex,
+            normalizedStyle,
+          )
+        ) {
+          changed = true;
+        }
+
+        break;
+      }
+
       case "setRange": {
         if (operation.values.length === 0) {
           break;
@@ -1734,6 +1916,52 @@ export function applyWorkbookTransaction(
 
             targetRow[targetColumn] = nextValue;
             changed = true;
+          }
+        }
+
+        break;
+      }
+
+      case "setRangeStyle": {
+        assertNonNegativeIndex(operation.startRow, "Start row");
+        assertNonNegativeIndex(operation.startColumn, "Start column");
+
+        const rowCount = Math.max(0, Math.floor(operation.rowCount));
+        const columnCount = Math.max(0, Math.floor(operation.columnCount));
+
+        if (rowCount === 0 || columnCount === 0) {
+          break;
+        }
+
+        const sheet = getMutableSheet(
+          nextState,
+          clonedSheetIds,
+          operation.sheetId,
+        );
+        const normalizedStyle = normalizeWorkbookCellStyle(operation.style);
+
+        ensureSheetSize(
+          sheet,
+          operation.startRow + rowCount,
+          operation.startColumn + columnCount,
+        );
+
+        for (let rowOffset = 0; rowOffset < rowCount; rowOffset += 1) {
+          for (
+            let columnOffset = 0;
+            columnOffset < columnCount;
+            columnOffset += 1
+          ) {
+            if (
+              setCellStyle(
+                sheet,
+                operation.startRow + rowOffset,
+                operation.startColumn + columnOffset,
+                normalizedStyle,
+              )
+            ) {
+              changed = true;
+            }
           }
         }
 
@@ -2301,6 +2529,7 @@ function createWorkbookSheet(
 
   return {
     cells: createSheet(rowCount, columnCount),
+    cellStyles: {},
     id,
     name,
   };
@@ -2369,12 +2598,127 @@ function getMutableSheet(
   const clonedSheet: WorkbookSheet = {
     ...currentSheet,
     cells: currentSheet.cells.map((row) => [...row]),
+    cellStyles: cloneCellStyles(currentSheet.cellStyles),
   };
 
   workbook.sheets[sheetIndex] = clonedSheet;
   clonedSheetIds.add(sheetId);
 
   return clonedSheet;
+}
+
+export function cloneWorkbookCellStyle(
+  style: WorkbookCellStyle,
+): WorkbookCellStyle {
+  return {
+    ...(style.backgroundColor
+      ? { backgroundColor: style.backgroundColor }
+      : {}),
+    ...(style.bold ? { bold: true } : {}),
+    ...(style.fontFamily ? { fontFamily: style.fontFamily } : {}),
+    ...(style.fontSize !== undefined ? { fontSize: style.fontSize } : {}),
+    ...(style.horizontalAlign
+      ? { horizontalAlign: style.horizontalAlign }
+      : {}),
+    ...(style.italic ? { italic: true } : {}),
+    ...(style.textColor ? { textColor: style.textColor } : {}),
+    ...(style.wrapText ? { wrapText: true } : {}),
+  };
+}
+
+function normalizeWorkbookCellStyle(
+  style?: WorkbookCellStyle,
+): WorkbookCellStyle | undefined {
+  if (!style) {
+    return undefined;
+  }
+
+  const normalized: WorkbookCellStyle = {};
+
+  if (style.backgroundColor?.trim()) {
+    normalized.backgroundColor = style.backgroundColor.trim();
+  }
+
+  if (style.bold === true) {
+    normalized.bold = true;
+  }
+
+  if (style.fontFamily?.trim()) {
+    normalized.fontFamily = style.fontFamily.trim();
+  }
+
+  if (style.fontSize !== undefined) {
+    if (!Number.isFinite(style.fontSize) || style.fontSize < 6) {
+      throw new Error("Cell style fontSize must be at least 6.");
+    }
+
+    normalized.fontSize = Math.floor(style.fontSize);
+  }
+
+  if (style.horizontalAlign !== undefined) {
+    if (!["center", "left", "right"].includes(style.horizontalAlign)) {
+      throw new Error("Cell style horizontalAlign is invalid.");
+    }
+
+    normalized.horizontalAlign = style.horizontalAlign;
+  }
+
+  if (style.italic === true) {
+    normalized.italic = true;
+  }
+
+  if (style.textColor?.trim()) {
+    normalized.textColor = style.textColor.trim();
+  }
+
+  if (style.wrapText === true) {
+    normalized.wrapText = true;
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function workbookCellStylesEqual(
+  left?: WorkbookCellStyle,
+  right?: WorkbookCellStyle,
+): boolean {
+  const normalizedLeft = normalizeWorkbookCellStyle(left);
+  const normalizedRight = normalizeWorkbookCellStyle(right);
+
+  return (
+    normalizedLeft?.backgroundColor === normalizedRight?.backgroundColor &&
+    normalizedLeft?.bold === normalizedRight?.bold &&
+    normalizedLeft?.fontFamily === normalizedRight?.fontFamily &&
+    normalizedLeft?.fontSize === normalizedRight?.fontSize &&
+    normalizedLeft?.horizontalAlign === normalizedRight?.horizontalAlign &&
+    normalizedLeft?.italic === normalizedRight?.italic &&
+    normalizedLeft?.textColor === normalizedRight?.textColor &&
+    normalizedLeft?.wrapText === normalizedRight?.wrapText
+  );
+}
+
+function cloneCellStyles(
+  styles: Record<string, WorkbookCellStyle>,
+): Record<string, WorkbookCellStyle> {
+  return Object.fromEntries(
+    Object.entries(styles).map(([key, style]) => [
+      key,
+      cloneWorkbookCellStyle(style),
+    ]),
+  );
+}
+
+function getCellKey(rowIndex: number, columnIndex: number): string {
+  return `${rowIndex}:${columnIndex}`;
+}
+
+function parseCellKey(key: string): { columnIndex: number; rowIndex: number } {
+  const [rowText, columnText] = key.split(":");
+
+  return {
+    columnIndex: Number.parseInt(columnText, 10),
+    rowIndex: Number.parseInt(rowText, 10),
+  };
 }
 
 function getSheetById(
@@ -2419,6 +2763,172 @@ function matricesEqual(left: string[][], right: string[][]): boolean {
   }
 
   return true;
+}
+
+function setCellStyle(
+  sheet: WorkbookSheet,
+  rowIndex: number,
+  columnIndex: number,
+  style?: WorkbookCellStyle,
+): boolean {
+  const key = getCellKey(rowIndex, columnIndex);
+  const currentStyle = sheet.cellStyles[key];
+
+  if (workbookCellStylesEqual(currentStyle, style)) {
+    return false;
+  }
+
+  if (!style) {
+    delete sheet.cellStyles[key];
+    return true;
+  }
+
+  sheet.cellStyles[key] = cloneWorkbookCellStyle(style);
+  return true;
+}
+
+function clearCellStylesInRange(
+  sheet: WorkbookSheet,
+  startRow: number,
+  startColumn: number,
+  rowCount: number,
+  columnCount: number,
+): boolean {
+  const maxRow = getSheetRowCount(sheet);
+  const maxColumn = getSheetColumnCount(sheet);
+  const boundedStartRow = clampToRange(startRow, 0, maxRow);
+  const boundedStartColumn = clampToRange(startColumn, 0, maxColumn);
+  const endRow = Math.min(
+    maxRow,
+    boundedStartRow + Math.max(0, Math.floor(rowCount)),
+  );
+  const endColumn = Math.min(
+    maxColumn,
+    boundedStartColumn + Math.max(0, Math.floor(columnCount)),
+  );
+  let changed = false;
+
+  for (let rowIndex = boundedStartRow; rowIndex < endRow; rowIndex += 1) {
+    for (
+      let columnIndex = boundedStartColumn;
+      columnIndex < endColumn;
+      columnIndex += 1
+    ) {
+      const key = getCellKey(rowIndex, columnIndex);
+
+      if (sheet.cellStyles[key]) {
+        delete sheet.cellStyles[key];
+        changed = true;
+      }
+    }
+  }
+
+  return changed;
+}
+
+function mapCellStyles(
+  styles: Record<string, WorkbookCellStyle>,
+  mapAddress: (
+    rowIndex: number,
+    columnIndex: number,
+  ) => { columnIndex: number; rowIndex: number } | null,
+): Record<string, WorkbookCellStyle> {
+  const nextStyles: Record<string, WorkbookCellStyle> = {};
+
+  for (const [key, style] of Object.entries(styles)) {
+    const { columnIndex, rowIndex } = parseCellKey(key);
+    const nextAddress = mapAddress(rowIndex, columnIndex);
+
+    if (!nextAddress) {
+      continue;
+    }
+
+    nextStyles[getCellKey(nextAddress.rowIndex, nextAddress.columnIndex)] =
+      cloneWorkbookCellStyle(style);
+  }
+
+  return nextStyles;
+}
+
+function deleteColumnStyles(
+  styles: Record<string, WorkbookCellStyle>,
+  deleteStart: number,
+  count: number,
+): Record<string, WorkbookCellStyle> {
+  const deleteEnd = deleteStart + count;
+
+  return mapCellStyles(styles, (rowIndex, columnIndex) => {
+    if (columnIndex < deleteStart) {
+      return { columnIndex, rowIndex };
+    }
+
+    if (columnIndex >= deleteEnd) {
+      return { columnIndex: columnIndex - count, rowIndex };
+    }
+
+    return null;
+  });
+}
+
+function deleteRowStyles(
+  styles: Record<string, WorkbookCellStyle>,
+  deleteStart: number,
+  count: number,
+): Record<string, WorkbookCellStyle> {
+  const deleteEnd = deleteStart + count;
+
+  return mapCellStyles(styles, (rowIndex, columnIndex) => {
+    if (rowIndex < deleteStart) {
+      return { columnIndex, rowIndex };
+    }
+
+    if (rowIndex >= deleteEnd) {
+      return { columnIndex, rowIndex: rowIndex - count };
+    }
+
+    return null;
+  });
+}
+
+function insertColumnStyles(
+  styles: Record<string, WorkbookCellStyle>,
+  insertAt: number,
+  count: number,
+): Record<string, WorkbookCellStyle> {
+  return mapCellStyles(styles, (rowIndex, columnIndex) => ({
+    columnIndex: columnIndex >= insertAt ? columnIndex + count : columnIndex,
+    rowIndex,
+  }));
+}
+
+function insertRowStyles(
+  styles: Record<string, WorkbookCellStyle>,
+  insertAt: number,
+  count: number,
+): Record<string, WorkbookCellStyle> {
+  return mapCellStyles(styles, (rowIndex, columnIndex) => ({
+    columnIndex,
+    rowIndex: rowIndex >= insertAt ? rowIndex + count : rowIndex,
+  }));
+}
+
+function filterCellStylesInBounds(
+  styles: Record<string, WorkbookCellStyle>,
+  rowCount: number,
+  columnCount: number,
+): Record<string, WorkbookCellStyle> {
+  return mapCellStyles(styles, (rowIndex, columnIndex) => {
+    if (
+      rowIndex < 0 ||
+      columnIndex < 0 ||
+      rowIndex >= rowCount ||
+      columnIndex >= columnCount
+    ) {
+      return null;
+    }
+
+    return { columnIndex, rowIndex };
+  });
 }
 
 function resizeMatrix(

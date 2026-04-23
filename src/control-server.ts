@@ -279,6 +279,10 @@ export class SpreadyControlServer {
         );
       case "getSheetRange":
         return this.#controller.getSheetRange(params as SheetRangeRequest);
+      case "getSheetStyleRange":
+        return this.#controller.getSheetStyleRange(
+          params as SheetRangeRequest,
+        );
       case "getUsedRange":
         return this.#controller.getUsedRange(
           (params as { sheetId?: string } | undefined)?.sheetId,
@@ -314,6 +318,7 @@ export class SpreadyControlServer {
           "getSheetChartPreviews",
           "getSheetDisplayRange",
           "getSheetRange",
+          "getSheetStyleRange",
           "getUsedRange",
           "getWorkbookSummary",
           "importCsvFile",

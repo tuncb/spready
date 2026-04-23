@@ -26,6 +26,18 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
         type: "setSheetSourceFile",
       },
       {
+        columnCount: 2,
+        rowCount: 1,
+        startColumn: 0,
+        startRow: 0,
+        style: {
+          bold: true,
+          fontSize: 16,
+          textColor: "#0f172a",
+        },
+        type: "setRangeStyle",
+      },
+      {
         activate: true,
         columnCount: 3,
         name: "Budget",
@@ -46,6 +58,16 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
         sheetId: "sheet-12",
         type: "setCell",
         value: "=A1+1",
+      },
+      {
+        columnIndex: 1,
+        rowIndex: 0,
+        sheetId: "sheet-12",
+        style: {
+          italic: true,
+          horizontalAlign: "right",
+        },
+        type: "setCellStyle",
       },
     ],
   }).state;
@@ -166,7 +188,25 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
     "1200",
     "",
   ]);
+  assert.deepEqual(parsed.sheets[0].cellStyles, {
+    "0:0": {
+      bold: true,
+      fontSize: 16,
+      textColor: "#0f172a",
+    },
+    "0:1": {
+      bold: true,
+      fontSize: 16,
+      textColor: "#0f172a",
+    },
+  });
   assert.deepEqual(parsed.sheets[1].cells[0].slice(0, 2), ["2026", "=A1+1"]);
+  assert.deepEqual(parsed.sheets[1].cellStyles, {
+    "0:1": {
+      horizontalAlign: "right",
+      italic: true,
+    },
+  });
   assert.equal(parsed.sheets[1].cells[3][2], "");
 });
 
@@ -189,6 +229,7 @@ test("workbook documents reject invalid workbook references and cell entries", (
                 id: "sheet-1",
                 name: "Sheet 1",
                 rowCount: 2,
+                styles: [],
               },
             ],
           },
@@ -215,6 +256,7 @@ test("workbook documents reject invalid workbook references and cell entries", (
                 id: "sheet-1",
                 name: "Sheet 1",
                 rowCount: 2,
+                styles: [],
               },
             ],
           },
@@ -304,6 +346,7 @@ test("workbook documents reject invalid workbook references and cell entries", (
                 id: "sheet-1",
                 name: "Sheet 1",
                 rowCount: 2,
+                styles: [],
               },
             ],
           },

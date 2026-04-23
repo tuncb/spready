@@ -2,9 +2,11 @@ import * as z from "zod/v4";
 
 import {
   createSheet,
+  cloneWorkbookCellStyle,
   MIN_CHART_LAYOUT_HEIGHT,
   MIN_CHART_LAYOUT_WIDTH,
   syncSheetIdSequence,
+  type WorkbookCellStyle,
   type WorkbookChart,
   type WorkbookSheet,
   type WorkbookState,
@@ -12,12 +14,18 @@ import {
 
 export const WORKBOOK_DOCUMENT_EXTENSION = ".spready";
 export const WORKBOOK_DOCUMENT_FORMAT = "spready-workbook";
-export const WORKBOOK_DOCUMENT_VERSION = 3;
+export const WORKBOOK_DOCUMENT_VERSION = 4;
 
 export interface WorkbookDocumentCell {
   column: number;
   row: number;
   value: string;
+}
+
+export interface WorkbookDocumentCellStyle {
+  column: number;
+  row: number;
+  style: WorkbookCellStyle;
 }
 
 export interface WorkbookDocumentSheet {
@@ -29,6 +37,7 @@ export interface WorkbookDocumentSheet {
   };
   name: string;
   rowCount: number;
+  styles: WorkbookDocumentCellStyle[];
 }
 
 export type WorkbookDocumentChart = WorkbookChart;
@@ -51,6 +60,27 @@ const workbookDocumentCellSchema = z.object({
   value: z.string(),
 });
 
+const workbookDocumentCellStyleValueSchema = z
+  .object({
+    backgroundColor: z.string().min(1).optional(),
+    bold: z.boolean().optional(),
+    fontFamily: z.string().min(1).optional(),
+    fontSize: z.number().min(6).optional(),
+    horizontalAlign: z.enum(["center", "left", "right"]).optional(),
+    italic: z.boolean().optional(),
+    textColor: z.string().min(1).optional(),
+    wrapText: z.boolean().optional(),
+  })
+  .refine((style) => Object.keys(style).length > 0, {
+    message: "Cell style must contain at least one style property.",
+  });
+
+const workbookDocumentCellStyleSchema = z.object({
+  column: z.int().min(0),
+  row: z.int().min(0),
+  style: workbookDocumentCellStyleValueSchema,
+});
+
 const workbookDocumentSheetSchema = z.object({
   cells: z.array(workbookDocumentCellSchema),
   columnCount: z.int().min(1),
@@ -62,6 +92,7 @@ const workbookDocumentSheetSchema = z.object({
     .optional(),
   name: z.string().min(1),
   rowCount: z.int().min(1),
+  styles: z.array(workbookDocumentCellStyleSchema),
 });
 
 const workbookDocumentChartRangeSchema = z.object({
@@ -213,6 +244,7 @@ function createWorkbookDocumentSheet(
   sheet: WorkbookSheet,
 ): WorkbookDocumentSheet {
   const cells: WorkbookDocumentCell[] = [];
+  const styles: WorkbookDocumentCellStyle[] = [];
 
   for (let rowIndex = 0; rowIndex < sheet.cells.length; rowIndex += 1) {
     const row = sheet.cells[rowIndex];
@@ -232,6 +264,35 @@ function createWorkbookDocumentSheet(
     }
   }
 
+  for (const [key, style] of Object.entries(sheet.cellStyles)) {
+    const [rowText, columnText] = key.split(":");
+    const row = Number.parseInt(rowText, 10);
+    const column = Number.parseInt(columnText, 10);
+
+    if (
+      !Number.isInteger(row) ||
+      !Number.isInteger(column) ||
+      row < 0 ||
+      column < 0 ||
+      row >= sheet.cells.length ||
+      column >= (sheet.cells[0]?.length ?? 0)
+    ) {
+      continue;
+    }
+
+    const normalizedStyle = cloneWorkbookCellStyle(style);
+
+    if (Object.keys(normalizedStyle).length === 0) {
+      continue;
+    }
+
+    styles.push({
+      column,
+      row,
+      style: normalizedStyle,
+    });
+  }
+
   return {
     cells,
     columnCount: Math.max(1, sheet.cells[0]?.length ?? 0),
@@ -245,6 +306,7 @@ function createWorkbookDocumentSheet(
       : {}),
     name: sheet.name,
     rowCount: Math.max(1, sheet.cells.length),
+    styles,
   };
 }
 
@@ -274,7 +336,9 @@ function parseWorkbookDocumentJson(parsedJson: unknown): WorkbookDocument {
 
 function restoreWorkbookSheet(sheet: WorkbookDocumentSheet): WorkbookSheet {
   const cells = createSheet(sheet.rowCount, sheet.columnCount);
+  const cellStyles: Record<string, WorkbookCellStyle> = {};
   const occupiedCellKeys = new Set<string>();
+  const styledCellKeys = new Set<string>();
 
   for (const cell of sheet.cells) {
     if (cell.row >= sheet.rowCount || cell.column >= sheet.columnCount) {
@@ -298,8 +362,28 @@ function restoreWorkbookSheet(sheet: WorkbookDocumentSheet): WorkbookSheet {
     }
   }
 
+  for (const cellStyle of sheet.styles) {
+    if (cellStyle.row >= sheet.rowCount || cellStyle.column >= sheet.columnCount) {
+      throw new Error(
+        `Workbook file contains out-of-bounds style ${cellStyle.row}:${cellStyle.column} in sheet "${sheet.id}".`,
+      );
+    }
+
+    const cellKey = `${cellStyle.row}:${cellStyle.column}`;
+
+    if (styledCellKeys.has(cellKey)) {
+      throw new Error(
+        `Workbook file contains a duplicate style entry for ${cellStyle.row}:${cellStyle.column} in sheet "${sheet.id}".`,
+      );
+    }
+
+    styledCellKeys.add(cellKey);
+    cellStyles[cellKey] = cloneWorkbookCellStyle(cellStyle.style);
+  }
+
   return {
     cells,
+    cellStyles,
     id: sheet.id,
     name: sheet.name,
     sourceFilePath: sheet.metadata?.sourceFilePath,

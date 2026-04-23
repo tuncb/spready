@@ -14,6 +14,7 @@ import {
   getWorkbookSheet,
   getSheetCsv,
   getSheetRange,
+  getSheetStyleRange,
   getSheetUsedRange,
   getWorkbookSummary,
   getSheetRowCount,
@@ -41,6 +42,7 @@ import {
   type WorkbookChartSheetReference,
   type WorkbookSheetChartPreviewsResult,
   type WorkbookSheetChartsResult,
+  type SheetStyleRangeResult,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
@@ -129,6 +131,10 @@ export class WorkbookController extends EventEmitter {
     return getSheetRange(this.#state, request);
   }
 
+  getSheetStyleRange(request: SheetRangeRequest): SheetStyleRangeResult {
+    return getSheetStyleRange(this.#state, request);
+  }
+
   getSheetDisplayRange(request: SheetRangeRequest): SheetDisplayRangeResult {
     const rawRange = getSheetRange(this.#state, request);
     const snapshot = this.#getEvaluationSnapshot(rawRange.sheetId);
@@ -168,6 +174,13 @@ export class WorkbookController extends EventEmitter {
       sheetId: sheet.id,
       sheetName: sheet.name,
       ...(evaluation.errorCode ? { errorCode: evaluation.errorCode } : {}),
+      ...(sheet.cellStyles[`${request.rowIndex}:${request.columnIndex}`]
+        ? {
+            style: {
+              ...sheet.cellStyles[`${request.rowIndex}:${request.columnIndex}`],
+            },
+          }
+        : {}),
     };
   }
 

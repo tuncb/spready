@@ -14,6 +14,7 @@ import type {
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
+  SheetStyleRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
   WorkbookSheetChartPreviewsResult,
@@ -108,6 +109,11 @@ contextBridge.exposeInMainWorld("appShell", {
       "workbook:get-range",
       request,
     ) as Promise<SheetRangeResult>,
+  getSheetStyleRange: (request: SheetRangeRequest) =>
+    ipcRenderer.invoke(
+      "workbook:get-style-range",
+      request,
+    ) as Promise<SheetStyleRangeResult>,
   getUsedRange: (sheetId?: string) =>
     ipcRenderer.invoke("workbook:get-used-range", {
       sheetId,

@@ -17,6 +17,7 @@ import {
   getSheetColumnCount,
   getSheetCsv,
   getSheetRange,
+  getSheetStyleRange,
   getSheetRowCount,
   getSheetUsedRange,
   getWorkbookSummary,
@@ -137,6 +138,7 @@ test("serializeCsv trims to the used range and escapes special characters", () =
       ["Ada", 'comma, "quote"\nline', ""],
       ["", "", ""],
     ],
+    cellStyles: {},
     id: "sheet-under-test",
     name: "Sheet Under Test",
   };
@@ -521,6 +523,103 @@ test("applyWorkbookTransaction expands sheets for setCell and setRange writes", 
   assert.equal(activeSheet.cells[202][52], "");
 });
 
+test("applyWorkbookTransaction stores sparse cell styles and exposes style ranges", () => {
+  const initialState = createWorkbookState();
+  const styledState = applyWorkbookTransaction(initialState, {
+    operations: [
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        style: {
+          bold: true,
+          fontSize: 14.9,
+          horizontalAlign: "center",
+          textColor: "#111827",
+        },
+        type: "setCellStyle",
+      },
+      {
+        columnCount: 2,
+        rowCount: 1,
+        startColumn: 1,
+        startRow: 0,
+        style: {
+          backgroundColor: "#f8fafc",
+          italic: true,
+          wrapText: true,
+        },
+        type: "setRangeStyle",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(
+    getSheetStyleRange(styledState, {
+      columnCount: 3,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    }).styles,
+    [
+      [
+        {
+          bold: true,
+          fontSize: 14,
+          horizontalAlign: "center",
+          textColor: "#111827",
+        },
+        {
+          backgroundColor: "#f8fafc",
+          italic: true,
+          wrapText: true,
+        },
+        {
+          backgroundColor: "#f8fafc",
+          italic: true,
+          wrapText: true,
+        },
+      ],
+    ],
+  );
+
+  const clearedState = applyWorkbookTransaction(styledState, {
+    operations: [
+      {
+        columnCount: 1,
+        rowCount: 1,
+        startColumn: 1,
+        startRow: 0,
+        type: "clearRangeStyle",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(
+    getSheetStyleRange(clearedState, {
+      columnCount: 3,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    }).styles,
+    [
+      [
+        {
+          bold: true,
+          fontSize: 14,
+          horizontalAlign: "center",
+          textColor: "#111827",
+        },
+        null,
+        {
+          backgroundColor: "#f8fafc",
+          italic: true,
+          wrapText: true,
+        },
+      ],
+    ],
+  );
+});
+
 test("applyWorkbookTransaction supports structural edits and keeps a minimum 1x1 sheet", () => {
   const seededState = applyWorkbookTransaction(createWorkbookState(), {
     operations: [
@@ -530,6 +629,14 @@ test("applyWorkbookTransaction supports structural edits and keeps a minimum 1x1
           ["C", "D"],
         ],
         type: "replaceSheet",
+      },
+      {
+        columnIndex: 1,
+        rowIndex: 1,
+        style: {
+          bold: true,
+        },
+        type: "setCellStyle",
       },
     ],
   }).state;
@@ -567,6 +674,19 @@ test("applyWorkbookTransaction supports structural edits and keeps a minimum 1x1
     ["", "X", ""],
     ["C", "", "D"],
   ]);
+  assert.deepEqual(
+    getSheetStyleRange(editedState, {
+      columnCount: 3,
+      rowCount: 3,
+      startColumn: 0,
+      startRow: 0,
+    }).styles,
+    [
+      [null, null, null],
+      [null, null, null],
+      [null, null, { bold: true }],
+    ],
+  );
 
   const collapsedState = applyWorkbookTransaction(editedState, {
     operations: [
@@ -584,6 +704,7 @@ test("applyWorkbookTransaction supports structural edits and keeps a minimum 1x1
   }).state;
 
   assert.deepEqual(getActiveSheet(collapsedState).cells, [[""]]);
+  assert.deepEqual(getActiveSheet(collapsedState).cellStyles, {});
 });
 
 test("applyWorkbookTransaction rewrites persisted chart ranges for structural edits", () => {
