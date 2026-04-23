@@ -1378,6 +1378,52 @@ export default function App() {
     sheetSummary,
   ]);
 
+  const clearSelectionFormatting = useCallback(() => {
+    if (!activeSheet) {
+      return false;
+    }
+
+    const ranges = getSelectedStyleRanges(
+      gridSelection,
+      activeSheet.id,
+      activeSheet.rowCount,
+      activeSheet.columnCount,
+    );
+
+    if (ranges.length === 0) {
+      return false;
+    }
+
+    setSelectedCellData((current) =>
+      current
+        ? {
+            ...current,
+            style: undefined,
+          }
+        : current,
+    );
+
+    void applyTransaction(
+      ranges.map((range) => ({
+        ...range,
+        type: "clearRangeStyle",
+      })),
+    ).catch((error) => {
+      pushErrorToast(error);
+      void loadVisibleRange(lastVisibleRegionRef.current);
+      void refreshSelectedCellData();
+    });
+
+    return true;
+  }, [
+    activeSheet,
+    applyTransaction,
+    gridSelection,
+    loadVisibleRange,
+    pushErrorToast,
+    refreshSelectedCellData,
+  ]);
+
   const addColumn = useCallback(() => {
     if (!activeSheet) {
       return;
@@ -1884,6 +1930,9 @@ export default function App() {
           case APP_MENU_ACTIONS.formatCells:
             openCellFormatDialog();
             return;
+          case APP_MENU_ACTIONS.clearFormatting:
+            clearSelectionFormatting();
+            return;
           case APP_MENU_ACTIONS.deleteSelection:
             deleteSelection();
             return;
@@ -1910,6 +1959,7 @@ export default function App() {
     addColumn,
     addRow,
     addSheet,
+    clearSelectionFormatting,
     cutSelection,
     copySelection,
     deleteSelection,

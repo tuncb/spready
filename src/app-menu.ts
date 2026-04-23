@@ -15,6 +15,7 @@ export const APP_MENU_ACTIONS = {
   paste: "edit:paste",
   pasteValues: "edit:paste-values",
   formatCells: "edit:format-cells",
+  clearFormatting: "edit:clear-formatting",
   saveWorkbook: "workbook:save",
   saveWorkbookAs: "workbook:save-as",
 } as const;

@@ -218,6 +218,13 @@ function buildCellContextMenu(
         sendMenuAction(APP_MENU_ACTIONS.formatCells, browserWindow);
       },
     },
+    {
+      enabled: args.canFormat,
+      label: "Clear Formatting",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.clearFormatting, browserWindow);
+      },
+    },
   ]);
 }
 
@@ -477,6 +484,14 @@ function buildAppMenu() {
           click: () => {
             runMenuCommand(() => {
               sendMenuAction(APP_MENU_ACTIONS.formatCells);
+            });
+          },
+        },
+        {
+          label: "Clear Formatting",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.clearFormatting);
             });
           },
         },
