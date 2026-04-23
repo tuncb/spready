@@ -726,11 +726,6 @@ select {
   color: var(--color-danger);
 }
 
-.chart-editor__issue-list {
-  margin: 8px 0 0;
-  padding-left: 18px;
-}
-
 .chart-editor__field--short {
   max-width: 150px;
 }
@@ -740,18 +735,29 @@ select {
 }
 
 .chart-editor__status {
+  min-width: 0;
+  flex: 1;
   color: var(--color-text-muted);
   font-size: 12px;
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chart-editor__status--ok {
   color: #1d6b52;
 }
 
+.chart-editor__status--invalid {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
 .chart-editor__actions {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 8px;
 }
 

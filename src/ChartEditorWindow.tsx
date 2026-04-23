@@ -116,7 +116,7 @@ export function ChartEditorDialog({
   const validationStatus =
     validationIssues.length === 0
       ? "Valid configuration"
-      : "Fix issues before saving";
+      : validationIssues.map((issue) => issue.message).join(" ");
   const canSave =
     !isLoading &&
     !isSaving &&
@@ -418,20 +418,6 @@ export function ChartEditorDialog({
                   {errorMessage}
                 </div>
               ) : null}
-
-              {validationIssues.length > 0 ? (
-                <div className="chart-editor__callout">
-                  <strong>Fix these issues before saving</strong>
-                  <ul className="chart-editor__issue-list">
-                    {validationIssues.map((issue) => (
-                      <li key={`${issue.code}:${issue.message}`}>
-                        <span>{issue.code}</span>
-                        <span>{issue.message}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
             </div>
 
             <footer className="chart-editor__footer">
@@ -439,8 +425,9 @@ export function ChartEditorDialog({
                 className={
                   validationIssues.length === 0
                     ? "chart-editor__status chart-editor__status--ok"
-                    : "chart-editor__status"
+                    : "chart-editor__status chart-editor__status--invalid"
                 }
+                role="status"
               >
                 {validationStatus}
               </span>
