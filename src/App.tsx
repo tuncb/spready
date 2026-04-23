@@ -1375,6 +1375,31 @@ export default function App() {
     }
   }, [handleSaveWorkbookAs, pushErrorToast, sheetSummary]);
 
+  const openCreateChartEditor = useCallback(() => {
+    if (!activeSheet) {
+      return;
+    }
+
+    void window.appShell.openChartEditor({
+      mode: "create",
+      sheetId: activeSheet.id,
+    }).catch((error) => {
+      pushErrorToast(error);
+    });
+  }, [activeSheet, pushErrorToast]);
+
+  const openEditChartEditor = useCallback(
+    (chartId: string) => {
+      void window.appShell.openChartEditor({
+        chartId,
+        mode: "edit",
+      }).catch((error) => {
+        pushErrorToast(error);
+      });
+    },
+    [pushErrorToast],
+  );
+
   useEffect(() => {
     let isMounted = true;
 
@@ -1584,6 +1609,9 @@ export default function App() {
             return;
           case APP_MENU_ACTIONS.deleteSheet:
             deleteSheet();
+            return;
+          case APP_MENU_ACTIONS.insertChart:
+            openCreateChartEditor();
         }
       };
 
@@ -1602,6 +1630,7 @@ export default function App() {
     handleOpenWorkbook,
     handleSaveWorkbook,
     handleSaveWorkbookAs,
+    openCreateChartEditor,
     pasteSelection,
   ]);
 
@@ -1738,6 +1767,7 @@ export default function App() {
           chartResult={selectedChartResult}
           isDetailLoading={isChartDetailLoading}
           isListLoading={isSheetChartsLoading}
+          onEditChart={openEditChartEditor}
           onSelectChart={setSelectedChartId}
           selectedChartId={selectedChartId}
         />

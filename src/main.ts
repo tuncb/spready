@@ -15,6 +15,7 @@ import {
 import started from "electron-squirrel-startup";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
+import type { ChartEditorWindowRequest } from "./chart-editor-state";
 import {
   SPREADY_CLIPBOARD_FORMAT,
   type ClipboardReadResult,
@@ -54,6 +55,7 @@ const controlServer = new SpreadyControlServer(
     ? DEFAULT_CONTROL_PORT
     : configuredControlPort,
 );
+let chartEditorWindow: BrowserWindow | null = null;
 
 if (started) {
   app.quit();
@@ -115,6 +117,10 @@ function broadcastWorkbookChanged() {
   const title = formatWorkbookWindowTitle(summary, APP_DISPLAY_NAME);
 
   for (const browserWindow of BrowserWindow.getAllWindows()) {
+    if (browserWindow === chartEditorWindow) {
+      continue;
+    }
+
     browserWindow.setTitle(title);
     browserWindow.webContents.send("workbook:changed", summary);
   }
@@ -421,6 +427,17 @@ function buildAppMenu() {
       ],
     },
     {
+      label: "Insert",
+      submenu: [
+        {
+          label: "Chart",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.insertChart);
+          },
+        },
+      ],
+    },
+    {
       label: "Sheet",
       submenu: [
         {
@@ -465,6 +482,99 @@ function buildAppMenu() {
   ];
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+async function openChartEditorWindow(
+  request: ChartEditorWindowRequest,
+  browserWindow?: BrowserWindow | null,
+) {
+  if (chartEditorWindow && !chartEditorWindow.isDestroyed()) {
+    if (chartEditorWindow.isMinimized()) {
+      chartEditorWindow.restore();
+    }
+
+    if (!chartEditorWindow.isVisible()) {
+      chartEditorWindow.show();
+    }
+
+    chartEditorWindow.focus();
+    return;
+  }
+
+  const parentWindow = getTargetWindow(browserWindow);
+
+  const nextChartEditorWindow = new BrowserWindow({
+    width: 580,
+    height: 720,
+    minWidth: 540,
+    minHeight: 640,
+    parent: parentWindow ?? undefined,
+    modal: parentWindow !== null,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: "#f3efe8",
+    maximizable: false,
+    minimizable: false,
+    resizable: false,
+    title: request.mode === "edit" ? "Edit Chart" : "Create Chart",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+  chartEditorWindow = nextChartEditorWindow;
+  nextChartEditorWindow.removeMenu();
+
+  const showChartEditor = () => {
+    if (nextChartEditorWindow.isDestroyed()) {
+      return;
+    }
+
+    if (nextChartEditorWindow.isMinimized()) {
+      nextChartEditorWindow.restore();
+    }
+
+    nextChartEditorWindow.show();
+    nextChartEditorWindow.focus();
+  };
+
+  nextChartEditorWindow.webContents.once("did-finish-load", showChartEditor);
+  nextChartEditorWindow.once("ready-to-show", showChartEditor);
+  nextChartEditorWindow.once("closed", () => {
+    if (chartEditorWindow === nextChartEditorWindow) {
+      chartEditorWindow = null;
+    }
+  });
+
+  const query: Record<string, string> =
+    request.mode === "edit"
+      ? {
+          chartId: request.chartId,
+          mode: request.mode,
+          view: "chart-editor",
+        }
+      : {
+          ...(request.sheetId ? { sheetId: request.sheetId } : {}),
+          mode: request.mode,
+          view: "chart-editor",
+        };
+
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    const targetUrl = new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+
+    Object.entries(query).forEach(([key, value]) => {
+      targetUrl.searchParams.set(key, value);
+    });
+    await nextChartEditorWindow.loadURL(targetUrl.toString());
+  } else {
+    await nextChartEditorWindow.loadFile(
+      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
+      {
+        query,
+      },
+    );
+  }
 }
 
 const createWindow = () => {
@@ -686,6 +796,16 @@ ipcMain.handle(
     buildCellContextMenu(browserWindow, args).popup({
       window: browserWindow,
     });
+  },
+);
+
+ipcMain.handle(
+  "window:open-chart-editor",
+  async (event, request: ChartEditorWindowRequest) => {
+    await openChartEditorWindow(
+      request,
+      BrowserWindow.fromWebContents(event.sender),
+    );
   },
 );
 

@@ -1,4 +1,5 @@
 import type { AppMenuAction } from "./app-menu";
+import type { ChartEditorWindowRequest } from "./chart-editor-state";
 import type { ClipboardReadResult, ClipboardWriteRequest } from "./clipboard";
 import type {
   ApplyTransactionRequest,
@@ -77,6 +78,7 @@ declare global {
       onWorkbookChanged: (
         listener: (summary: WorkbookSummary) => void,
       ) => () => void;
+      openChartEditor: (request: ChartEditorWindowRequest) => Promise<void>;
       openCsvFile: () => Promise<OpenCsvFileResult>;
       openWorkbookFile: () => Promise<OpenWorkbookFileResult>;
       saveCsvFile: (

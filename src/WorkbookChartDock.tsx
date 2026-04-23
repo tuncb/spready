@@ -23,6 +23,7 @@ interface WorkbookChartDockProps {
   chartResult: WorkbookChartResult | null;
   isDetailLoading: boolean;
   isListLoading: boolean;
+  onEditChart: (chartId: string) => void;
   onSelectChart: (chartId: string) => void;
   selectedChartId: string | null;
 }
@@ -34,6 +35,7 @@ export function WorkbookChartDock({
   chartResult,
   isDetailLoading,
   isListLoading,
+  onEditChart,
   onSelectChart,
   selectedChartId,
 }: WorkbookChartDockProps) {
@@ -134,11 +136,22 @@ export function WorkbookChartDock({
                     {chartResult.chart.name}
                   </h3>
                 </div>
-                <span
-                  className={`chart-dock__status-pill is-${chartPreview.status}`}
-                >
-                  {chartPreview.status}
-                </span>
+                <div className="chart-dock__detail-actions">
+                  <button
+                    className="chart-dock__action-button"
+                    onClick={() => {
+                      onEditChart(chartResult.chart.id);
+                    }}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  <span
+                    className={`chart-dock__status-pill is-${chartPreview.status}`}
+                  >
+                    {chartPreview.status}
+                  </span>
+                </div>
               </div>
 
               <div className="chart-dock__meta-grid">

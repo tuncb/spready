@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import type { AppMenuAction } from "./app-menu";
+import type { ChartEditorWindowRequest } from "./chart-editor-state";
 import type { ClipboardReadResult, ClipboardWriteRequest } from "./clipboard";
 import type {
   ApplyTransactionRequest,
@@ -140,6 +141,8 @@ contextBridge.exposeInMainWorld("appShell", {
       ipcRenderer.off("workbook:changed", wrappedListener);
     };
   },
+  openChartEditor: (request: ChartEditorWindowRequest) =>
+    ipcRenderer.invoke("window:open-chart-editor", request) as Promise<void>,
   openCsvFile: () =>
     ipcRenderer.invoke("dialog:open-csv-file") as Promise<OpenCsvFileResult>,
   openWorkbookFile: () =>
