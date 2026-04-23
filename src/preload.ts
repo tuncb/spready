@@ -45,6 +45,7 @@ type ShowCellContextMenuRequest = {
   canCopy: boolean;
   canCut: boolean;
   canDelete: boolean;
+  canFormat: boolean;
 };
 
 type OpenWorkbookFileResult =

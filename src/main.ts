@@ -71,6 +71,7 @@ type ShowCellContextMenuArgs = {
   canCopy: boolean;
   canCut: boolean;
   canDelete: boolean;
+  canFormat: boolean;
 };
 
 type SaveWorkbookFileAsArgs = {
@@ -207,6 +208,14 @@ function buildCellContextMenu(
       label: "Delete",
       click: () => {
         sendMenuAction(APP_MENU_ACTIONS.deleteSelection, browserWindow);
+      },
+    },
+    { type: "separator" },
+    {
+      enabled: args.canFormat,
+      label: "Format...",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.formatCells, browserWindow);
       },
     },
   ]);
@@ -462,6 +471,15 @@ function buildAppMenu() {
             });
           },
         },
+        { type: "separator" },
+        {
+          label: "Format...",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.formatCells);
+            });
+          },
+        },
       ],
     },
     {
@@ -473,30 +491,6 @@ function buildAppMenu() {
           click: () => {
             runMenuCommand(() => {
               sendMenuAction(APP_MENU_ACTIONS.insertChart);
-            });
-          },
-        },
-      ],
-    },
-    {
-      enabled: menuEnabled,
-      label: "Format",
-      submenu: [
-        {
-          accelerator: "CmdOrCtrl+B",
-          label: "Bold",
-          click: () => {
-            runMenuCommand(() => {
-              sendMenuAction(APP_MENU_ACTIONS.toggleBold);
-            });
-          },
-        },
-        {
-          accelerator: "CmdOrCtrl+I",
-          label: "Italic",
-          click: () => {
-            runMenuCommand(() => {
-              sendMenuAction(APP_MENU_ACTIONS.toggleItalic);
             });
           },
         },

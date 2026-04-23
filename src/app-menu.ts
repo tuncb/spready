@@ -14,8 +14,7 @@ export const APP_MENU_ACTIONS = {
   openWorkbook: "workbook:open",
   paste: "edit:paste",
   pasteValues: "edit:paste-values",
-  toggleBold: "format:toggle-bold",
-  toggleItalic: "format:toggle-italic",
+  formatCells: "edit:format-cells",
   saveWorkbook: "workbook:save",
   saveWorkbookAs: "workbook:save-as",
 } as const;

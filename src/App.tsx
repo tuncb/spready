@@ -21,6 +21,7 @@ import {
 import { flushSync } from "react-dom";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
+import { CellFormatDialog } from "./CellFormatDialog";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
 import { WorkbookChartOverlay } from "./WorkbookChartOverlay";
@@ -95,6 +96,12 @@ type VisibleRegion = {
 type ChartEditorSession = {
   expectedVersion: number;
   request: ChartEditorWindowRequest;
+};
+
+type CellFormatSession = {
+  expectedVersion: number;
+  initialStyle?: WorkbookCellStyle;
+  ranges: SheetRangeRequest[];
 };
 
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
@@ -300,97 +307,6 @@ function setCachedCellValue<Cache extends RangeCache>(
   };
 }
 
-function setCachedCellStyle(
-  cache: StyleRangeCache | null,
-  range: SheetRangeRequest,
-  style: WorkbookCellStyle | undefined,
-): StyleRangeCache | null {
-  if (!cache || cache.sheetId !== range.sheetId) {
-    return cache;
-  }
-
-  const nextStyles = cache.styles.map((row) => [...row]);
-  let changed = false;
-
-  for (let rowOffset = 0; rowOffset < range.rowCount; rowOffset += 1) {
-    const rowIndex = range.startRow + rowOffset;
-
-    if (rowIndex < cache.startRow || rowIndex >= cache.startRow + cache.rowCount) {
-      continue;
-    }
-
-    for (
-      let columnOffset = 0;
-      columnOffset < range.columnCount;
-      columnOffset += 1
-    ) {
-      const columnIndex = range.startColumn + columnOffset;
-
-      if (
-        columnIndex < cache.startColumn ||
-        columnIndex >= cache.startColumn + cache.columnCount
-      ) {
-        continue;
-      }
-
-      nextStyles[rowIndex - cache.startRow][columnIndex - cache.startColumn] =
-        style ? { ...style } : null;
-      changed = true;
-    }
-  }
-
-  return changed
-    ? {
-        ...cache,
-        styles: nextStyles,
-      }
-    : cache;
-}
-
-function normalizeClientCellStyle(
-  style: WorkbookCellStyle,
-): WorkbookCellStyle | undefined {
-  const normalized: WorkbookCellStyle = {};
-
-  if (style.backgroundColor) {
-    normalized.backgroundColor = style.backgroundColor;
-  }
-
-  if (style.bold) {
-    normalized.bold = true;
-  }
-
-  if (style.fontFamily) {
-    normalized.fontFamily = style.fontFamily;
-  }
-
-  if (style.fontSize) {
-    normalized.fontSize = style.fontSize;
-  }
-
-  if (style.horizontalAlign) {
-    normalized.horizontalAlign = style.horizontalAlign;
-  }
-
-  if (style.italic) {
-    normalized.italic = true;
-  }
-
-  if (style.textColor) {
-    normalized.textColor = style.textColor;
-  }
-
-  if (style.wrapText) {
-    normalized.wrapText = true;
-  }
-
-  return Object.keys(normalized).length > 0 ? normalized : undefined;
-}
-
-function getColorInputValue(value: string | undefined, fallback: string) {
-  return /^#[0-9a-f]{6}$/i.test(value ?? "") ? (value as string) : fallback;
-}
-
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
 }
@@ -446,6 +362,48 @@ function getCurrentSelectionRange(
     startColumn: range.x,
     startRow: range.y,
   };
+}
+
+function getSelectedStyleRanges(
+  selection: GridSelection,
+  sheetId: string,
+  rowCount: number,
+  columnCount: number,
+): SheetRangeRequest[] {
+  const ranges: SheetRangeRequest[] = [];
+  const range = selection.current?.range;
+
+  if (range) {
+    ranges.push({
+      columnCount: Math.max(1, range.width),
+      rowCount: Math.max(1, range.height),
+      sheetId,
+      startColumn: range.x,
+      startRow: range.y,
+    });
+  }
+
+  for (const rowRun of compactSelectionToRuns(selection.rows)) {
+    ranges.push({
+      columnCount,
+      rowCount: rowRun.count,
+      sheetId,
+      startColumn: 0,
+      startRow: rowRun.start,
+    });
+  }
+
+  for (const columnRun of compactSelectionToRuns(selection.columns)) {
+    ranges.push({
+      columnCount: columnRun.count,
+      rowCount,
+      sheetId,
+      startColumn: columnRun.start,
+      startRow: 0,
+    });
+  }
+
+  return ranges;
 }
 
 function selectionContainsCell(selection: GridSelection, cell: Item): boolean {
@@ -617,6 +575,8 @@ function getDefaultWorkbookFilePath(summary: WorkbookSummary | null): string {
 }
 
 export default function App() {
+  const [cellFormatSession, setCellFormatSession] =
+    useState<CellFormatSession | null>(null);
   const [chartEditorSession, setChartEditorSession] =
     useState<ChartEditorSession | null>(null);
   const [formulaInputValue, setFormulaInputValue] = useState("");
@@ -649,6 +609,8 @@ export default function App() {
   const sheetSurfaceRef = useRef<HTMLElement>(null);
   const styleRangeCacheRef = useRef<SheetStyleRangeResult | null>(null);
   const isChartEditorOpen = chartEditorSession !== null;
+  const isCellFormatOpen = cellFormatSession !== null;
+  const isModalDialogOpen = isChartEditorOpen || isCellFormatOpen;
 
   const activeSheet = useMemo(
     () =>
@@ -692,7 +654,6 @@ export default function App() {
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
-  const selectedCellStyle = selectedCellData?.style;
   const currentSelectionRange = useMemo(
     () =>
       activeSheet
@@ -1316,6 +1277,7 @@ export default function App() {
           canCopy: true,
           canCut: true,
           canDelete: true,
+          canFormat: true,
         })
         .catch((error) => {
           pushErrorToast(error);
@@ -1387,62 +1349,34 @@ export default function App() {
     selectedCellData?.input,
   ]);
 
-  const applyStyleToSelection = useCallback(
-    (style: WorkbookCellStyle | undefined) => {
-      if (!currentSelectionRange) {
-        return false;
-      }
+  const openCellFormatDialog = useCallback(() => {
+    if (!activeSheet || !sheetSummary || isModalDialogOpen) {
+      return;
+    }
 
-      styleRangeCacheRef.current = setCachedCellStyle(
-        styleRangeCacheRef.current,
-        currentSelectionRange,
-        style,
-      );
+    const ranges = getSelectedStyleRanges(
+      gridSelection,
+      activeSheet.id,
+      activeSheet.rowCount,
+      activeSheet.columnCount,
+    );
 
-      setSelectedCellData((current) =>
-        current
-          ? {
-              ...current,
-              ...(style ? { style } : { style: undefined }),
-            }
-          : current,
-      );
-      setViewNonce((current) => current + 1);
+    if (ranges.length === 0) {
+      return;
+    }
 
-      void applyTransaction([
-        {
-          ...currentSelectionRange,
-          style,
-          type: "setRangeStyle",
-        },
-      ]).catch((error) => {
-        pushErrorToast(error);
-        void loadVisibleRange(lastVisibleRegionRef.current);
-        void refreshSelectedCellData();
-      });
-
-      return true;
-    },
-    [
-      applyTransaction,
-      currentSelectionRange,
-      loadVisibleRange,
-      pushErrorToast,
-      refreshSelectedCellData,
-    ],
-  );
-
-  const patchSelectedStyle = useCallback(
-    (patch: WorkbookCellStyle) => {
-      const nextStyle = normalizeClientCellStyle({
-        ...(selectedCellData?.style ?? {}),
-        ...patch,
-      });
-
-      return applyStyleToSelection(nextStyle);
-    },
-    [applyStyleToSelection, selectedCellData?.style],
-  );
+    setCellFormatSession({
+      expectedVersion: sheetSummary.version,
+      initialStyle: selectedCellData?.style,
+      ranges,
+    });
+  }, [
+    activeSheet,
+    gridSelection,
+    isModalDialogOpen,
+    selectedCellData?.style,
+    sheetSummary,
+  ]);
 
   const addColumn = useCallback(() => {
     if (!activeSheet) {
@@ -1642,16 +1576,21 @@ export default function App() {
     setChartEditorSession(null);
   }, []);
 
+  const closeCellFormatDialog = useCallback(() => {
+    setCellFormatSession(null);
+  }, []);
+
   const handleChartEditorVersionConflict = useCallback(
     (message: string) => {
       setChartEditorSession(null);
+      setCellFormatSession(null);
       pushErrorToast(new Error(message));
     },
     [pushErrorToast],
   );
 
   const openCreateChartEditor = useCallback(() => {
-    if (!activeSheet || !sheetSummary || isChartEditorOpen) {
+    if (!activeSheet || !sheetSummary || isModalDialogOpen) {
       return;
     }
 
@@ -1671,11 +1610,11 @@ export default function App() {
           : undefined,
       },
     });
-  }, [activeSheet, currentSelectionRange, isChartEditorOpen, sheetSummary]);
+  }, [activeSheet, currentSelectionRange, isModalDialogOpen, sheetSummary]);
 
   const openEditChartEditor = useCallback(
     (chartId: string) => {
-      if (!sheetSummary || isChartEditorOpen) {
+      if (!sheetSummary || isModalDialogOpen) {
         return;
       }
 
@@ -1687,7 +1626,7 @@ export default function App() {
         },
       });
     },
-    [isChartEditorOpen, sheetSummary],
+    [isModalDialogOpen, sheetSummary],
   );
 
   const commitChartLayout = useCallback(
@@ -1799,7 +1738,7 @@ export default function App() {
     let isCancelled = false;
 
     void window.appShell
-      .setChartDialogOpen(isChartEditorOpen)
+      .setChartDialogOpen(isModalDialogOpen)
       .catch((error) => {
         if (!isCancelled) {
           pushErrorToast(error);
@@ -1809,11 +1748,11 @@ export default function App() {
     return () => {
       isCancelled = true;
 
-      if (isChartEditorOpen) {
+      if (isModalDialogOpen) {
         void window.appShell.setChartDialogOpen(false);
       }
     };
-  }, [isChartEditorOpen, pushErrorToast]);
+  }, [isModalDialogOpen, pushErrorToast]);
 
   useEffect(() => {
     setGridSelection(createEmptyGridSelection());
@@ -1903,7 +1842,7 @@ export default function App() {
 
   useEffect(() => {
     return window.appShell.onMenuAction((action) => {
-      if (isChartEditorOpen) {
+      if (isModalDialogOpen) {
         return;
       }
 
@@ -1942,15 +1881,8 @@ export default function App() {
           case APP_MENU_ACTIONS.pasteValues:
             void pasteSelection("display");
             return;
-          case APP_MENU_ACTIONS.toggleBold:
-            patchSelectedStyle({
-              bold: !selectedCellData?.style?.bold,
-            });
-            return;
-          case APP_MENU_ACTIONS.toggleItalic:
-            patchSelectedStyle({
-              italic: !selectedCellData?.style?.italic,
-            });
+          case APP_MENU_ACTIONS.formatCells:
+            openCellFormatDialog();
             return;
           case APP_MENU_ACTIONS.deleteSelection:
             deleteSelection();
@@ -1987,17 +1919,15 @@ export default function App() {
     handleOpenWorkbook,
     handleSaveWorkbook,
     handleSaveWorkbookAs,
-    isChartEditorOpen,
+    isModalDialogOpen,
+    openCellFormatDialog,
     openCreateChartEditor,
-    patchSelectedStyle,
     pasteSelection,
-    selectedCellData?.style?.bold,
-    selectedCellData?.style?.italic,
   ]);
 
   useEffect(() => {
     const handleWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (isChartEditorOpen) {
+      if (isModalDialogOpen) {
         return;
       }
 
@@ -2022,22 +1952,6 @@ export default function App() {
       }
 
       const normalizedKey = event.key.toLowerCase();
-
-      if (isPrimaryModifier && normalizedKey === "b") {
-        event.preventDefault();
-        patchSelectedStyle({
-          bold: !selectedCellData?.style?.bold,
-        });
-        return;
-      }
-
-      if (isPrimaryModifier && normalizedKey === "i") {
-        event.preventDefault();
-        patchSelectedStyle({
-          italic: !selectedCellData?.style?.italic,
-        });
-        return;
-      }
 
       if (isPrimaryModifier && normalizedKey === "c") {
         event.preventDefault();
@@ -2077,11 +1991,8 @@ export default function App() {
     copySelection,
     cutSelection,
     deleteSelection,
-    isChartEditorOpen,
-    patchSelectedStyle,
+    isModalDialogOpen,
     pasteSelection,
-    selectedCellData?.style?.bold,
-    selectedCellData?.style?.italic,
   ]);
 
   return (
@@ -2089,140 +2000,6 @@ export default function App() {
       <section className="formula-bar" aria-label="Formula bar">
         <div className="formula-bar__address">
           {selectedCellAddress || "Cell"}
-        </div>
-        <div className="formula-bar__formatting" aria-label="Cell formatting">
-          <button
-            aria-label="Bold"
-            className={
-              selectedCellStyle?.bold
-                ? "format-button is-active"
-                : "format-button"
-            }
-            disabled={!selectedCell}
-            onClick={() => {
-              patchSelectedStyle({
-                bold: !selectedCellStyle?.bold,
-              });
-            }}
-            type="button"
-          >
-            B
-          </button>
-          <button
-            aria-label="Italic"
-            className={
-              selectedCellStyle?.italic
-                ? "format-button is-active"
-                : "format-button"
-            }
-            disabled={!selectedCell}
-            onClick={() => {
-              patchSelectedStyle({
-                italic: !selectedCellStyle?.italic,
-              });
-            }}
-            type="button"
-          >
-            I
-          </button>
-          <select
-            aria-label="Font family"
-            className="format-select format-select--family"
-            disabled={!selectedCell}
-            onChange={(event) => {
-              patchSelectedStyle({
-                fontFamily: event.target.value || undefined,
-              });
-            }}
-            value={selectedCellStyle?.fontFamily ?? ""}
-          >
-            <option value="">Aptos</option>
-            <option value="Arial">Arial</option>
-            <option value="Calibri">Calibri</option>
-            <option value="Consolas">Consolas</option>
-            <option value="Georgia">Georgia</option>
-            <option value="Times New Roman">Times</option>
-          </select>
-          <select
-            aria-label="Font size"
-            className="format-select format-select--size"
-            disabled={!selectedCell}
-            onChange={(event) => {
-              patchSelectedStyle({
-                fontSize:
-                  event.target.value === ""
-                    ? undefined
-                    : Number.parseInt(event.target.value, 10),
-              });
-            }}
-            value={selectedCellStyle?.fontSize?.toString() ?? ""}
-          >
-            <option value="">13</option>
-            {[10, 11, 12, 14, 16, 18, 20, 24, 28, 32].map((fontSize) => (
-              <option key={fontSize} value={fontSize}>
-                {fontSize}
-              </option>
-            ))}
-          </select>
-          <select
-            aria-label="Horizontal alignment"
-            className="format-select format-select--align"
-            disabled={!selectedCell}
-            onChange={(event) => {
-              patchSelectedStyle({
-                horizontalAlign:
-                  event.target.value === ""
-                    ? undefined
-                    : (event.target
-                        .value as WorkbookCellStyle["horizontalAlign"]),
-              });
-            }}
-            value={selectedCellStyle?.horizontalAlign ?? ""}
-          >
-            <option value="">Left</option>
-            <option value="center">Center</option>
-            <option value="right">Right</option>
-          </select>
-          <input
-            aria-label="Text color"
-            className="format-color"
-            disabled={!selectedCell}
-            onChange={(event) => {
-              patchSelectedStyle({
-                textColor: event.target.value,
-              });
-            }}
-            type="color"
-            value={getColorInputValue(selectedCellStyle?.textColor, "#0f172a")}
-          />
-          <input
-            aria-label="Fill color"
-            className="format-color"
-            disabled={!selectedCell}
-            onChange={(event) => {
-              patchSelectedStyle({
-                backgroundColor: event.target.value,
-              });
-            }}
-            type="color"
-            value={getColorInputValue(
-              selectedCellStyle?.backgroundColor,
-              "#ffffff",
-            )}
-          />
-          <label className="format-check">
-            <input
-              checked={selectedCellStyle?.wrapText ?? false}
-              disabled={!selectedCell}
-              onChange={(event) => {
-                patchSelectedStyle({
-                  wrapText: event.target.checked,
-                });
-              }}
-              type="checkbox"
-            />
-            <span>Wrap</span>
-          </label>
         </div>
         <div className="formula-bar__field">
           <input
@@ -2341,6 +2118,22 @@ export default function App() {
           onClose={closeChartEditor}
           onVersionConflict={handleChartEditorVersionConflict}
           request={chartEditorSession.request}
+        />
+      ) : null}
+
+      {cellFormatSession ? (
+        <CellFormatDialog
+          expectedVersion={cellFormatSession.expectedVersion}
+          initialStyle={cellFormatSession.initialStyle}
+          key={`format:${cellFormatSession.expectedVersion}:${cellFormatSession.ranges
+            .map(
+              (range) =>
+                `${range.sheetId}:${range.startRow}:${range.startColumn}:${range.rowCount}:${range.columnCount}`,
+            )
+            .join("|")}`}
+          onClose={closeCellFormatDialog}
+          onVersionConflict={handleChartEditorVersionConflict}
+          ranges={cellFormatSession.ranges}
         />
       ) : null}
 

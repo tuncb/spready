@@ -96,6 +96,7 @@ declare global {
         canCopy: boolean;
         canCut: boolean;
         canDelete: boolean;
+        canFormat: boolean;
       }) => Promise<void>;
       writeClipboard: (request: ClipboardWriteRequest) => Promise<void>;
       saveWorkbookFile: (
