@@ -54,6 +54,15 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
   workbook.charts = [
     {
       id: "chart-1",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 4,
+        startRow: 0,
+        width: 420,
+        zIndex: 0,
+      },
       name: "Quarterly Revenue",
       sheetId: workbook.sheets[0].id,
       spec: {
@@ -76,6 +85,15 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
     },
     {
       id: "chart-2",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 0,
+        startRow: 0,
+        width: 420,
+        zIndex: 1,
+      },
       name: "Broken Imported Chart",
       sheetId: "missing-sheet",
       spec: {
@@ -216,6 +234,15 @@ test("workbook documents reject invalid workbook references and cell entries", (
             charts: [
               {
                 id: "chart-1",
+                layout: {
+                  height: 260,
+                  offsetX: 0,
+                  offsetY: 0,
+                  startColumn: 0,
+                  startRow: 0,
+                  width: 420,
+                  zIndex: 0,
+                },
                 name: "Chart A",
                 sheetId: "sheet-1",
                 spec: {
@@ -238,6 +265,15 @@ test("workbook documents reject invalid workbook references and cell entries", (
               },
               {
                 id: "chart-1",
+                layout: {
+                  height: 260,
+                  offsetX: 0,
+                  offsetY: 0,
+                  startColumn: 0,
+                  startRow: 0,
+                  width: 420,
+                  zIndex: 1,
+                },
                 name: "Chart B",
                 sheetId: "sheet-1",
                 spec: {

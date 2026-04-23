@@ -205,6 +205,15 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
   workbook.charts = [
     {
       id: "chart-1",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 4,
+        startRow: 0,
+        width: 420,
+        zIndex: 0,
+      },
       name: "Quarterly Revenue",
       sheetId: workbook.sheets[0].id,
       spec: {
@@ -227,6 +236,15 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
     },
     {
       id: "chart-2",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 4,
+        startRow: 8,
+        width: 420,
+        zIndex: 1,
+      },
       name: "Broken Chart",
       sheetId: workbook.sheets[0].id,
       spec: {
@@ -249,6 +267,15 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
     },
     {
       id: "chart-3",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 4,
+        startRow: 0,
+        width: 420,
+        zIndex: 2,
+      },
       name: "Metrics By Quarter",
       sheetId: metricsSheet.id,
       spec: {
@@ -298,6 +325,7 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
     });
     const methods = await client.call<string[]>("listMethods");
     const activeSheetCharts = await client.getSheetCharts();
+    const activeSheetPreviews = await client.getSheetChartPreviews();
     const metricsCharts = await client.getSheetCharts(metricsSheet.id);
     const chartResult = await client.getChart("chart-1");
     const invalidPreview = await client.getChartPreview("chart-2");
@@ -306,9 +334,14 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
     assert.ok(methods.includes("getChart"));
     assert.ok(methods.includes("getChartPreview"));
     assert.ok(methods.includes("getSheetCharts"));
+    assert.ok(methods.includes("getSheetChartPreviews"));
     assert.equal(openResult.summary.charts.length, 3);
     assert.deepEqual(
       activeSheetCharts.charts.map((chart) => chart.id),
+      ["chart-1", "chart-2"],
+    );
+    assert.deepEqual(
+      activeSheetPreviews.previews.map((preview) => preview.chart.id),
       ["chart-1", "chart-2"],
     );
     assert.deepEqual(
@@ -472,9 +505,36 @@ test("SpreadyControlServer applies chart lifecycle transactions over TCP", async
       ],
     });
 
+    await client.applyTransaction({
+      operations: [
+        {
+          chartId: "chart-1",
+          layout: {
+            height: 320,
+            offsetX: 16,
+            offsetY: 9,
+            startColumn: 2,
+            startRow: 3,
+            width: 520,
+            zIndex: 5,
+          },
+          type: "setChartLayout",
+        },
+      ],
+    });
+
     assert.deepEqual(await client.getChart("chart-1"), {
       chart: {
         id: "chart-1",
+        layout: {
+          height: 320,
+          offsetX: 16,
+          offsetY: 9,
+          startColumn: 2,
+          startRow: 3,
+          width: 520,
+          zIndex: 5,
+        },
         name: "Revenue Trend",
         sheetId: summary.activeSheetId,
         spec: {

@@ -43,10 +43,19 @@ function getActiveSheet(state: WorkbookState): WorkbookSheet {
 }
 
 function createBarChart(
-  overrides: Partial<Omit<WorkbookChart, "spec">> = {},
+  overrides: Partial<Pick<WorkbookChart, "id" | "layout" | "name" | "sheetId">> = {},
 ): WorkbookChart & { spec: WorkbookChartCartesianSpec } {
   return {
     id: "chart-1",
+    layout: {
+      height: 260,
+      offsetX: 0,
+      offsetY: 0,
+      startColumn: 5,
+      startRow: 2,
+      width: 420,
+      zIndex: 0,
+    },
     name: "Revenue",
     sheetId: "sheet-1",
     spec: {
@@ -203,6 +212,7 @@ test("workbook chart helpers validate same-sheet range contracts and summarize s
   assert.deepEqual(createWorkbookChartSummary(validChart, sheets), {
     chartType: "bar",
     id: "chart-1",
+    layout: validChart.layout,
     name: "Revenue",
     sheetId: "sheet-1",
     status: "ok",
@@ -612,12 +622,30 @@ test("applyWorkbookTransaction rewrites persisted chart ranges for structural ed
     startColumn: 1,
     startRow: 4,
   });
+  assert.deepEqual(insertedRows.charts[0]?.layout, {
+    height: 260,
+    offsetX: 0,
+    offsetY: 0,
+    startColumn: 5,
+    startRow: 4,
+    width: 420,
+    zIndex: 0,
+  });
   assert.deepEqual(deletedColumns.charts[0]?.spec.source.range, {
     columnCount: 2,
     rowCount: 4,
     sheetId: workbook.activeSheetId,
     startColumn: 1,
     startRow: 4,
+  });
+  assert.deepEqual(deletedColumns.charts[0]?.layout, {
+    height: 260,
+    offsetX: 0,
+    offsetY: 0,
+    startColumn: 4,
+    startRow: 4,
+    width: 420,
+    zIndex: 0,
   });
 });
 
@@ -668,6 +696,47 @@ test("applyWorkbookTransaction preserves charts explicitly when deleting their s
   );
 });
 
+test("applyWorkbookTransaction clamps chart layout anchors when sheets shrink", () => {
+  const workbook = createWorkbookState();
+  const chart = createBarChart({
+    layout: {
+      height: 260,
+      offsetX: 0,
+      offsetY: 0,
+      startColumn: 20,
+      startRow: 80,
+      width: 420,
+      zIndex: 0,
+    },
+    sheetId: workbook.activeSheetId,
+  });
+
+  chart.spec.source.range.sheetId = workbook.activeSheetId;
+  workbook.charts = [chart];
+  workbook.nextChartNumber = 2;
+
+  const resizedWorkbook = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        columnCount: 3,
+        rowCount: 4,
+        sheetId: workbook.activeSheetId,
+        type: "resizeSheet",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(resizedWorkbook.charts[0]?.layout, {
+    height: 260,
+    offsetX: 0,
+    offsetY: 0,
+    startColumn: 2,
+    startRow: 3,
+    width: 420,
+    zIndex: 0,
+  });
+});
+
 test("applyWorkbookTransaction manages chart lifecycle operations", () => {
   const initialState = applyWorkbookTransaction(createWorkbookState(), {
     operations: [
@@ -712,6 +781,15 @@ test("applyWorkbookTransaction manages chart lifecycle operations", () => {
   assert.deepEqual(afterAdd.charts, [
     {
       id: "chart-1",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 3,
+        startRow: 0,
+        width: 420,
+        zIndex: 0,
+      },
       name: "Chart 1",
       sheetId: primarySheetId,
       spec: {
@@ -737,13 +815,50 @@ test("applyWorkbookTransaction manages chart lifecycle operations", () => {
     {
       chartType: "bar",
       id: "chart-1",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 3,
+        startRow: 0,
+        width: 420,
+        zIndex: 0,
+      },
       name: "Chart 1",
       sheetId: primarySheetId,
       status: "ok",
     },
   ]);
 
-  const afterRenameAndRetarget = applyWorkbookTransaction(afterAdd, {
+  const afterLayout = applyWorkbookTransaction(afterAdd, {
+    operations: [
+      {
+        chartId: "chart-1",
+        layout: {
+          height: 300,
+          offsetX: 12,
+          offsetY: 8,
+          startColumn: 2,
+          startRow: 1,
+          width: 500,
+          zIndex: 4,
+        },
+        type: "setChartLayout",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(afterLayout.charts[0]?.layout, {
+    height: 300,
+    offsetX: 12,
+    offsetY: 8,
+    startColumn: 2,
+    startRow: 1,
+    width: 500,
+    zIndex: 4,
+  });
+
+  const afterRenameAndRetarget = applyWorkbookTransaction(afterLayout, {
     operations: [
       {
         chartId: "chart-1",
@@ -777,6 +892,15 @@ test("applyWorkbookTransaction manages chart lifecycle operations", () => {
   assert.equal(afterRenameAndRetarget.charts[0]?.name, "Margin Mix");
   assert.equal(afterRenameAndRetarget.charts[0]?.sheetId, "sheet-metrics");
   assert.equal(afterRenameAndRetarget.charts[0]?.spec.family, "pie");
+  assert.deepEqual(afterRenameAndRetarget.charts[0]?.layout, {
+    height: 300,
+    offsetX: 12,
+    offsetY: 8,
+    startColumn: 2,
+    startRow: 1,
+    width: 500,
+    zIndex: 4,
+  });
   assert.equal(afterRenameAndRetarget.nextChartNumber, 2);
 
   const afterDelete = applyWorkbookTransaction(afterRenameAndRetarget, {

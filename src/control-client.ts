@@ -27,6 +27,7 @@ import type {
   SheetRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
   WorkbookSummary,
 } from "./workbook-core";
@@ -199,6 +200,13 @@ export class SpreadyControlClient extends EventEmitter {
 
   async getSheetCharts(sheetId?: string) {
     return this.call<WorkbookSheetChartsResult>("getSheetCharts", { sheetId });
+  }
+
+  async getSheetChartPreviews(sheetId?: string) {
+    return this.call<WorkbookSheetChartPreviewsResult>(
+      "getSheetChartPreviews",
+      { sheetId },
+    );
   }
 
   async getSheetDisplayRange(request: SheetRangeRequest) {

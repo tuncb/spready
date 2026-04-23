@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 import type {
   WorkbookChartPreview,
   WorkbookChartResult,
+  WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
 } from "./workbook-core";
 
@@ -32,6 +33,16 @@ const workbookChartSourceSchema = z.object({
   sourceHeader: z.boolean(),
 });
 
+export const workbookChartLayoutSchema = z.object({
+  height: z.number().min(140),
+  offsetX: z.number().min(0),
+  offsetY: z.number().min(0),
+  startColumn: z.int().min(0),
+  startRow: z.int().min(0),
+  width: z.number().min(180),
+  zIndex: z.int().min(0),
+});
+
 const workbookChartCartesianSpecSchema = z.object({
   categoryDimension: z.int().min(0),
   chartType: z.enum(["bar", "line", "area", "scatter"]),
@@ -52,6 +63,7 @@ const workbookChartPieSpecSchema = z.object({
 
 export const workbookChartSchema = z.object({
   id: z.string(),
+  layout: workbookChartLayoutSchema,
   name: z.string(),
   sheetId: z.string(),
   spec: z.discriminatedUnion("family", [
@@ -63,6 +75,7 @@ export const workbookChartSchema = z.object({
 export const workbookChartSummarySchema = z.object({
   chartType: workbookChartTypeSchema,
   id: z.string(),
+  layout: workbookChartLayoutSchema,
   name: z.string(),
   sheetId: z.string(),
   status: workbookChartStatusSchema,
@@ -112,6 +125,12 @@ export const workbookChartPreviewSchema = workbookChartResultSchema.extend({
   warnings: z.array(z.string()),
 });
 
+export const workbookSheetChartPreviewsResultSchema = z.object({
+  previews: z.array(workbookChartPreviewSchema),
+  sheetId: z.string(),
+  sheetName: z.string(),
+});
+
 const optionalSheetIdInputSchema = z.object({
   sheetId: z
     .string()
@@ -151,6 +170,15 @@ export const chartGuideTools = [
     useWhen:
       "Use this when you need renderer-ready chart preview data without recreating workbook logic outside Spready.",
   },
+  {
+    defaultsToActiveSheet: true,
+    description:
+      "Return renderer-ready chart previews for all charts owned by a sheet.",
+    name: "get_sheet_chart_previews",
+    readOnly: true,
+    useWhen:
+      "Use this to render or inspect every chart overlay on a sheet without issuing one request per chart.",
+  },
 ] as const;
 
 interface ChartToolRegistrar {
@@ -178,6 +206,9 @@ interface ChartToolRegistrar {
 interface ChartToolControlClient {
   getChart(chartId: string): Promise<WorkbookChartResult>;
   getChartPreview(chartId: string): Promise<WorkbookChartPreview>;
+  getSheetChartPreviews(
+    sheetId?: string,
+  ): Promise<WorkbookSheetChartPreviewsResult>;
   getSheetCharts(sheetId?: string): Promise<WorkbookSheetChartsResult>;
 }
 
@@ -239,6 +270,27 @@ export function registerChartTools(
       const { chartId } = chartIdInputSchema.parse(args);
 
       return createTextResult(await controlClient.getChartPreview(chartId));
+    },
+  );
+
+  server.registerTool(
+    "get_sheet_chart_previews",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description:
+        "Return renderer-ready previews for all chart definitions owned by a sheet. Omit sheetId to use the active sheet.",
+      inputSchema: optionalSheetIdInputSchema,
+      outputSchema: workbookSheetChartPreviewsResultSchema,
+    },
+    async (args) => {
+      const { sheetId } = optionalSheetIdInputSchema.parse(args);
+
+      return createTextResult(
+        await controlClient.getSheetChartPreviews(sheetId),
+      );
     },
   );
 }

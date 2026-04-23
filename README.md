@@ -237,6 +237,7 @@ Supported transaction operations currently include:
 - `addSheet`
 - `addChart`
 - `setActiveSheet`
+- `setChartLayout`
 - `setChartSpec`
 - `renameSheet`
 - `renameChart`
@@ -268,6 +269,10 @@ The stdio MCP wrapper currently exposes:
 - `get_sheet_display_range`
 - `get_sheet_range`
 - `get_sheet_csv`
+- `get_sheet_charts`
+- `get_chart`
+- `get_chart_preview`
+- `get_sheet_chart_previews`
 - `open_workbook_file`
 - `save_workbook_file`
 - `import_csv_file`

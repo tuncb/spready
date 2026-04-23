@@ -307,6 +307,15 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
   workbook.charts = [
     {
       id: "chart-1",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 4,
+        startRow: 0,
+        width: 420,
+        zIndex: 0,
+      },
       name: "Quarterly Revenue",
       sheetId: workbook.sheets[0].id,
       spec: {
@@ -329,6 +338,15 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
     },
     {
       id: "chart-2",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 4,
+        startRow: 8,
+        width: 420,
+        zIndex: 1,
+      },
       name: "Broken Chart",
       sheetId: workbook.sheets[0].id,
       spec: {
@@ -351,6 +369,15 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
     },
     {
       id: "chart-3",
+      layout: {
+        height: 260,
+        offsetX: 0,
+        offsetY: 0,
+        startColumn: 4,
+        startRow: 0,
+        width: 420,
+        zIndex: 2,
+      },
       name: "Metrics By Quarter",
       sheetId: metricsSheet.id,
       spec: {
@@ -391,6 +418,7 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
     const metricsCharts = controller.getSheetCharts(metricsSheet.id);
     const chartResult = controller.getChart("chart-1");
     const preview = controller.getChartPreview("chart-1");
+    const sheetPreviews = controller.getSheetChartPreviews();
     const invalidPreview = controller.getChartPreview("chart-2");
     const rowLayoutPreview = controller.getChartPreview("chart-3");
 
@@ -420,6 +448,11 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
       activeSheetCharts.charts.map((chart) => chart.id),
       ["chart-1", "chart-2"],
     );
+    assert.deepEqual(
+      sheetPreviews.previews.map((sheetPreview) => sheetPreview.chart.id),
+      ["chart-1", "chart-2"],
+    );
+    assert.equal(sheetPreviews.sheetId, workbook.sheets[0].id);
     assert.equal(metricsCharts.sheetId, metricsSheet.id);
     assert.deepEqual(
       metricsCharts.charts.map((chart) => chart.id),
@@ -662,9 +695,36 @@ test("WorkbookController applies chart lifecycle transactions through the shared
     ],
   });
 
+  controller.applyTransaction({
+    operations: [
+      {
+        chartId: "chart-1",
+        layout: {
+          height: 320,
+          offsetX: 16,
+          offsetY: 9,
+          startColumn: 2,
+          startRow: 3,
+          width: 520,
+          zIndex: 5,
+        },
+        type: "setChartLayout",
+      },
+    ],
+  });
+
   assert.deepEqual(controller.getChart("chart-1"), {
     chart: {
       id: "chart-1",
+      layout: {
+        height: 320,
+        offsetX: 16,
+        offsetY: 9,
+        startColumn: 2,
+        startRow: 3,
+        width: 520,
+        zIndex: 5,
+      },
       name: "Trend",
       sheetId: controller.getSummary().activeSheetId,
       spec: {

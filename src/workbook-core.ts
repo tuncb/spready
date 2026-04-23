@@ -1,6 +1,10 @@
 export const DEFAULT_INITIAL_ROWS = 200;
 export const DEFAULT_INITIAL_COLUMNS = 50;
 export const DEFAULT_SHEET_NAME = "Sheet 1";
+export const DEFAULT_CHART_LAYOUT_WIDTH = 420;
+export const DEFAULT_CHART_LAYOUT_HEIGHT = 260;
+export const MIN_CHART_LAYOUT_WIDTH = 180;
+export const MIN_CHART_LAYOUT_HEIGHT = 140;
 
 export interface ControlServerInfo {
   host: string;
@@ -74,6 +78,16 @@ export interface WorkbookChartSource {
   sourceHeader: boolean;
 }
 
+export interface WorkbookChartLayout {
+  height: number;
+  offsetX: number;
+  offsetY: number;
+  startColumn: number;
+  startRow: number;
+  width: number;
+  zIndex: number;
+}
+
 export interface WorkbookChartCartesianSpec {
   family: "cartesian";
   chartType: Exclude<WorkbookChartType, "pie">;
@@ -98,6 +112,7 @@ export type WorkbookChartSpec =
 
 export interface WorkbookChart {
   id: string;
+  layout: WorkbookChartLayout;
   name: string;
   sheetId: string;
   spec: WorkbookChartSpec;
@@ -126,6 +141,7 @@ export interface WorkbookChartValidationIssue {
 
 export interface WorkbookChartSummary {
   id: string;
+  layout: WorkbookChartLayout;
   name: string;
   sheetId: string;
   chartType: WorkbookChartType;
@@ -160,6 +176,12 @@ export interface WorkbookChartPreview extends WorkbookChartResult {
   dataset: WorkbookChartPreviewDataset;
   option: Record<string, unknown>;
   warnings: string[];
+}
+
+export interface WorkbookSheetChartPreviewsResult {
+  sheetId: string;
+  sheetName: string;
+  previews: WorkbookChartPreview[];
 }
 
 export interface SheetRangeRequest {
@@ -238,6 +260,7 @@ export type WorkbookTransactionOperation =
     }
   | {
       chartId?: string;
+      layout?: WorkbookChartLayout;
       name?: string;
       spec: WorkbookChartSpec;
       type: "addChart";
@@ -316,6 +339,11 @@ export type WorkbookTransactionOperation =
   | {
       type: "setActiveSheet";
       sheetId: string;
+    }
+  | {
+      chartId: string;
+      layout: WorkbookChartLayout;
+      type: "setChartLayout";
     }
   | {
       chartId: string;
@@ -680,6 +708,7 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
 export function cloneWorkbookChart(chart: WorkbookChart): WorkbookChart {
   return {
     ...chart,
+    layout: cloneWorkbookChartLayout(chart.layout),
     spec: cloneWorkbookChartSpec(chart.spec),
   };
 }
@@ -940,6 +969,7 @@ export function createWorkbookChartSummary(
   return {
     chartType: chart.spec.chartType,
     id: chart.id,
+    layout: cloneWorkbookChartLayout(chart.layout),
     name: chart.name,
     sheetId: chart.sheetId,
     status: getWorkbookChartStatus(chart, sheets),
@@ -1128,9 +1158,12 @@ export function applyWorkbookTransaction(
           chartId,
           operation.name?.trim() || `Chart ${nextState.nextChartNumber}`,
           operation.spec,
+          operation.layout,
+          nextState,
         );
 
         assertCreatableWorkbookChart(chart, nextState, "added");
+        assertWorkbookChartLayoutInBounds(chart, nextState, "added");
 
         nextState.charts = [...nextState.charts, chart];
         nextState.nextChartNumber += 1;
@@ -1211,11 +1244,17 @@ export function applyWorkbookTransaction(
         }
 
         nextState.charts = nextState.charts.map((chart) =>
-          adjustWorkbookChartForDeletedColumns(
-            chart,
+          adjustWorkbookChartLayoutForDeletedColumns(
+            adjustWorkbookChartForDeletedColumns(
+              chart,
+              sheet.id,
+              deleteStart,
+              requestedDeleteCount,
+            ),
             sheet.id,
             deleteStart,
             requestedDeleteCount,
+            getSheetColumnCount(sheet),
           ),
         );
         changed = true;
@@ -1256,11 +1295,17 @@ export function applyWorkbookTransaction(
         }
 
         nextState.charts = nextState.charts.map((chart) =>
-          adjustWorkbookChartForDeletedRows(
-            chart,
+          adjustWorkbookChartLayoutForDeletedRows(
+            adjustWorkbookChartForDeletedRows(
+              chart,
+              sheet.id,
+              deleteStart,
+              requestedDeleteCount,
+            ),
             sheet.id,
             deleteStart,
             requestedDeleteCount,
+            getSheetRowCount(sheet),
           ),
         );
         changed = true;
@@ -1330,8 +1375,13 @@ export function applyWorkbookTransaction(
         }
 
         nextState.charts = nextState.charts.map((chart) =>
-          adjustWorkbookChartForInsertedColumns(
-            chart,
+          adjustWorkbookChartLayoutForInsertedColumns(
+            adjustWorkbookChartForInsertedColumns(
+              chart,
+              sheet.id,
+              insertAt,
+              operation.count,
+            ),
             sheet.id,
             insertAt,
             operation.count,
@@ -1364,8 +1414,13 @@ export function applyWorkbookTransaction(
           ),
         );
         nextState.charts = nextState.charts.map((chart) =>
-          adjustWorkbookChartForInsertedRows(
-            chart,
+          adjustWorkbookChartLayoutForInsertedRows(
+            adjustWorkbookChartForInsertedRows(
+              chart,
+              sheet.id,
+              insertAt,
+              operation.count,
+            ),
             sheet.id,
             insertAt,
             operation.count,
@@ -1431,6 +1486,9 @@ export function applyWorkbookTransaction(
 
         if (!matricesEqual(sheet.cells, nextCells)) {
           sheet.cells = nextCells;
+          nextState.charts = nextState.charts.map((chart) =>
+            clampWorkbookChartLayoutToSheet(chart, sheet),
+          );
           changed = true;
         }
 
@@ -1457,6 +1515,9 @@ export function applyWorkbookTransaction(
 
         if (!matricesEqual(sheet.cells, nextCells)) {
           sheet.cells = nextCells;
+          nextState.charts = nextState.charts.map((chart) =>
+            clampWorkbookChartLayoutToSheet(chart, sheet),
+          );
           changed = true;
         }
 
@@ -1496,6 +1557,9 @@ export function applyWorkbookTransaction(
           targetRowCount,
           targetColumnCount,
         );
+        nextState.charts = nextState.charts.map((chart) =>
+          clampWorkbookChartLayoutToSheet(chart, sheet),
+        );
         changed = true;
         break;
       }
@@ -1523,13 +1587,47 @@ export function applyWorkbookTransaction(
         }
 
         const currentChart = nextState.charts[chartIndex];
-        const nextChart: WorkbookChart = {
+        const nextChartCandidate: WorkbookChart = {
           ...currentChart,
           sheetId: operation.spec.source.range.sheetId,
           spec: cloneWorkbookChartSpec(operation.spec),
         };
 
-        assertCreatableWorkbookChart(nextChart, nextState, "updated");
+        assertCreatableWorkbookChart(nextChartCandidate, nextState, "updated");
+
+        const nextChart = clampWorkbookChartLayoutToSheet(
+          nextChartCandidate,
+          getSheetById(nextState, operation.spec.source.range.sheetId),
+        );
+
+        assertWorkbookChartLayoutInBounds(nextChart, nextState, "updated");
+
+        if (workbookChartsEqual(currentChart, nextChart)) {
+          break;
+        }
+
+        nextState.charts = nextState.charts.map((chart, index) =>
+          index === chartIndex ? nextChart : chart,
+        );
+        changed = true;
+        break;
+      }
+
+      case "setChartLayout": {
+        const chartId = normalizeRequiredChartId(operation.chartId);
+        const chartIndex = findChartIndex(nextState, chartId);
+
+        if (chartIndex < 0) {
+          throw new Error(`Chart "${chartId}" was not found.`);
+        }
+
+        const currentChart = nextState.charts[chartIndex];
+        const nextChart: WorkbookChart = {
+          ...currentChart,
+          layout: normalizeWorkbookChartLayout(operation.layout),
+        };
+
+        assertWorkbookChartLayoutInBounds(nextChart, nextState, "updated");
 
         if (workbookChartsEqual(currentChart, nextChart)) {
           break;
@@ -1673,6 +1771,28 @@ function assertNonNegativeIndex(value: number, label: string) {
   }
 }
 
+function assertNonNegativeInteger(value: number, label: string) {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`);
+  }
+}
+
+function assertNonNegativeFiniteNumber(value: number, label: string) {
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative finite number.`);
+  }
+}
+
+function assertMinimumFiniteNumber(
+  value: number,
+  minimum: number,
+  label: string,
+) {
+  if (!Number.isFinite(value) || value < minimum) {
+    throw new Error(`${label} must be at least ${minimum}.`);
+  }
+}
+
 function clampToRange(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(Math.floor(value), max));
 }
@@ -1700,19 +1820,70 @@ function cloneWorkbookChartSpec(spec: WorkbookChartSpec): WorkbookChartSpec {
       };
 }
 
+function cloneWorkbookChartLayout(
+  layout: WorkbookChartLayout,
+): WorkbookChartLayout {
+  return {
+    height: layout.height,
+    offsetX: layout.offsetX,
+    offsetY: layout.offsetY,
+    startColumn: layout.startColumn,
+    startRow: layout.startRow,
+    width: layout.width,
+    zIndex: layout.zIndex,
+  };
+}
+
 function createWorkbookChart(
   id: string,
   name: string,
   spec: WorkbookChartSpec,
+  layout: WorkbookChartLayout | undefined,
+  workbook: Pick<WorkbookState, "charts" | "sheets">,
 ): WorkbookChart {
   const nextSpec = cloneWorkbookChartSpec(spec);
 
   return {
     id,
+    layout: layout
+      ? normalizeWorkbookChartLayout(layout)
+      : createDefaultWorkbookChartLayout(nextSpec, workbook),
     name,
     sheetId: nextSpec.source.range.sheetId,
     spec: nextSpec,
   };
+}
+
+function createDefaultWorkbookChartLayout(
+  spec: WorkbookChartSpec,
+  workbook: Pick<WorkbookState, "charts" | "sheets">,
+): WorkbookChartLayout {
+  const sheet = getSheetById(workbook, spec.source.range.sheetId);
+  const columnCount = getSheetColumnCount(sheet);
+  const rowCount = getSheetRowCount(sheet);
+  const preferredColumn =
+    spec.source.range.startColumn + spec.source.range.columnCount + 1;
+
+  return {
+    height: DEFAULT_CHART_LAYOUT_HEIGHT,
+    offsetX: 0,
+    offsetY: 0,
+    startColumn: clampToRange(preferredColumn, 0, columnCount - 1),
+    startRow: clampToRange(spec.source.range.startRow, 0, rowCount - 1),
+    width: DEFAULT_CHART_LAYOUT_WIDTH,
+    zIndex: getNextWorkbookChartZIndex(workbook),
+  };
+}
+
+function getNextWorkbookChartZIndex(
+  workbook: Pick<WorkbookState, "charts">,
+): number {
+  return (
+    Math.max(
+      -1,
+      ...workbook.charts.map((chart) => Math.floor(chart.layout.zIndex)),
+    ) + 1
+  );
 }
 
 function createChartId(nextChartNumber: number): string {
@@ -1776,6 +1947,7 @@ function workbookChartsEqual(
 ): boolean {
   return (
     left.id === right.id &&
+    workbookChartLayoutsEqual(left.layout, right.layout) &&
     left.name === right.name &&
     left.sheetId === right.sheetId &&
     workbookChartSpecsEqual(left.spec, right.spec)
@@ -1828,11 +2000,214 @@ function workbookChartRangesEqual(
   );
 }
 
+function workbookChartLayoutsEqual(
+  left: WorkbookChartLayout,
+  right: WorkbookChartLayout,
+): boolean {
+  return (
+    left.height === right.height &&
+    left.offsetX === right.offsetX &&
+    left.offsetY === right.offsetY &&
+    left.startColumn === right.startColumn &&
+    left.startRow === right.startRow &&
+    left.width === right.width &&
+    left.zIndex === right.zIndex
+  );
+}
+
 function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
   return (
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
+}
+
+function normalizeWorkbookChartLayout(
+  layout: WorkbookChartLayout,
+): WorkbookChartLayout {
+  const nextLayout = {
+    height: layout.height,
+    offsetX: layout.offsetX,
+    offsetY: layout.offsetY,
+    startColumn: layout.startColumn,
+    startRow: layout.startRow,
+    width: layout.width,
+    zIndex: layout.zIndex,
+  };
+
+  assertNonNegativeInteger(nextLayout.startRow, "Chart layout start row");
+  assertNonNegativeInteger(nextLayout.startColumn, "Chart layout start column");
+  assertNonNegativeFiniteNumber(nextLayout.offsetX, "Chart layout offset x");
+  assertNonNegativeFiniteNumber(nextLayout.offsetY, "Chart layout offset y");
+  assertMinimumFiniteNumber(
+    nextLayout.width,
+    MIN_CHART_LAYOUT_WIDTH,
+    "Chart layout width",
+  );
+  assertMinimumFiniteNumber(
+    nextLayout.height,
+    MIN_CHART_LAYOUT_HEIGHT,
+    "Chart layout height",
+  );
+  assertNonNegativeInteger(nextLayout.zIndex, "Chart layout z-index");
+
+  return nextLayout;
+}
+
+function assertWorkbookChartLayoutInBounds(
+  chart: WorkbookChart,
+  workbook: Pick<WorkbookState, "sheets">,
+  verb: "added" | "updated",
+) {
+  const sheet = getSheetById(workbook, chart.sheetId);
+  const rowCount = getSheetRowCount(sheet);
+  const columnCount = getSheetColumnCount(sheet);
+
+  if (
+    chart.layout.startRow >= rowCount ||
+    chart.layout.startColumn >= columnCount
+  ) {
+    throw new Error(
+      `Chart "${chart.id}" cannot be ${verb}: chart layout anchor must be inside the chart sheet bounds.`,
+    );
+  }
+}
+
+function clampWorkbookChartLayoutToSheet(
+  chart: WorkbookChart,
+  sheet: WorkbookSheet,
+): WorkbookChart {
+  if (chart.sheetId !== sheet.id) {
+    return chart;
+  }
+
+  const layout = chart.layout;
+  const nextLayout = {
+    ...layout,
+    startColumn: clampToRange(
+      layout.startColumn,
+      0,
+      getSheetColumnCount(sheet) - 1,
+    ),
+    startRow: clampToRange(layout.startRow, 0, getSheetRowCount(sheet) - 1),
+  };
+
+  return workbookChartLayoutsEqual(layout, nextLayout)
+    ? chart
+    : {
+        ...chart,
+        layout: nextLayout,
+      };
+}
+
+function adjustWorkbookChartLayoutForInsertedRows(
+  chart: WorkbookChart,
+  sheetId: string,
+  rowIndex: number,
+  count: number,
+): WorkbookChart {
+  if (chart.sheetId !== sheetId || rowIndex > chart.layout.startRow) {
+    return chart;
+  }
+
+  return {
+    ...chart,
+    layout: {
+      ...chart.layout,
+      startRow: chart.layout.startRow + count,
+    },
+  };
+}
+
+function adjustWorkbookChartLayoutForInsertedColumns(
+  chart: WorkbookChart,
+  sheetId: string,
+  columnIndex: number,
+  count: number,
+): WorkbookChart {
+  if (chart.sheetId !== sheetId || columnIndex > chart.layout.startColumn) {
+    return chart;
+  }
+
+  return {
+    ...chart,
+    layout: {
+      ...chart.layout,
+      startColumn: chart.layout.startColumn + count,
+    },
+  };
+}
+
+function adjustWorkbookChartLayoutForDeletedRows(
+  chart: WorkbookChart,
+  sheetId: string,
+  rowIndex: number,
+  count: number,
+  nextRowCount: number,
+): WorkbookChart {
+  if (chart.sheetId !== sheetId) {
+    return chart;
+  }
+
+  const nextStartRow = clampToRange(
+    adjustPointForDeletion(chart.layout.startRow, rowIndex, count),
+    0,
+    nextRowCount - 1,
+  );
+
+  return nextStartRow === chart.layout.startRow
+    ? chart
+    : {
+        ...chart,
+        layout: {
+          ...chart.layout,
+          startRow: nextStartRow,
+        },
+      };
+}
+
+function adjustWorkbookChartLayoutForDeletedColumns(
+  chart: WorkbookChart,
+  sheetId: string,
+  columnIndex: number,
+  count: number,
+  nextColumnCount: number,
+): WorkbookChart {
+  if (chart.sheetId !== sheetId) {
+    return chart;
+  }
+
+  const nextStartColumn = clampToRange(
+    adjustPointForDeletion(chart.layout.startColumn, columnIndex, count),
+    0,
+    nextColumnCount - 1,
+  );
+
+  return nextStartColumn === chart.layout.startColumn
+    ? chart
+    : {
+        ...chart,
+        layout: {
+          ...chart.layout,
+          startColumn: nextStartColumn,
+        },
+      };
+}
+
+function adjustPointForDeletion(
+  point: number,
+  deleteIndex: number,
+  count: number,
+): number {
+  if (point < deleteIndex) {
+    return point;
+  }
+
+  if (point >= deleteIndex + count) {
+    return point - count;
+  }
+
+  return deleteIndex;
 }
 
 function updateWorkbookChartRange(
@@ -2002,7 +2377,10 @@ function getMutableSheet(
   return clonedSheet;
 }
 
-function getSheetById(workbook: WorkbookState, sheetId: string): WorkbookSheet {
+function getSheetById(
+  workbook: Pick<WorkbookState, "sheets">,
+  sheetId: string,
+): WorkbookSheet {
   const sheet = workbook.sheets.find((entry) => entry.id === sheetId);
 
   if (!sheet) {

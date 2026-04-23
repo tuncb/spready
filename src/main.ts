@@ -841,6 +841,12 @@ ipcMain.handle(
     workbookController.getSheetCharts(args?.sheetId),
 );
 
+ipcMain.handle(
+  "workbook:get-sheet-chart-previews",
+  (_event, args?: { sheetId?: string }) =>
+    workbookController.getSheetChartPreviews(args?.sheetId),
+);
+
 ipcMain.handle("workbook:save-file", (_event, args: { filePath: string }) =>
   workbookController.saveWorkbookFile(args),
 );

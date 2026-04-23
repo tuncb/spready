@@ -23,12 +23,16 @@
 - V1 chart definitions use a tabular source model aligned with ECharts `dataset` and `encode`, with `seriesLayoutBy` captured explicitly in the shared contract.
 - V1 chart dimensions are interpreted against the layout axis chosen by `seriesLayoutBy`: `column` uses source columns as dimensions, and `row` uses source rows as dimensions.
 - V1 chart creation must require a non-empty source range and valid dimension indexes. Structural sheet edits may later move or shrink those ranges, and invalid charts should remain explicit rather than being silently deleted.
-- Native workbook files move to `.spready` document format version 2 for chart persistence. Older workbook document versions are intentionally rejected rather than migrated.
+- Native workbook files use `.spready` document format version 3 for chart specs and embedded chart layout persistence. Older workbook document versions are intentionally rejected rather than migrated.
 - Controller-side chart reads return shared chart definitions plus derived status and validation issues; chart preview is a read-only projection that adds a normalized dataset and derived ECharts option.
 - Preview generation normalizes `seriesLayoutBy: "row"` sources into a column-oriented dataset before building ECharts options, so renderer consumers only need one dataset shape in v1.
 - Preview generation converts blank cells and formula errors to `null` points. Formula errors also emit preview warnings instead of failing the entire chart preview.
 - Invalid charts still return a preview payload with an empty dataset and a minimal title-only option, rather than throwing from the read path.
-- Chart writes use transaction operations inside `applyWorkbookTransaction` (`addChart`, `renameChart`, `setChartSpec`, `deleteChart`) instead of controller-specific or transport-specific chart mutation methods.
-- TCP chart support mirrors the controller method names and shared payloads directly: `getSheetCharts`, `getChart`, and `getChartPreview`. No chart-specific transport contract is introduced.
-- MCP chart support stays a thin read-only adapter over TCP with `get_sheet_charts`, `get_chart`, and `get_chart_preview`. MCP does not implement workbook or chart rules itself.
+- Chart writes use transaction operations inside `applyWorkbookTransaction` (`addChart`, `renameChart`, `setChartSpec`, `setChartLayout`, `deleteChart`) instead of controller-specific or transport-specific chart mutation methods.
+- TCP chart support mirrors the controller method names and shared payloads directly: `getSheetCharts`, `getSheetChartPreviews`, `getChart`, and `getChartPreview`. Transport layers do not own chart business rules.
+- MCP chart support stays a thin read-only adapter over TCP with `get_sheet_charts`, `get_sheet_chart_previews`, `get_chart`, and `get_chart_preview`. MCP does not implement workbook or chart rules itself.
 - Structural row and column edits rewrite persisted chart source ranges inside `applyWorkbookTransaction`, not in the renderer or transport layers. Deleting a sheet keeps its charts as explicit invalid records rather than silently removing them.
+- Embedded chart layout is workbook-owned and persisted on each chart as a cell anchor plus pixel offsets, pixel width/height, and z-index. The renderer may keep transient drag/resize state, but committed chart moves and resizes use `setChartLayout` transactions.
+- Chart layout anchors move when rows or columns are inserted or deleted before the anchor. Chart sizes remain pixel-based and do not automatically resize with cell structural edits. When sheet dimensions shrink, chart anchors clamp to the remaining sheet bounds so embedded charts stay reachable.
+- Embedded chart UI renders charts over the spreadsheet grid rather than in a separate chart pane. ECharts options remain derived preview data; the persisted chart contract stores only Spready chart specs and layout.
+- When an embedded chart is selected, the Delete key and delete menu action delete that chart immediately via the existing `deleteChart` transaction. Formula-bar text deletion still takes precedence while the formula input is focused.

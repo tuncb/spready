@@ -269,6 +269,10 @@ export class SpreadyControlServer {
         return this.#controller.getSheetCharts(
           (params as { sheetId?: string } | undefined)?.sheetId,
         );
+      case "getSheetChartPreviews":
+        return this.#controller.getSheetChartPreviews(
+          (params as { sheetId?: string } | undefined)?.sheetId,
+        );
       case "getSheetDisplayRange":
         return this.#controller.getSheetDisplayRange(
           params as SheetRangeRequest,
@@ -307,6 +311,7 @@ export class SpreadyControlServer {
           "getControlInfo",
           "getSheetCsv",
           "getSheetCharts",
+          "getSheetChartPreviews",
           "getSheetDisplayRange",
           "getSheetRange",
           "getUsedRange",

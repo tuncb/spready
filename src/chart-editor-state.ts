@@ -1,5 +1,7 @@
 import {
   getColumnTitle,
+  DEFAULT_CHART_LAYOUT_HEIGHT,
+  DEFAULT_CHART_LAYOUT_WIDTH,
   getWorkbookChartValidationIssues,
   parseCellReference,
   type WorkbookChart,
@@ -204,6 +206,15 @@ export function getChartEditorValidationIssues(
     return getWorkbookChartValidationIssues(
       {
         id: chartId,
+        layout: {
+          height: DEFAULT_CHART_LAYOUT_HEIGHT,
+          offsetX: 0,
+          offsetY: 0,
+          startColumn: 0,
+          startRow: 0,
+          width: DEFAULT_CHART_LAYOUT_WIDTH,
+          zIndex: 0,
+        },
         name,
         sheetId,
         spec: buildChartEditorSpec(sheetId, state),

@@ -39,6 +39,7 @@ import {
   type WorkbookChartPreview,
   type WorkbookChartResult,
   type WorkbookChartSheetReference,
+  type WorkbookSheetChartPreviewsResult,
   type WorkbookSheetChartsResult,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
@@ -70,6 +71,27 @@ export class WorkbookController extends EventEmitter {
 
   getSheetCharts(sheetId?: string): WorkbookSheetChartsResult {
     return getWorkbookSheetCharts(this.#state, sheetId);
+  }
+
+  getSheetChartPreviews(sheetId?: string): WorkbookSheetChartPreviewsResult {
+    const sheetCharts = getWorkbookSheetCharts(this.#state, sheetId);
+
+    return {
+      previews: sheetCharts.charts.map((chart) => {
+        const chartSheet = this.#state.sheets.find(
+          (sheet) => sheet.id === chart.sheetId,
+        );
+
+        return buildWorkbookChartPreview(
+          chart,
+          chartSheet,
+          chartSheet ? this.#getEvaluationSnapshot(chartSheet.id) : undefined,
+          this.#getChartSheetReferences(),
+        );
+      }),
+      sheetId: sheetCharts.sheetId,
+      sheetName: sheetCharts.sheetName,
+    };
   }
 
   getChart(chartId: string): WorkbookChartResult {

@@ -2,6 +2,8 @@ import * as z from "zod/v4";
 
 import {
   createSheet,
+  MIN_CHART_LAYOUT_HEIGHT,
+  MIN_CHART_LAYOUT_WIDTH,
   syncSheetIdSequence,
   type WorkbookChart,
   type WorkbookSheet,
@@ -10,7 +12,7 @@ import {
 
 export const WORKBOOK_DOCUMENT_EXTENSION = ".spready";
 export const WORKBOOK_DOCUMENT_FORMAT = "spready-workbook";
-export const WORKBOOK_DOCUMENT_VERSION = 2;
+export const WORKBOOK_DOCUMENT_VERSION = 3;
 
 export interface WorkbookDocumentCell {
   column: number;
@@ -76,6 +78,16 @@ const workbookDocumentChartSourceSchema = z.object({
   sourceHeader: z.boolean(),
 });
 
+const workbookDocumentChartLayoutSchema = z.object({
+  height: z.number().min(MIN_CHART_LAYOUT_HEIGHT),
+  offsetX: z.number().min(0),
+  offsetY: z.number().min(0),
+  startColumn: z.int().min(0),
+  startRow: z.int().min(0),
+  width: z.number().min(MIN_CHART_LAYOUT_WIDTH),
+  zIndex: z.int().min(0),
+});
+
 const workbookDocumentCartesianChartSpecSchema = z.object({
   categoryDimension: z.int().min(0),
   chartType: z.enum(["bar", "line", "area", "scatter"]),
@@ -96,6 +108,7 @@ const workbookDocumentPieChartSpecSchema = z.object({
 
 const workbookDocumentChartSchema = z.object({
   id: z.string().min(1),
+  layout: workbookDocumentChartLayoutSchema,
   name: z.string().min(1),
   sheetId: z.string().min(1),
   spec: z.discriminatedUnion("family", [
@@ -296,6 +309,9 @@ function restoreWorkbookSheet(sheet: WorkbookDocumentSheet): WorkbookSheet {
 function restoreWorkbookChart(chart: WorkbookDocumentChart): WorkbookChart {
   return {
     id: chart.id,
+    layout: {
+      ...chart.layout,
+    },
     name: chart.name,
     sheetId: chart.sheetId,
     spec: {

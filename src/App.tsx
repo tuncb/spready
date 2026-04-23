@@ -1,6 +1,7 @@
 import DataEditor, {
   CompactSelection,
   GridCellKind,
+  type DataEditorRef,
   type EditableGridCell,
   type GridCell,
   type GridColumn,
@@ -22,7 +23,7 @@ import { flushSync } from "react-dom";
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
-import { WorkbookChartDock } from "./WorkbookChartDock";
+import { WorkbookChartOverlay } from "./WorkbookChartOverlay";
 import {
   getColumnTitle,
   isFormulaInput,
@@ -30,9 +31,8 @@ import {
   serializeTsv,
   type CellDataResult,
   type ClipboardRangeMode,
-  type WorkbookChartPreview,
-  type WorkbookChartResult,
-  type WorkbookSheetChartsResult,
+  type WorkbookChartLayout,
+  type WorkbookSheetChartPreviewsResult,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
@@ -458,17 +458,14 @@ export default function App() {
   const [gridSelection, setGridSelection] = useState<GridSelection>(
     createEmptyGridSelection,
   );
-  const [isChartDetailLoading, setIsChartDetailLoading] = useState(false);
-  const [isSheetChartsLoading, setIsSheetChartsLoading] = useState(false);
+  const [gridViewportNonce, setGridViewportNonce] = useState(0);
+  const [isSheetChartPreviewsLoading, setIsSheetChartPreviewsLoading] =
+    useState(false);
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
-  const [selectedChartPreview, setSelectedChartPreview] =
-    useState<WorkbookChartPreview | null>(null);
-  const [selectedChartResult, setSelectedChartResult] =
-    useState<WorkbookChartResult | null>(null);
   const [selectedCellData, setSelectedCellData] =
     useState<CellDataResult | null>(null);
-  const [sheetCharts, setSheetCharts] =
-    useState<WorkbookSheetChartsResult | null>(null);
+  const [sheetChartPreviews, setSheetChartPreviews] =
+    useState<WorkbookSheetChartPreviewsResult | null>(null);
   const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(
     null,
   );
@@ -478,12 +475,13 @@ export default function App() {
   const exportPathRef = useRef<string>();
   const formulaInputRef = useRef<HTMLInputElement>(null);
   const displayRangeCacheRef = useRef<SheetDisplayRangeResult | null>(null);
+  const gridRef = useRef<DataEditorRef>(null);
   const lastVisibleRegionRef = useRef<VisibleRegion | null>(null);
   const pendingCellDataRequestIdRef = useRef(0);
-  const pendingChartDetailRequestIdRef = useRef(0);
   const pendingRangeRequestIdRef = useRef(0);
-  const pendingSheetChartsRequestIdRef = useRef(0);
+  const pendingSheetChartPreviewsRequestIdRef = useRef(0);
   const rawRangeCacheRef = useRef<SheetRangeResult | null>(null);
+  const sheetSurfaceRef = useRef<HTMLElement>(null);
   const isChartEditorOpen = chartEditorSession !== null;
 
   const activeSheet = useMemo(
@@ -503,10 +501,11 @@ export default function App() {
       (chart) => chart.sheetId === activeSheet?.id,
     );
 
-    if (!sheetCharts) {
+    if (!sheetChartPreviews) {
       return activeSheetCharts.map((chart) => ({
         chartType: chart.chartType,
         id: chart.id,
+        layout: chart.layout,
         name: chart.name,
         status: chart.status,
       }));
@@ -516,13 +515,14 @@ export default function App() {
       activeSheetCharts.map((chart) => [chart.id, chart.status]),
     );
 
-    return sheetCharts.charts.map((chart) => ({
-      chartType: chart.spec.chartType,
-      id: chart.id,
-      name: chart.name,
-      status: chartStatuses.get(chart.id) ?? "invalid",
+    return sheetChartPreviews.previews.map((preview) => ({
+      chartType: preview.chart.spec.chartType,
+      id: preview.chart.id,
+      layout: preview.chart.layout,
+      name: preview.chart.name,
+      status: chartStatuses.get(preview.chart.id) ?? preview.status,
     }));
-  }, [activeSheet?.id, sheetCharts, sheetSummary?.charts]);
+  }, [activeSheet?.id, sheetChartPreviews, sheetSummary?.charts]);
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
@@ -1055,6 +1055,24 @@ export default function App() {
         return deleteFormulaInputSelection();
       }
 
+      if (selectedChartId) {
+        const chartId = selectedChartId;
+
+        setSelectedChartId(null);
+
+        void applyTransaction([
+          {
+            chartId,
+            type: "deleteChart",
+          },
+        ]).catch((error) => {
+          setSelectedChartId(chartId);
+          pushErrorToast(error);
+        });
+
+        return true;
+      }
+
       if (!activeSheet) {
         return false;
       }
@@ -1102,6 +1120,7 @@ export default function App() {
       pushErrorToast,
       refreshSelectedCellData,
       selectedCell,
+      selectedChartId,
     ],
   );
 
@@ -1428,6 +1447,42 @@ export default function App() {
     [isChartEditorOpen, sheetSummary],
   );
 
+  const commitChartLayout = useCallback(
+    async (chartId: string, layout: WorkbookChartLayout) => {
+      if (!sheetSummary) {
+        return;
+      }
+
+      const currentMaxZIndex = Math.max(
+        -1,
+        ...(sheetChartPreviews?.previews ?? [])
+          .filter((preview) => preview.chart.id !== chartId)
+          .map((preview) => preview.chart.layout.zIndex),
+      );
+
+      try {
+        const result = await window.appShell.applyTransaction({
+          expectedVersion: sheetSummary.version,
+          operations: [
+            {
+              chartId,
+              layout: {
+                ...layout,
+                zIndex: Math.max(layout.zIndex, currentMaxZIndex + 1),
+              },
+              type: "setChartLayout",
+            },
+          ],
+        });
+
+        setSheetSummary(result.summary);
+      } catch (error) {
+        pushErrorToast(error);
+      }
+    },
+    [pushErrorToast, sheetChartPreviews?.previews, sheetSummary],
+  );
+
   useEffect(() => {
     let isMounted = true;
 
@@ -1501,11 +1556,9 @@ export default function App() {
 
   useEffect(() => {
     if (!activeSheet) {
-      setSheetCharts(null);
+      setSheetChartPreviews(null);
       setSelectedChartId(null);
-      setSelectedChartPreview(null);
-      setSelectedChartResult(null);
-      setIsSheetChartsLoading(false);
+      setIsSheetChartPreviewsLoading(false);
       return;
     }
 
@@ -1530,81 +1583,40 @@ export default function App() {
       return;
     }
 
-    const requestId = pendingSheetChartsRequestIdRef.current + 1;
+    const requestId = pendingSheetChartPreviewsRequestIdRef.current + 1;
 
-    pendingSheetChartsRequestIdRef.current = requestId;
-    setIsSheetChartsLoading(true);
+    pendingSheetChartPreviewsRequestIdRef.current = requestId;
+    setIsSheetChartPreviewsLoading(true);
 
     void window.appShell
-      .getSheetCharts(activeSheet.id)
+      .getSheetChartPreviews(activeSheet.id)
       .then((result) => {
-        if (pendingSheetChartsRequestIdRef.current !== requestId) {
+        if (pendingSheetChartPreviewsRequestIdRef.current !== requestId) {
           return;
         }
 
-        setSheetCharts(result);
+        setSheetChartPreviews(result);
         setSelectedChartId((current) =>
-          result.charts.some((chart) => chart.id === current)
+          result.previews.some((preview) => preview.chart.id === current)
             ? current
-            : (result.charts[0]?.id ?? null),
+            : null,
         );
       })
       .catch((error) => {
-        if (pendingSheetChartsRequestIdRef.current !== requestId) {
+        if (pendingSheetChartPreviewsRequestIdRef.current !== requestId) {
           return;
         }
 
-        setSheetCharts(null);
+        setSheetChartPreviews(null);
         setSelectedChartId(null);
         pushErrorToast(error);
       })
       .finally(() => {
-        if (pendingSheetChartsRequestIdRef.current === requestId) {
-          setIsSheetChartsLoading(false);
+        if (pendingSheetChartPreviewsRequestIdRef.current === requestId) {
+          setIsSheetChartPreviewsLoading(false);
         }
       });
   }, [activeSheet, pushErrorToast, sheetSummary?.version]);
-
-  useEffect(() => {
-    if (!selectedChartId) {
-      setSelectedChartPreview(null);
-      setSelectedChartResult(null);
-      setIsChartDetailLoading(false);
-      return;
-    }
-
-    const requestId = pendingChartDetailRequestIdRef.current + 1;
-
-    pendingChartDetailRequestIdRef.current = requestId;
-    setIsChartDetailLoading(true);
-
-    void Promise.all([
-      window.appShell.getChart(selectedChartId),
-      window.appShell.getChartPreview(selectedChartId),
-    ])
-      .then(([chartResult, chartPreview]) => {
-        if (pendingChartDetailRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        setSelectedChartResult(chartResult);
-        setSelectedChartPreview(chartPreview);
-      })
-      .catch((error) => {
-        if (pendingChartDetailRequestIdRef.current !== requestId) {
-          return;
-        }
-
-        setSelectedChartPreview(null);
-        setSelectedChartResult(null);
-        pushErrorToast(error);
-      })
-      .finally(() => {
-        if (pendingChartDetailRequestIdRef.current === requestId) {
-          setIsChartDetailLoading(false);
-        }
-      });
-  }, [pushErrorToast, selectedChartId, sheetSummary?.version]);
 
   useEffect(() => {
     return window.appShell.onMenuAction((action) => {
@@ -1786,12 +1798,20 @@ export default function App() {
       </section>
 
       <div className="app-shell__workspace">
-        <section className="sheet-surface" aria-label="Spreadsheet surface">
+        <section
+          className="sheet-surface"
+          aria-label="Spreadsheet surface"
+          onPointerDown={() => {
+            setSelectedChartId(null);
+          }}
+          ref={sheetSurfaceRef}
+        >
           <DataEditor
             onCellContextMenu={handleCellContextMenu}
             columns={columns}
             getCellContent={getCellContent}
             getCellsForSelection={getCellsForSelection}
+            ref={gridRef}
             gridSelection={gridSelection}
             height="100%"
             onCellEdited={handleCellEdited}
@@ -1812,6 +1832,7 @@ export default function App() {
                 y: region.y,
               };
 
+              setGridViewportNonce((current) => current + 1);
               void loadVisibleRange(lastVisibleRegionRef.current);
             }}
             rowMarkers={{ kind: "number", startIndex: 1, width: 60 }}
@@ -1821,19 +1842,18 @@ export default function App() {
             theme={GRID_THEME}
             width="100%"
           />
+          <WorkbookChartOverlay
+            gridRef={gridRef}
+            isLoading={isSheetChartPreviewsLoading}
+            onCommitChartLayout={commitChartLayout}
+            onEditChart={openEditChartEditor}
+            onSelectChart={setSelectedChartId}
+            previews={sheetChartPreviews?.previews ?? []}
+            selectedChartId={selectedChartId}
+            surfaceRef={sheetSurfaceRef}
+            viewportNonce={gridViewportNonce}
+          />
         </section>
-
-        <WorkbookChartDock
-          activeSheetName={activeSheet?.name ?? "No active sheet"}
-          chartEntries={activeSheetChartEntries}
-          chartPreview={selectedChartPreview}
-          chartResult={selectedChartResult}
-          isDetailLoading={isChartDetailLoading}
-          isListLoading={isSheetChartsLoading}
-          onEditChart={openEditChartEditor}
-          onSelectChart={setSelectedChartId}
-          selectedChartId={selectedChartId}
-        />
       </div>
 
       <footer className="app-shell__status-bar" aria-label="Workbook status">

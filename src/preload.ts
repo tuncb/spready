@@ -16,6 +16,7 @@ import type {
   SheetRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
   WorkbookSummary,
 } from "./workbook-core";
@@ -93,6 +94,10 @@ contextBridge.exposeInMainWorld("appShell", {
     ipcRenderer.invoke("workbook:get-sheet-charts", {
       sheetId,
     }) as Promise<WorkbookSheetChartsResult>,
+  getSheetChartPreviews: (sheetId?: string) =>
+    ipcRenderer.invoke("workbook:get-sheet-chart-previews", {
+      sheetId,
+    }) as Promise<WorkbookSheetChartPreviewsResult>,
   getSheetDisplayRange: (request: SheetRangeRequest) =>
     ipcRenderer.invoke(
       "workbook:get-display-range",

@@ -14,6 +14,7 @@ import type {
   SheetRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
   WorkbookSummary,
 } from "./workbook-core";
@@ -64,6 +65,9 @@ declare global {
       getChart: (chartId: string) => Promise<WorkbookChartResult>;
       getChartPreview: (chartId: string) => Promise<WorkbookChartPreview>;
       getSheetCsv: (sheetId?: string) => Promise<string>;
+      getSheetChartPreviews: (
+        sheetId?: string,
+      ) => Promise<WorkbookSheetChartPreviewsResult>;
       getSheetCharts: (sheetId?: string) => Promise<WorkbookSheetChartsResult>;
       getSheetDisplayRange: (
         request: SheetRangeRequest,

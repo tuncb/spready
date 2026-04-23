@@ -43,6 +43,15 @@ const usedRange: UsedRangeResult = {
 
 const chart: WorkbookChart = {
   id: "chart-1",
+  layout: {
+    height: 260,
+    offsetX: 0,
+    offsetY: 0,
+    startColumn: 3,
+    startRow: 0,
+    width: 420,
+    zIndex: 0,
+  },
   name: "Revenue Scatter",
   sheetId: "sheet-1",
   spec: {

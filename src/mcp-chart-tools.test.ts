@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type {
   WorkbookChartPreview,
   WorkbookChartResult,
+  WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
 } from "./workbook-core";
 import {
@@ -11,6 +12,7 @@ import {
   registerChartTools,
   workbookChartPreviewSchema,
   workbookChartResultSchema,
+  workbookSheetChartPreviewsResultSchema,
   workbookSheetChartsResultSchema,
 } from "./mcp-chart-tools";
 
@@ -34,6 +36,15 @@ test("registerChartTools wires thin MCP adapters over the TCP chart methods", as
     charts: [
       {
         id: "chart-1",
+        layout: {
+          height: 260,
+          offsetX: 0,
+          offsetY: 0,
+          startColumn: 3,
+          startRow: 0,
+          width: 420,
+          zIndex: 0,
+        },
         name: "Revenue",
         sheetId: "sheet-1",
         spec: {
@@ -96,6 +107,11 @@ test("registerChartTools wires thin MCP adapters over the TCP chart methods", as
     },
     warnings: [],
   };
+  const sheetChartPreviewsResult: WorkbookSheetChartPreviewsResult = {
+    previews: [chartPreviewResult],
+    sheetId: "sheet-1",
+    sheetName: "Sheet 1",
+  };
 
   registerChartTools(
     {
@@ -115,6 +131,10 @@ test("registerChartTools wires thin MCP adapters over the TCP chart methods", as
         calls.push(`getChartPreview:${chartId}`);
         return chartPreviewResult;
       },
+      async getSheetChartPreviews(sheetId) {
+        calls.push(`getSheetChartPreviews:${sheetId ?? "active"}`);
+        return sheetChartPreviewsResult;
+      },
       async getSheetCharts(sheetId) {
         calls.push(`getSheetCharts:${sheetId ?? "active"}`);
         return sheetChartsResult;
@@ -124,35 +144,52 @@ test("registerChartTools wires thin MCP adapters over the TCP chart methods", as
 
   assert.deepEqual(
     [...registrations.keys()],
-    ["get_sheet_charts", "get_chart", "get_chart_preview"],
+    [
+      "get_sheet_charts",
+      "get_chart",
+      "get_chart_preview",
+      "get_sheet_chart_previews",
+    ],
   );
   assert.deepEqual(
     chartGuideTools.map((tool) => tool.name),
-    ["get_sheet_charts", "get_chart", "get_chart_preview"],
+    [
+      "get_sheet_charts",
+      "get_chart",
+      "get_chart_preview",
+      "get_sheet_chart_previews",
+    ],
   );
 
   const sheetChartsRegistration = registrations.get("get_sheet_charts");
   const chartRegistration = registrations.get("get_chart");
   const previewRegistration = registrations.get("get_chart_preview");
+  const sheetPreviewsRegistration = registrations.get(
+    "get_sheet_chart_previews",
+  );
 
   assert.ok(sheetChartsRegistration);
   assert.ok(chartRegistration);
   assert.ok(previewRegistration);
+  assert.ok(sheetPreviewsRegistration);
 
   sheetChartsRegistration.config.inputSchema?.parse({});
   chartRegistration.config.inputSchema?.parse({ chartId: "chart-1" });
   previewRegistration.config.inputSchema?.parse({ chartId: "chart-1" });
+  sheetPreviewsRegistration.config.inputSchema?.parse({});
 
   const sheetChartsResponse = await sheetChartsRegistration.handler({});
   const chartResponse = await chartRegistration.handler({ chartId: "chart-1" });
   const previewResponse = await previewRegistration.handler({
     chartId: "chart-1",
   });
+  const sheetPreviewsResponse = await sheetPreviewsRegistration.handler({});
 
   assert.deepEqual(calls, [
     "getSheetCharts:active",
     "getChart:chart-1",
     "getChartPreview:chart-1",
+    "getSheetChartPreviews:active",
   ]);
   assert.deepEqual(
     workbookSheetChartsResultSchema.parse(
@@ -167,6 +204,12 @@ test("registerChartTools wires thin MCP adapters over the TCP chart methods", as
   assert.deepEqual(
     workbookChartPreviewSchema.parse(previewResponse.structuredContent),
     chartPreviewResult,
+  );
+  assert.deepEqual(
+    workbookSheetChartPreviewsResultSchema.parse(
+      sheetPreviewsResponse.structuredContent,
+    ),
+    sheetChartPreviewsResult,
   );
   assert.equal(sheetChartsResponse.content[0]?.type, "text");
   assert.match(

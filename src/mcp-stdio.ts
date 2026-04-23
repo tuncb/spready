@@ -12,6 +12,7 @@ import { resolveControlTarget, SpreadyControlClient } from "./control-client";
 import {
   chartGuideTools,
   registerChartTools,
+  workbookChartLayoutSchema,
   workbookChartSchema,
   workbookChartSummarySchema,
 } from "./mcp-chart-tools";
@@ -127,6 +128,7 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     chartId: z.string().min(1).optional(),
+    layout: workbookChartLayoutSchema.optional(),
     name: z.string().min(1).optional(),
     spec: workbookChartSpecSchema,
     type: z.literal("addChart"),
@@ -205,6 +207,11 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
   z.object({
     sheetId: z.string().min(1),
     type: z.literal("setActiveSheet"),
+  }),
+  z.object({
+    chartId: z.string().min(1),
+    layout: workbookChartLayoutSchema,
+    type: z.literal("setChartLayout"),
   }),
   z.object({
     chartId: z.string().min(1),
@@ -326,6 +333,11 @@ const transactionOperations = [
     type: "setChartSpec",
     description:
       "Replace one chart definition with a fully validated shared chart spec.",
+  },
+  {
+    type: "setChartLayout",
+    description:
+      "Move or resize one embedded chart by replacing its persisted layout.",
   },
   {
     type: "setSheetSourceFile",
