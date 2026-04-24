@@ -20,6 +20,7 @@ import type {
   CutRangeResult,
   CsvFileOperationResult,
   ExportCsvFileRequest,
+  FormatCellsRequest,
   ImportCsvFileRequest,
   OpenWorkbookFileRequest,
   SaveWorkbookFileRequest,
@@ -175,6 +176,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async exportCsvFile(request: ExportCsvFileRequest) {
     return this.call<CsvFileOperationResult>("exportCsvFile", request);
+  }
+
+  async formatCells(request: FormatCellsRequest) {
+    return this.call<ApplyTransactionResult>("formatCells", request);
   }
 
   async copyRange(request: CopyRangeRequest) {

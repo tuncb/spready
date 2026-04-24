@@ -80,6 +80,39 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
       startColumn: 0,
       startRow: 0,
     });
+    const formatDryRun = await client.formatCells({
+      dryRun: true,
+      ranges: [
+        {
+          columnCount: 1,
+          rowCount: 1,
+          startColumn: 0,
+          startRow: 0,
+        },
+      ],
+      style: {
+        italic: true,
+      },
+    });
+    await client.formatCells({
+      ranges: [
+        {
+          columnCount: 1,
+          rowCount: 1,
+          startColumn: 0,
+          startRow: 0,
+        },
+      ],
+      style: {
+        italic: true,
+      },
+    });
+    const formattedStyleRange = await client.getSheetStyleRange({
+      columnCount: 1,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    });
     const cellData = await client.getCellData({
       columnIndex: 2,
       rowIndex: 0,
@@ -92,6 +125,7 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.ok(methods.includes("pasteRange"));
     assert.ok(methods.includes("clearRange"));
     assert.ok(methods.includes("getSheetStyleRange"));
+    assert.ok(methods.includes("formatCells"));
     assert.equal(rawCopy.text, "4\t5\t=A1+B1");
     assert.equal(displayCopy.text, "4\t5\t9");
     assert.equal(cutResult.text, "4\t5\t9");
@@ -99,6 +133,10 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.equal(cutResult.clipboard.displayText, "4\t5\t9");
     assert.deepEqual(displayRange.values, [["", "", ""]]);
     assert.deepEqual(styleRange.styles, [[{ bold: true, fontSize: 16 }]]);
+    assert.equal(formatDryRun.changed, true);
+    assert.deepEqual(formattedStyleRange.styles, [
+      [{ bold: true, fontSize: 16, italic: true }],
+    ]);
     assert.deepEqual(cellData, {
       columnIndex: 2,
       display: "",

@@ -8,6 +8,7 @@ import {
   adjustWorkbookChartForInsertedRows,
   applyWorkbookTransaction,
   buildCreateChartOperation,
+  buildFormatCellsOperations,
   createWorkbookChartSummary,
   createSheet,
   createWorkbookState,
@@ -615,6 +616,61 @@ test("applyWorkbookTransaction stores sparse cell styles and exposes style range
           backgroundColor: "#f8fafc",
           italic: true,
           wrapText: true,
+        },
+      ],
+    ],
+  );
+});
+
+test("buildFormatCellsOperations merges style patches without clearing existing properties", () => {
+  const styledState = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        columnCount: 2,
+        rowCount: 1,
+        startColumn: 0,
+        startRow: 0,
+        style: {
+          backgroundColor: "#f8fafc",
+          textColor: "#111827",
+        },
+        type: "setRangeStyle",
+      },
+    ],
+  }).state;
+  const mergedState = applyWorkbookTransaction(styledState, {
+    operations: buildFormatCellsOperations(styledState, {
+      ranges: [
+        {
+          columnCount: 2,
+          rowCount: 1,
+          startColumn: 0,
+          startRow: 0,
+        },
+      ],
+      style: {
+        bold: true,
+        textColor: null,
+      },
+    }),
+  }).state;
+
+  assert.deepEqual(
+    getSheetStyleRange(mergedState, {
+      columnCount: 2,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    }).styles,
+    [
+      [
+        {
+          backgroundColor: "#f8fafc",
+          bold: true,
+        },
+        {
+          backgroundColor: "#f8fafc",
+          bold: true,
         },
       ],
     ],

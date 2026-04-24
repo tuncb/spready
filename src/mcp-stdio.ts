@@ -75,6 +75,17 @@ const workbookCellStyleSchema = z.object({
   wrapText: z.boolean().optional(),
 });
 
+const workbookCellStylePatchSchema = z.object({
+  backgroundColor: z.string().min(1).nullable().optional(),
+  bold: z.boolean().nullable().optional(),
+  fontFamily: z.string().min(1).nullable().optional(),
+  fontSize: z.number().min(6).nullable().optional(),
+  horizontalAlign: z.enum(["center", "left", "right"]).nullable().optional(),
+  italic: z.boolean().nullable().optional(),
+  textColor: z.string().min(1).nullable().optional(),
+  wrapText: z.boolean().nullable().optional(),
+});
+
 const sheetStyleRangeSchema = z.object({
   columnCount: z.int().min(0),
   rowCount: z.int().min(0),
@@ -296,6 +307,18 @@ const createChartSourceRangeSchema = z.object({
   rowCount: z.int().min(1).describe("Number of source rows."),
   startColumn: z.int().min(0).describe("Zero-based source start column."),
   startRow: z.int().min(0).describe("Zero-based source start row."),
+});
+
+const formatCellsRangeSchema = z.object({
+  columnCount: z.int().min(1).describe("Number of columns to format."),
+  rowCount: z.int().min(1).describe("Number of rows to format."),
+  sheetId: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional target sheet id. Defaults to the active sheet."),
+  startColumn: z.int().min(0).describe("Zero-based start column."),
+  startRow: z.int().min(0).describe("Zero-based start row."),
 });
 
 const createChartResultSchema = applyTransactionResultSchema.extend({
@@ -538,6 +561,13 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: true,
+      description:
+        "Format one or more cell ranges, merging style changes by default so existing styling is preserved.",
+      name: "format_cells",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: true,
       description: "Read a rectangular range from a sheet.",
       name: "get_sheet_range",
       readOnly: true,
@@ -620,6 +650,7 @@ const guideResource = {
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
+    "Use format_cells for common cell styling; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
     "Use create_chart for common chart creation; omit sourceRange to chart the target sheet's used range, and omit dimensions to use the first dimension as labels and remaining dimensions as values.",
     "Use apply_transaction chart operations when you need exact persisted chart specs, renames, layout changes, or deletes; chart previews remain derived read models.",
@@ -677,6 +708,7 @@ ${guideResource.workflow
 - get_cell_data: Return one cell's raw input plus its evaluated display value. Omitting sheetId uses the active sheet.
 - get_sheet_display_range: Read one rectangular range of evaluated display values. Prefer this for formula-aware grid views.
 - get_sheet_style_range: Read one rectangular range of rendered cell styles.
+- format_cells: Format one or more cell ranges. Merge mode preserves existing styles, replace mode overwrites styles, and clear mode removes styles.
 - get_sheet_range: Read one rectangular range. Prefer this over loading a large sheet.
 - get_sheet_charts: Return the chart definitions owned by a sheet. Omitting sheetId uses the active sheet.
 - get_chart: Return one chart definition plus validation status and issues.
@@ -825,7 +857,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use format_cells for common style changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1096,6 +1128,15 @@ async function main() {
           },
           {
             defaultsToActiveSheet: true,
+            description:
+              "Format one or more cell ranges while preserving existing style properties by default.",
+            name: "format_cells",
+            readOnly: false,
+            useWhen:
+              "Use this for common styling tasks instead of hand-building setCellStyle or setRangeStyle transactions.",
+          },
+          {
+            defaultsToActiveSheet: true,
             description: "Read a rectangular range from a sheet.",
             name: "get_sheet_range",
             readOnly: true,
@@ -1291,6 +1332,52 @@ async function main() {
     },
     async (args) =>
       createTextResult(await controlClient.getSheetStyleRange(args)),
+  );
+
+  server.registerTool(
+    "format_cells",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Format one or more cell ranges. Merge mode preserves existing style properties; replace mode overwrites each target style; clear mode removes styles.",
+      inputSchema: z.object({
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe(
+            "Validate and simulate the formatting without mutating the workbook.",
+          ),
+        expectedVersion: z
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Optional optimistic concurrency precondition. The request fails if the current workbook version does not match this value.",
+          ),
+        mode: z
+          .enum(["clear", "merge", "replace"])
+          .optional()
+          .describe(
+            'Formatting mode. Defaults to "merge" so omitted style properties are preserved.',
+          ),
+        ranges: z
+          .array(formatCellsRangeSchema)
+          .min(1)
+          .describe("One or more rectangular ranges to format."),
+        style: workbookCellStylePatchSchema
+          .optional()
+          .describe(
+            "Style properties to apply. In merge mode, omitted properties are preserved and null or false clears a property.",
+          ),
+      }),
+      outputSchema: applyTransactionResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.formatCells(args)),
   );
 
   server.registerTool(
@@ -1703,6 +1790,7 @@ async function main() {
                 "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
                 "- Read only the ranges you need with get_used_range, get_sheet_range, get_sheet_display_range, or get_sheet_style_range.\n" +
+                "- Use format_cells for common cell styling changes; merge mode preserves existing style properties.\n" +
                 "- Use create_chart for common chart creation from a used range or explicit sourceRange.\n" +
                 "- Use apply_transaction for writes, preferably as one batched request.\n" +
                 "- Pass expectedVersion on apply_transaction when a task must reject stale writes after concurrent edits.\n" +

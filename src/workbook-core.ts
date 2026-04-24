@@ -267,6 +267,27 @@ export interface WorkbookCellStyle {
   wrapText?: boolean;
 }
 
+export interface WorkbookCellStylePatch {
+  backgroundColor?: string | null;
+  bold?: boolean | null;
+  fontFamily?: string | null;
+  fontSize?: number | null;
+  horizontalAlign?: WorkbookCellHorizontalAlign | null;
+  italic?: boolean | null;
+  textColor?: string | null;
+  wrapText?: boolean | null;
+}
+
+export type FormatCellsMode = "clear" | "merge" | "replace";
+
+export interface FormatCellsRequest {
+  dryRun?: boolean;
+  expectedVersion?: number;
+  mode?: FormatCellsMode;
+  ranges: SheetRangeRequest[];
+  style?: WorkbookCellStylePatch;
+}
+
 export interface SheetStyleRangeResult {
   sheetId: string;
   sheetName: string;
@@ -881,6 +902,72 @@ export function buildCreateChartOperation(
       type: "addChart",
     },
   };
+}
+
+export function buildFormatCellsOperations(
+  workbook: WorkbookState,
+  request: FormatCellsRequest,
+): WorkbookTransactionOperation[] {
+  const mode = request.mode ?? "merge";
+  const ranges = request.ranges.map((range) =>
+    normalizeFormatCellsRange(workbook, range),
+  );
+
+  if (mode === "clear") {
+    return ranges.map((range) => ({
+      ...range,
+      type: "clearRangeStyle",
+    }));
+  }
+
+  if (mode === "replace") {
+    const style = patchWorkbookCellStyle(undefined, request.style);
+
+    return ranges.map((range) => ({
+      ...range,
+      style,
+      type: "setRangeStyle",
+    }));
+  }
+
+  if (!request.style) {
+    return [];
+  }
+
+  const operations: WorkbookTransactionOperation[] = [];
+
+  for (const range of ranges) {
+    const sheet = getWorkbookSheet(workbook, range.sheetId);
+
+    for (
+      let rowIndex = range.startRow;
+      rowIndex < range.startRow + range.rowCount;
+      rowIndex += 1
+    ) {
+      for (
+        let columnIndex = range.startColumn;
+        columnIndex < range.startColumn + range.columnCount;
+        columnIndex += 1
+      ) {
+        const currentStyle = sheet.cellStyles[getCellKey(rowIndex, columnIndex)];
+        const style = patchWorkbookCellStyle(currentStyle, request.style);
+
+        if (workbookCellStylesEqual(currentStyle, style)) {
+          continue;
+        }
+
+        operations.push({
+          columnIndex,
+          rowIndex,
+          sheetId: sheet.id,
+          style,
+          type: "setCellStyle",
+        });
+      }
+    }
+  }
+
+  return operations;
 }
 
 export function getSheetRange(
@@ -2301,6 +2388,26 @@ function getDefaultValueChartDimensions(
   return valueDimensions.length > 0 ? valueDimensions : [1];
 }
 
+function normalizeFormatCellsRange(
+  workbook: WorkbookState,
+  range: SheetRangeRequest,
+): Required<SheetRangeRequest> {
+  const sheet = getWorkbookSheet(workbook, range.sheetId);
+
+  assertNonNegativeInteger(range.startRow, "Format range start row");
+  assertNonNegativeInteger(range.startColumn, "Format range start column");
+  assertPositiveCount(range.rowCount, "Format range row count");
+  assertPositiveCount(range.columnCount, "Format range column count");
+
+  return {
+    columnCount: range.columnCount,
+    rowCount: range.rowCount,
+    sheetId: sheet.id,
+    startColumn: range.startColumn,
+    startRow: range.startRow,
+  };
+}
+
 function assertCreatableWorkbookChart(
   chart: WorkbookChart,
   workbook: Pick<WorkbookState, "sheets">,
@@ -2829,6 +2936,77 @@ function normalizeWorkbookCellStyle(
   }
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function patchWorkbookCellStyle(
+  baseStyle: WorkbookCellStyle | undefined,
+  patch: WorkbookCellStylePatch | undefined,
+): WorkbookCellStyle | undefined {
+  const nextStyle = baseStyle ? cloneWorkbookCellStyle(baseStyle) : {};
+
+  if (!patch) {
+    return normalizeWorkbookCellStyle(nextStyle);
+  }
+
+  applyStringStylePatch(nextStyle, "backgroundColor", patch.backgroundColor);
+  applyBooleanStylePatch(nextStyle, "bold", patch.bold);
+  applyStringStylePatch(nextStyle, "fontFamily", patch.fontFamily);
+
+  if (patch.fontSize !== undefined) {
+    if (patch.fontSize === null) {
+      delete nextStyle.fontSize;
+    } else {
+      nextStyle.fontSize = patch.fontSize;
+    }
+  }
+
+  if (patch.horizontalAlign !== undefined) {
+    if (patch.horizontalAlign === null) {
+      delete nextStyle.horizontalAlign;
+    } else {
+      nextStyle.horizontalAlign = patch.horizontalAlign;
+    }
+  }
+
+  applyBooleanStylePatch(nextStyle, "italic", patch.italic);
+  applyStringStylePatch(nextStyle, "textColor", patch.textColor);
+  applyBooleanStylePatch(nextStyle, "wrapText", patch.wrapText);
+
+  return normalizeWorkbookCellStyle(nextStyle);
+}
+
+function applyStringStylePatch(
+  style: WorkbookCellStyle,
+  property: "backgroundColor" | "fontFamily" | "textColor",
+  value: string | null | undefined,
+) {
+  if (value === undefined) {
+    return;
+  }
+
+  if (value === null || value.trim().length === 0) {
+    delete style[property];
+    return;
+  }
+
+  style[property] = value.trim();
+}
+
+function applyBooleanStylePatch(
+  style: WorkbookCellStyle,
+  property: "bold" | "italic" | "wrapText",
+  value: boolean | null | undefined,
+) {
+  if (value === undefined) {
+    return;
+  }
+
+  if (value === true) {
+    style[property] = true;
+    return;
+  }
+
+  delete style[property];
 }
 
 function workbookCellStylesEqual(

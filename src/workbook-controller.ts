@@ -5,6 +5,7 @@ import { EventEmitter } from "node:events";
 import {
   applyWorkbookTransaction,
   buildCreateChartOperation,
+  buildFormatCellsOperations,
   cloneWorkbookChart,
   createWorkbookState,
   getSheetColumnCount,
@@ -34,6 +35,7 @@ import {
   type CutRangeResult,
   type CsvFileOperationResult,
   type ExportCsvFileRequest,
+  type FormatCellsRequest,
   type ImportCsvFileRequest,
   parseTsv,
   serializeTsv,
@@ -266,6 +268,14 @@ export class WorkbookController extends EventEmitter {
       ...result,
       chart,
     };
+  }
+
+  formatCells(request: FormatCellsRequest): ApplyTransactionResult {
+    return this.applyTransaction({
+      dryRun: request.dryRun,
+      expectedVersion: request.expectedVersion,
+      operations: buildFormatCellsOperations(this.#state, request),
+    });
   }
 
   pasteRange(request: PasteRangeRequest): ApplyTransactionResult {

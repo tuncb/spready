@@ -10,6 +10,7 @@ import type {
   CreateNewWorkbookRequest,
   CutRangeRequest,
   ExportCsvFileRequest,
+  FormatCellsRequest,
   ImportCsvFileRequest,
   OpenWorkbookFileRequest,
   SaveWorkbookFileRequest,
@@ -250,6 +251,8 @@ export class SpreadyControlServer {
         return this.#controller.createChart(params as CreateChartRequest);
       case "exportCsvFile":
         return this.#controller.exportCsvFile(params as ExportCsvFileRequest);
+      case "formatCells":
+        return this.#controller.formatCells(params as FormatCellsRequest);
       case "getCellData":
         return this.#controller.getCellData(
           params as { columnIndex: number; rowIndex: number; sheetId?: string },
@@ -313,6 +316,7 @@ export class SpreadyControlServer {
           "createChart",
           "createNewWorkbook",
           "exportCsvFile",
+          "formatCells",
           "getCellData",
           "getChart",
           "getChartPreview",

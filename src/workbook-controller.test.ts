@@ -264,6 +264,78 @@ test("WorkbookController supports raw-vs-display range copy plus explicit cut, p
   );
 });
 
+test("WorkbookController formats cells through the simplified style request contract", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        columnCount: 1,
+        rowCount: 1,
+        startColumn: 0,
+        startRow: 0,
+        style: {
+          backgroundColor: "#f8fafc",
+          horizontalAlign: "right",
+        },
+        type: "setRangeStyle",
+      },
+    ],
+  });
+
+  const dryRun = controller.formatCells({
+    dryRun: true,
+    ranges: [
+      {
+        columnCount: 1,
+        rowCount: 1,
+        startColumn: 0,
+        startRow: 0,
+      },
+    ],
+    style: {
+      bold: true,
+    },
+  });
+
+  assert.equal(dryRun.changed, true);
+  assert.equal(dryRun.version, controller.getSummary().version);
+  assert.deepEqual(
+    controller.getSheetStyleRange({
+      columnCount: 1,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    }).styles,
+    [[{ backgroundColor: "#f8fafc", horizontalAlign: "right" }]],
+  );
+
+  controller.formatCells({
+    ranges: [
+      {
+        columnCount: 1,
+        rowCount: 1,
+        startColumn: 0,
+        startRow: 0,
+      },
+    ],
+    style: {
+      bold: true,
+      horizontalAlign: null,
+    },
+  });
+
+  assert.deepEqual(
+    controller.getSheetStyleRange({
+      columnCount: 1,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    }).styles,
+    [[{ backgroundColor: "#f8fafc", bold: true }]],
+  );
+});
+
 test("WorkbookController exposes persisted chart reads and normalized preview data", async () => {
   let workbook = applyWorkbookTransaction(createWorkbookState(), {
     operations: [

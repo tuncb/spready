@@ -122,6 +122,7 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `getSheetStyleRange`
 - `getUsedRange`
 - `getSheetCsv`
+- `formatCells`
 - `getSheetCharts`
 - `getChart`
 - `getChartPreview`
@@ -142,6 +143,8 @@ For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, yo
 `sheetId` explicitly. If you omit `sheetId`, the active sheet is used.
 
 `copyRange` returns one rectangular range as tab-delimited text using raw input or displayed values. `cutRange` returns the same clipboard payloads and clears the source cells through the controller in one mutation.
+
+`formatCells` formats one or more ranges. Its default `merge` mode preserves existing style properties while applying the requested changes; `replace` overwrites each target cell style, and `clear` removes styles.
 
 `createChart` creates a chart from a target sheet range with defaults for source headers, series layout, dimensions, and embedded layout. If `sourceRange` is omitted, the target sheet's used range is used. Use `applyTransaction` with `addChart`, `setChartSpec`, and `setChartLayout` when you need the full persisted chart contract.
 
@@ -279,6 +282,7 @@ The stdio MCP wrapper currently exposes:
 - `get_cell_data`
 - `get_sheet_display_range`
 - `get_sheet_style_range`
+- `format_cells`
 - `get_sheet_range`
 - `get_sheet_csv`
 - `get_sheet_charts`
@@ -295,6 +299,7 @@ The stdio MCP wrapper currently exposes:
 `get_sheet_range` returns raw stored cell input, including formula strings like `=A1+B1`.
 `get_sheet_display_range` returns evaluated display values for the grid view.
 `get_sheet_style_range` returns sparse rendered cell styles for the grid view.
+`format_cells` applies common cell styling without requiring callers to build transaction operations. Merge mode preserves omitted style properties.
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
 
