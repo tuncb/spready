@@ -291,6 +291,17 @@ const applyTransactionResultSchema = z.object({
   version: z.int().min(0),
 });
 
+const createChartSourceRangeSchema = z.object({
+  columnCount: z.int().min(1).describe("Number of source columns."),
+  rowCount: z.int().min(1).describe("Number of source rows."),
+  startColumn: z.int().min(0).describe("Zero-based source start column."),
+  startRow: z.int().min(0).describe("Zero-based source start row."),
+});
+
+const createChartResultSchema = applyTransactionResultSchema.extend({
+  chart: workbookChartSummarySchema,
+});
+
 const csvFileOperationResultSchema = z.object({
   changed: z.boolean(),
   filePath: z.string(),
@@ -540,6 +551,13 @@ const guideResource = {
     {
       defaultsToActiveSheet: true,
       description:
+        "Create a chart from a source range using defaults for layout, headers, and dimensions.",
+      name: "create_chart",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: true,
+      description:
         "Copy one rectangular range as tab-delimited text, using raw cell input or displayed values.",
       name: "copy_range",
       readOnly: true,
@@ -603,7 +621,8 @@ const guideResource = {
     "Read tools default to the active sheet when sheetId is omitted.",
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
-    "Create, rename, reconfigure, and delete charts through apply_transaction chart operations; chart previews remain derived read models.",
+    "Use create_chart for common chart creation; omit sourceRange to chart the target sheet's used range, and omit dimensions to use the first dimension as labels and remaining dimensions as values.",
+    "Use apply_transaction chart operations when you need exact persisted chart specs, renames, layout changes, or deletes; chart previews remain derived read models.",
     "Evaluated display reads include same-sheet arithmetic, comparisons, text operators, ranges, core worksheet functions, and same-sheet lookup functions such as INDEX, MATCH, and XLOOKUP.",
     "Current formula exclusions include absolute references with $, cross-sheet references, defined names, and LET.",
     "Use copy_range when you need a tab-delimited clipboard-style payload for one explicit rectangular range.",
@@ -662,6 +681,7 @@ ${guideResource.workflow
 - get_sheet_charts: Return the chart definitions owned by a sheet. Omitting sheetId uses the active sheet.
 - get_chart: Return one chart definition plus validation status and issues.
 - get_chart_preview: Return one chart's normalized preview dataset, warnings, and derived ECharts option.
+- create_chart: Create a chart from a source range using defaults for layout, headers, and dimensions. Omitting sourceRange uses the target sheet's used range.
 - copy_range: Return one rectangular range plus tab-delimited text using raw input or displayed values.
 - cut_range: Return clipboard payloads for one rectangular range and clear the same source cells.
 - get_sheet_csv: Return trimmed CSV for one sheet. Omitting sheetId uses the active sheet.
@@ -805,7 +825,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1086,6 +1106,15 @@ async function main() {
           {
             defaultsToActiveSheet: true,
             description:
+              "Create a chart from a source range using defaults for layout, headers, and dimensions.",
+            name: "create_chart",
+            readOnly: false,
+            useWhen:
+              "Use this for common chart creation instead of hand-building a full addChart spec; omit sourceRange to use the sheet used range.",
+          },
+          {
+            defaultsToActiveSheet: true,
+            description:
               "Copy one rectangular range as tab-delimited text using raw input or displayed values.",
             name: "copy_range",
             readOnly: true,
@@ -1290,6 +1319,106 @@ async function main() {
   );
 
   registerChartTools(server, controlClient);
+
+  server.registerTool(
+    "create_chart",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Create a chart from a source range using sensible defaults. Omit sourceRange to chart the sheet used range; omit dimensions to use the first dimension as labels and remaining dimensions as values.",
+      inputSchema: z.object({
+        categoryDimension: z
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Cartesian charts only. Dimension index to use as categories. Defaults to 0.",
+          ),
+        chartId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional stable chart id. Defaults to chart-N."),
+        chartType: z
+          .enum(["bar", "line", "area", "scatter", "pie"])
+          .describe("Type of chart to create."),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe(
+            "Validate and simulate the chart creation without mutating the workbook.",
+          ),
+        expectedVersion: z
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Optional optimistic concurrency precondition. The request fails if the current workbook version does not match this value.",
+          ),
+        layout: workbookChartLayoutSchema
+          .optional()
+          .describe(
+            "Optional embedded chart layout. Defaults to the right of the source range when space permits.",
+          ),
+        name: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional display name. Defaults to Chart N."),
+        nameDimension: z
+          .int()
+          .min(0)
+          .optional()
+          .describe("Pie charts only. Dimension index for slice names."),
+        seriesLayoutBy: z
+          .enum(["column", "row"])
+          .optional()
+          .describe(
+            'How to read dimensions from the source table. Defaults to "column".',
+          ),
+        sheetId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional target sheet id. Defaults to the active sheet."),
+        smooth: z
+          .boolean()
+          .optional()
+          .describe("Line and area charts only. Defaults to false."),
+        sourceHeader: z
+          .boolean()
+          .optional()
+          .describe("Whether the first source row/column is a header. Defaults to true."),
+        sourceRange: createChartSourceRangeSchema
+          .optional()
+          .describe(
+            "Optional explicit source range on the target sheet. Omit to use the sheet used range.",
+          ),
+        stacked: z
+          .boolean()
+          .optional()
+          .describe("Bar and area charts only. Defaults to false."),
+        valueDimension: z
+          .int()
+          .min(0)
+          .optional()
+          .describe("Pie charts only. Dimension index for slice values."),
+        valueDimensions: z
+          .array(z.int().min(0))
+          .optional()
+          .describe(
+            "Cartesian charts only. Value dimension indexes. Defaults to every dimension except categoryDimension.",
+          ),
+      }),
+      outputSchema: createChartResultSchema,
+    },
+    async (args) => createTextResult(await controlClient.createChart(args)),
+  );
 
   server.registerTool(
     "copy_range",
@@ -1574,6 +1703,7 @@ async function main() {
                 "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
                 "- Read only the ranges you need with get_used_range, get_sheet_range, get_sheet_display_range, or get_sheet_style_range.\n" +
+                "- Use create_chart for common chart creation from a used range or explicit sourceRange.\n" +
                 "- Use apply_transaction for writes, preferably as one batched request.\n" +
                 "- Pass expectedVersion on apply_transaction when a task must reject stale writes after concurrent edits.\n" +
                 "- Use save_workbook_file when the final result should persist as a native workbook document.\n" +

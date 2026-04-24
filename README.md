@@ -122,10 +122,15 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `getSheetStyleRange`
 - `getUsedRange`
 - `getSheetCsv`
+- `getSheetCharts`
+- `getChart`
+- `getChartPreview`
+- `getSheetChartPreviews`
 - `copyRange`
 - `cutRange`
 - `pasteRange`
 - `clearRange`
+- `createChart`
 - `createNewWorkbook`
 - `openWorkbookFile`
 - `saveWorkbookFile`
@@ -137,6 +142,8 @@ For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, yo
 `sheetId` explicitly. If you omit `sheetId`, the active sheet is used.
 
 `copyRange` returns one rectangular range as tab-delimited text using raw input or displayed values. `cutRange` returns the same clipboard payloads and clears the source cells through the controller in one mutation.
+
+`createChart` creates a chart from a target sheet range with defaults for source headers, series layout, dimensions, and embedded layout. If `sourceRange` is omitted, the target sheet's used range is used. Use `applyTransaction` with `addChart`, `setChartSpec`, and `setChartLayout` when you need the full persisted chart contract.
 
 ### CSV import/export examples
 
@@ -278,6 +285,7 @@ The stdio MCP wrapper currently exposes:
 - `get_chart`
 - `get_chart_preview`
 - `get_sheet_chart_previews`
+- `create_chart`
 - `open_workbook_file`
 - `save_workbook_file`
 - `import_csv_file`
@@ -288,6 +296,7 @@ The stdio MCP wrapper currently exposes:
 `get_sheet_display_range` returns evaluated display values for the grid view.
 `get_sheet_style_range` returns sparse rendered cell styles for the grid view.
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
+`create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
 
 Display reads evaluate the same-sheet formula engine used by the app UI, including arithmetic, comparisons, text operators, ranges, core math/logical/text functions, and same-sheet lookup functions such as `INDEX`, `MATCH`, and `XLOOKUP`.
 Raw reads continue to preserve the stored input exactly as written.

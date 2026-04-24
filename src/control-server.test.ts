@@ -348,6 +348,7 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
     const invalidPreview = await client.getChartPreview("chart-2");
     const rowLayoutPreview = await client.getChartPreview("chart-3");
 
+    assert.ok(methods.includes("createChart"));
     assert.ok(methods.includes("getChart"));
     assert.ok(methods.includes("getChartPreview"));
     assert.ok(methods.includes("getSheetCharts"));
@@ -460,6 +461,24 @@ test("SpreadyControlServer applies chart lifecycle transactions over TCP", async
     await client.connect();
 
     const summary = controller.getSummary();
+    const createDryRun = await client.createChart({
+      chartType: "bar",
+      dryRun: true,
+      name: "Preview Chart",
+      sourceRange: {
+        columnCount: 2,
+        rowCount: 4,
+        startColumn: 0,
+        startRow: 0,
+      },
+    });
+
+    assert.equal(createDryRun.changed, true);
+    assert.equal(createDryRun.chart.id, "chart-1");
+    assert.equal(createDryRun.chart.name, "Preview Chart");
+    assert.equal(createDryRun.summary.charts.length, 1);
+    assert.deepEqual((await client.getSheetCharts()).charts, []);
+
     const addResult = await client.applyTransaction({
       operations: [
         {

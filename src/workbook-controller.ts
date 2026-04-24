@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 
 import {
   applyWorkbookTransaction,
+  buildCreateChartOperation,
   cloneWorkbookChart,
   createWorkbookState,
   getSheetColumnCount,
@@ -26,6 +27,8 @@ import {
   type ClearRangeRequest,
   type CopyRangeRequest,
   type CopyRangeResult,
+  type CreateChartRequest,
+  type CreateChartResult,
   type CreateNewWorkbookRequest,
   type CutRangeRequest,
   type CutRangeResult,
@@ -241,6 +244,28 @@ export class WorkbookController extends EventEmitter {
         },
       ],
     });
+  }
+
+  createChart(request: CreateChartRequest): CreateChartResult {
+    const { chartId, operation } = buildCreateChartOperation(
+      this.#state,
+      request,
+    );
+    const result = this.applyTransaction({
+      dryRun: request.dryRun,
+      expectedVersion: request.expectedVersion,
+      operations: [operation],
+    });
+    const chart = result.summary.charts.find((entry) => entry.id === chartId);
+
+    if (!chart) {
+      throw new Error(`Chart "${chartId}" was not found after creation.`);
+    }
+
+    return {
+      ...result,
+      chart,
+    };
   }
 
   pasteRange(request: PasteRangeRequest): ApplyTransactionResult {

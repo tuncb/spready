@@ -185,6 +185,36 @@ export interface WorkbookSheetChartPreviewsResult {
   previews: WorkbookChartPreview[];
 }
 
+export interface CreateChartSourceRange {
+  startRow: number;
+  startColumn: number;
+  rowCount: number;
+  columnCount: number;
+}
+
+export interface CreateChartRequest {
+  categoryDimension?: number;
+  chartId?: string;
+  chartType: WorkbookChartType;
+  dryRun?: boolean;
+  expectedVersion?: number;
+  layout?: WorkbookChartLayout;
+  name?: string;
+  nameDimension?: number;
+  seriesLayoutBy?: WorkbookChartSeriesLayout;
+  sheetId?: string;
+  smooth?: boolean;
+  sourceHeader?: boolean;
+  sourceRange?: CreateChartSourceRange;
+  stacked?: boolean;
+  valueDimension?: number;
+  valueDimensions?: number[];
+}
+
+export interface CreateChartResult extends ApplyTransactionResult {
+  chart: WorkbookChartSummary;
+}
+
 export interface SheetRangeRequest {
   sheetId?: string;
   startRow: number;
@@ -787,6 +817,69 @@ export function getWorkbookSheetCharts(
       .map((chart) => cloneWorkbookChart(chart)),
     sheetId: sheet.id,
     sheetName: sheet.name,
+  };
+}
+
+export function buildCreateChartOperation(
+  workbook: WorkbookState,
+  request: CreateChartRequest,
+): {
+  chartId: string;
+  operation: Extract<WorkbookTransactionOperation, { type: "addChart" }>;
+} {
+  const sheet = getWorkbookSheet(workbook, request.sheetId);
+  const chartId =
+    normalizeOptionalChartId(request.chartId) ??
+    createChartId(workbook.nextChartNumber);
+  const range = createChartRangeFromRequest(sheet, request.sourceRange);
+  const seriesLayoutBy = request.seriesLayoutBy ?? "column";
+  const dimensionCount =
+    seriesLayoutBy === "row" ? range.rowCount : range.columnCount;
+  const source: WorkbookChartSource = {
+    range,
+    seriesLayoutBy,
+    sourceHeader: request.sourceHeader ?? true,
+  };
+  const spec: WorkbookChartSpec =
+    request.chartType === "pie"
+      ? {
+          chartType: "pie",
+          family: "pie",
+          nameDimension: request.nameDimension ?? 0,
+          source,
+          valueDimension:
+            request.valueDimension ??
+            getDefaultSecondaryChartDimension(0, dimensionCount),
+        }
+      : {
+          categoryDimension: request.categoryDimension ?? 0,
+          chartType: request.chartType,
+          family: "cartesian",
+          ...(request.chartType === "line" || request.chartType === "area"
+            ? { smooth: request.smooth ?? false }
+            : {}),
+          source,
+          ...(request.chartType === "bar" || request.chartType === "area"
+            ? { stacked: request.stacked ?? false }
+            : {}),
+          valueDimensions:
+            request.valueDimensions && request.valueDimensions.length > 0
+              ? [...request.valueDimensions]
+              : getDefaultValueChartDimensions(
+                  request.categoryDimension ?? 0,
+                  dimensionCount,
+                ),
+        };
+
+  return {
+    chartId,
+    operation: {
+      chartId,
+      layout: request.layout,
+      name: request.name,
+      spec,
+      type: "addChart",
+    },
   };
 }
 
@@ -2146,6 +2239,66 @@ function getWorkbookChartSheetReferences(
     id: sheet.id,
     rowCount: getSheetRowCount(sheet),
   }));
+}
+
+function createChartRangeFromRequest(
+  sheet: WorkbookSheet,
+  sourceRange?: CreateChartSourceRange,
+): WorkbookChartRange {
+  if (!sourceRange) {
+    const usedRange = getUsedRange(sheet);
+
+    if (usedRange.rowCount === 0 || usedRange.columnCount === 0) {
+      throw new Error(
+        "Chart source range was omitted, but the target sheet has no used cells.",
+      );
+    }
+
+    return {
+      columnCount: usedRange.columnCount,
+      rowCount: usedRange.rowCount,
+      sheetId: sheet.id,
+      startColumn: usedRange.startColumn,
+      startRow: usedRange.startRow,
+    };
+  }
+
+  assertNonNegativeInteger(sourceRange.startRow, "Chart source start row");
+  assertNonNegativeInteger(
+    sourceRange.startColumn,
+    "Chart source start column",
+  );
+  assertPositiveCount(sourceRange.rowCount, "Chart source row count");
+  assertPositiveCount(sourceRange.columnCount, "Chart source column count");
+
+  return {
+    columnCount: sourceRange.columnCount,
+    rowCount: sourceRange.rowCount,
+    sheetId: sheet.id,
+    startColumn: sourceRange.startColumn,
+    startRow: sourceRange.startRow,
+  };
+}
+
+function getDefaultSecondaryChartDimension(
+  primaryDimension: number,
+  dimensionCount: number,
+): number {
+  return Array.from({ length: dimensionCount }, (_value, index) => index).find(
+    (dimension) => dimension !== primaryDimension,
+  ) ?? 1;
+}
+
+function getDefaultValueChartDimensions(
+  categoryDimension: number,
+  dimensionCount: number,
+): number[] {
+  const valueDimensions = Array.from(
+    { length: dimensionCount },
+    (_value, index) => index,
+  ).filter((dimension) => dimension !== categoryDimension);
+
+  return valueDimensions.length > 0 ? valueDimensions : [1];
 }
 
 function assertCreatableWorkbookChart(

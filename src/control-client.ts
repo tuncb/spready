@@ -11,6 +11,8 @@ import type {
   ControlServerInfo,
   CopyRangeRequest,
   CopyRangeResult,
+  CreateChartRequest,
+  CreateChartResult,
   WorkbookChartPreview,
   WorkbookChartResult,
   CreateNewWorkbookRequest,
@@ -165,6 +167,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async createNewWorkbook(request?: CreateNewWorkbookRequest) {
     return this.call<ApplyTransactionResult>("createNewWorkbook", request);
+  }
+
+  async createChart(request: CreateChartRequest) {
+    return this.call<CreateChartResult>("createChart", request);
   }
 
   async exportCsvFile(request: ExportCsvFileRequest) {

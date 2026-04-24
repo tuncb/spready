@@ -714,6 +714,63 @@ test("WorkbookController labels pie chart previews with slice and value labels",
   });
 });
 
+test("WorkbookController creates charts through the simplified chart request contract", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Month", "Revenue", "Cost"],
+          ["Jan", "120", "80"],
+          ["Feb", "150", "94"],
+        ],
+      },
+    ],
+  });
+
+  const dryRun = controller.createChart({
+    chartType: "line",
+    dryRun: true,
+    name: "Revenue Trend",
+  });
+
+  assert.equal(dryRun.changed, true);
+  assert.equal(dryRun.version, controller.getSummary().version);
+  assert.equal(dryRun.chart.id, "chart-1");
+  assert.deepEqual(controller.getSheetCharts().charts, []);
+
+  const result = controller.createChart({
+    chartType: "line",
+    name: "Revenue Trend",
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.chart.id, "chart-1");
+  assert.equal(result.chart.name, "Revenue Trend");
+  assert.deepEqual(controller.getChart("chart-1").chart.spec, {
+    categoryDimension: 0,
+    chartType: "line",
+    family: "cartesian",
+    smooth: false,
+    source: {
+      range: {
+        columnCount: 3,
+        rowCount: 3,
+        sheetId: controller.getSummary().activeSheetId,
+        startColumn: 0,
+        startRow: 0,
+      },
+      seriesLayoutBy: "column",
+      sourceHeader: true,
+    },
+    valueDimensions: [1, 2],
+  });
+});
+
 test("WorkbookController applies chart lifecycle transactions through the shared write path", () => {
   const controller = new WorkbookController();
 

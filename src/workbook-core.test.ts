@@ -7,6 +7,7 @@ import {
   adjustWorkbookChartForInsertedColumns,
   adjustWorkbookChartForInsertedRows,
   applyWorkbookTransaction,
+  buildCreateChartOperation,
   createWorkbookChartSummary,
   createSheet,
   createWorkbookState,
@@ -1034,6 +1035,59 @@ test("applyWorkbookTransaction manages chart lifecycle operations", () => {
   }).state;
 
   assert.equal(afterDelete.charts.length, 0);
+});
+
+test("buildCreateChartOperation creates a valid chart from the used range by default", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Quarter", "Revenue", "Margin"],
+          ["Q1", "120", "42"],
+          ["Q2", "150", "51"],
+        ],
+      },
+    ],
+  }).state;
+
+  const { chartId, operation } = buildCreateChartOperation(workbook, {
+    chartType: "bar",
+    name: "Revenue",
+  });
+  const nextState = applyWorkbookTransaction(workbook, {
+    operations: [operation],
+  }).state;
+
+  assert.equal(chartId, "chart-1");
+  assert.deepEqual(operation, {
+    chartId: "chart-1",
+    layout: undefined,
+    name: "Revenue",
+    spec: {
+      categoryDimension: 0,
+      chartType: "bar",
+      family: "cartesian",
+      source: {
+        range: {
+          columnCount: 3,
+          rowCount: 3,
+          sheetId: workbook.activeSheetId,
+          startColumn: 0,
+          startRow: 0,
+        },
+        seriesLayoutBy: "column",
+        sourceHeader: true,
+      },
+      stacked: false,
+      valueDimensions: [1, 2],
+    },
+    type: "addChart",
+  });
+  assert.equal(nextState.charts[0]?.id, "chart-1");
+  assert.equal(nextState.charts[0]?.name, "Revenue");
 });
 
 test("applyWorkbookTransaction resizes and replaces sheet contents from CSV metadata-aware updates", () => {
