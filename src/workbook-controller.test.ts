@@ -786,6 +786,58 @@ test("WorkbookController labels pie chart previews with slice and value labels",
   });
 });
 
+test("WorkbookController offsets y-axis names for wide numeric labels", () => {
+  const controller = new WorkbookController();
+  const sheetId = controller.getSummary().activeSheetId;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        sheetId,
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["X", "X Cubed"],
+          ["0", "0"],
+          ["50", "125000"],
+          ["100", "1000000"],
+        ],
+      },
+      {
+        chartId: "chart-wide-y-axis",
+        name: "X vs Y Cubed",
+        spec: {
+          categoryDimension: 0,
+          chartType: "scatter",
+          family: "cartesian",
+          source: {
+            range: {
+              columnCount: 2,
+              rowCount: 4,
+              sheetId,
+              startColumn: 0,
+              startRow: 0,
+            },
+            seriesLayoutBy: "column",
+            sourceHeader: true,
+          },
+          valueDimensions: [1],
+        },
+        type: "addChart",
+      },
+    ],
+  });
+
+  const preview = controller.getChartPreview("chart-wide-y-axis");
+  const grid = preview.option.grid as Record<string, unknown>;
+  const yAxis = preview.option.yAxis as Record<string, unknown>;
+
+  assert.equal(yAxis.name, "X Cubed");
+  assert.equal(yAxis.nameGap, 80);
+  assert.equal(grid.left, 92);
+});
+
 test("WorkbookController creates charts through the simplified chart request contract", () => {
   const controller = new WorkbookController();
 

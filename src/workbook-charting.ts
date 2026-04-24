@@ -25,6 +25,16 @@ type WorkbookPieChart = WorkbookChart & {
   spec: WorkbookChartPieSpec;
 };
 
+const CARTESIAN_GRID_BOTTOM = 18;
+const CARTESIAN_GRID_LEFT_MIN = 56;
+const CARTESIAN_GRID_RIGHT = 16;
+const CARTESIAN_GRID_TOP = 16;
+const Y_AXIS_NAME_GAP_MIN = 42;
+const Y_AXIS_TICK_LABEL_MARGIN = 8;
+const Y_AXIS_NAME_PADDING = 18;
+const Y_AXIS_NAME_GRID_PADDING = 12;
+const AXIS_LABEL_FONT_SIZE = 12;
+
 export function buildWorkbookChartPreview(
   chart: WorkbookChart,
   sheet: WorkbookSheet | undefined,
@@ -258,6 +268,7 @@ function buildCartesianChartOption(
     chart.spec.chartType === "area" ? "line" : chart.spec.chartType;
   const xAxisName = getDimensionLabel(dataset, chart.spec.categoryDimension);
   const yAxisName = getValueAxisLabel(dataset, chart.spec.valueDimensions);
+  const yAxisNameGap = getValueAxisNameGap(chart, dataset);
 
   return {
     dataset: {
@@ -266,11 +277,14 @@ function buildCartesianChartOption(
       sourceHeader: dataset.sourceHeader,
     },
     grid: {
-      bottom: 18,
+      bottom: CARTESIAN_GRID_BOTTOM,
       containLabel: true,
-      left: 56,
-      right: 16,
-      top: 16,
+      left: Math.max(
+        CARTESIAN_GRID_LEFT_MIN,
+        yAxisNameGap + Y_AXIS_NAME_GRID_PADDING,
+      ),
+      right: CARTESIAN_GRID_RIGHT,
+      top: CARTESIAN_GRID_TOP,
     },
     legend: {
       show: chart.spec.valueDimensions.length > 1,
@@ -310,7 +324,7 @@ function buildCartesianChartOption(
     },
     yAxis: {
       name: yAxisName,
-      nameGap: 42,
+      nameGap: yAxisNameGap,
       nameLocation: "middle",
       nameRotate: 90,
       type: "value",
@@ -361,7 +375,8 @@ function getDimensionLabel(
   dimensionIndex: number,
 ): string {
   return (
-    dataset.dimensions[dimensionIndex]?.name ?? `Dimension ${dimensionIndex + 1}`
+    dataset.dimensions[dimensionIndex]?.name ??
+    `Dimension ${dimensionIndex + 1}`
   );
 }
 
@@ -374,6 +389,138 @@ function getValueAxisLabel(
   }
 
   return "Value";
+}
+
+function getValueAxisNameGap(
+  chart: WorkbookCartesianChart,
+  dataset: WorkbookChartPreviewDataset,
+): number {
+  const widestTickLabel = getEstimatedValueAxisTickLabelWidth(chart, dataset);
+
+  return Math.max(
+    Y_AXIS_NAME_GAP_MIN,
+    Math.ceil(widestTickLabel + Y_AXIS_TICK_LABEL_MARGIN + Y_AXIS_NAME_PADDING),
+  );
+}
+
+function getEstimatedValueAxisTickLabelWidth(
+  chart: WorkbookCartesianChart,
+  dataset: WorkbookChartPreviewDataset,
+): number {
+  const extent = getValueAxisExtent(chart, dataset);
+  const candidates = [0, extent.min, extent.max]
+    .filter((value) => Number.isFinite(value))
+    .map((value) => formatValueAxisTickLabel(value));
+
+  return candidates.reduce(
+    (width, label) =>
+      Math.max(width, estimateAxisLabelWidth(label, AXIS_LABEL_FONT_SIZE)),
+    0,
+  );
+}
+
+function getValueAxisExtent(
+  chart: WorkbookCartesianChart,
+  dataset: WorkbookChartPreviewDataset,
+): { max: number; min: number } {
+  let min = 0;
+  let max = 0;
+
+  for (const row of getPreviewDataRows(dataset)) {
+    if (chart.spec.stacked) {
+      let negativeTotal = 0;
+      let positiveTotal = 0;
+
+      for (const dimensionIndex of chart.spec.valueDimensions) {
+        const value = getNumericPreviewValue(row, dimensionIndex);
+
+        if (value === undefined) {
+          continue;
+        }
+
+        if (value < 0) {
+          negativeTotal += value;
+        } else {
+          positiveTotal += value;
+        }
+      }
+
+      min = Math.min(min, negativeTotal);
+      max = Math.max(max, positiveTotal);
+      continue;
+    }
+
+    for (const dimensionIndex of chart.spec.valueDimensions) {
+      const value = getNumericPreviewValue(row, dimensionIndex);
+
+      if (value === undefined) {
+        continue;
+      }
+
+      min = Math.min(min, value);
+      max = Math.max(max, value);
+    }
+  }
+
+  return { max, min };
+}
+
+function getPreviewDataRows(
+  dataset: WorkbookChartPreviewDataset,
+): Array<Array<string | number | null>> {
+  return dataset.sourceHeader ? dataset.source.slice(1) : dataset.source;
+}
+
+function getNumericPreviewValue(
+  row: ReadonlyArray<string | number | null>,
+  dimensionIndex: number,
+): number | undefined {
+  const value = row[dimensionIndex];
+
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function formatValueAxisTickLabel(value: number): string {
+  if (Math.abs(value) >= 1 || value === 0) {
+    return new Intl.NumberFormat("en-US", {
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
+
+  return new Intl.NumberFormat("en-US", {
+    maximumSignificantDigits: 3,
+  }).format(value);
+}
+
+function estimateAxisLabelWidth(label: string, fontSize: number): number {
+  let width = 0;
+
+  for (const character of label) {
+    width += getAxisLabelCharacterWidth(character, fontSize);
+  }
+
+  return width;
+}
+
+function getAxisLabelCharacterWidth(
+  character: string,
+  fontSize: number,
+): number {
+  if (/[0-9]/.test(character)) {
+    return fontSize * 0.56;
+  }
+
+  if (character === "," || character === ".") {
+    return fontSize * 0.28;
+  }
+
+  if (character === "-" || character === "+") {
+    return fontSize * 0.35;
+  }
+
+  return fontSize * 0.5;
 }
 
 function getDimensionEncodeKey(
