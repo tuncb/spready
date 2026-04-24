@@ -13,6 +13,8 @@
     "prepare:release": "node scripts/prepare-release-bundle.mjs",
     "test": "node --import tsx --test src/**/*.test.ts",
     "test:watch": "node --import tsx --test --watch src/**/*.test.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "lint": "eslint --ext .ts,.tsx .",
     "typecheck": "tsc --noEmit",
     "mcp:stdio": "tsx src/mcp-stdio.ts"
@@ -33,6 +35,7 @@
     "esbuild": "^0.21.5",
     "eslint": "^8.57.1",
     "eslint-plugin-import": "^2.32.0",
+    "prettier": "^3.8.3",
     "typescript": "^6.0.3",
     "vite": "^5.4.21"
   },

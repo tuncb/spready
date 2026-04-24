@@ -28,23 +28,23 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
 
     await client.applyTransaction({
       operations: [
-      {
-        startColumn: 0,
-        startRow: 0,
-        type: "setRange",
-        values: [["4", "5", "=A1+B1"]],
-      },
-      {
-        columnIndex: 0,
-        rowIndex: 0,
-        style: {
-          bold: true,
-          fontSize: 16,
+        {
+          startColumn: 0,
+          startRow: 0,
+          type: "setRange",
+          values: [["4", "5", "=A1+B1"]],
         },
-        type: "setCellStyle",
-      },
-    ],
-  });
+        {
+          columnIndex: 0,
+          rowIndex: 0,
+          style: {
+            bold: true,
+            fontSize: 16,
+          },
+          type: "setCellStyle",
+        },
+      ],
+    });
 
     const methods = await client.call<string[]>("listMethods");
     const rawCopy = await client.copyRange({
@@ -134,9 +134,7 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.deepEqual(displayRange.values, [["", "", ""]]);
     assert.deepEqual(styleRange.styles, [[{ bold: true, fontSize: 16 }]]);
     assert.equal(formatDryRun.changed, true);
-    assert.deepEqual(formattedStyleRange.styles, [
-      [{ bold: true, fontSize: 16, italic: true }],
-    ]);
+    assert.deepEqual(formattedStyleRange.styles, [[{ bold: true, fontSize: 16, italic: true }]]);
     assert.deepEqual(cellData, {
       columnIndex: 2,
       display: "",
@@ -176,12 +174,7 @@ test("SpreadyControlServer exposes expanded formula compatibility over TCP", asy
           type: "setRange",
           values: [
             ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)"],
-            [
-              "b",
-              "20",
-              '=XLOOKUP("b",A1:A2,B1:B2,"nf")',
-              '=TEXTJOIN(", ",TRUE,A1:A2)',
-            ],
+            ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)'],
           ],
         },
       ],
@@ -354,9 +347,7 @@ test("SpreadyControlServer exposes chart reads and preview data over TCP", async
   ];
   workbook.nextChartNumber = 4;
 
-  const tempDirectory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "spready-tcp-"),
-  );
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-tcp-"));
   const filePath = path.join(tempDirectory, "charts.spready");
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
@@ -711,9 +702,7 @@ test("SpreadyControlServer rejects stale expectedVersion writes over TCP", async
 test("SpreadyControlServer saves and opens native workbook files over TCP", async () => {
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
-  const tempDirectory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "spready-tcp-"),
-  );
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-tcp-"));
 
   await server.start();
 
@@ -744,12 +733,8 @@ test("SpreadyControlServer saves and opens native workbook files over TCP", asyn
     assert.equal(saveResult.changed, true);
     assert.equal(saveResult.summary.documentFilePath, filePath);
     assert.equal(saveResult.summary.hasUnsavedChanges, false);
-    assert.ok(
-      (await client.call<string[]>("listMethods")).includes("openWorkbookFile"),
-    );
-    assert.ok(
-      (await client.call<string[]>("listMethods")).includes("saveWorkbookFile"),
-    );
+    assert.ok((await client.call<string[]>("listMethods")).includes("openWorkbookFile"));
+    assert.ok((await client.call<string[]>("listMethods")).includes("saveWorkbookFile"));
 
     await client.applyTransaction({
       operations: [
@@ -815,10 +800,7 @@ test("SpreadyControlServer creates a new workbook over TCP with unsaved-change g
       ],
     });
 
-    await assert.rejects(
-      () => client.createNewWorkbook(),
-      /discardUnsavedChanges: true/,
-    );
+    await assert.rejects(() => client.createNewWorkbook(), /discardUnsavedChanges: true/);
 
     const result = await client.createNewWorkbook({
       discardUnsavedChanges: true,

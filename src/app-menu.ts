@@ -20,5 +20,4 @@ export const APP_MENU_ACTIONS = {
   saveWorkbookAs: "workbook:save-as",
 } as const;
 
-export type AppMenuAction =
-  (typeof APP_MENU_ACTIONS)[keyof typeof APP_MENU_ACTIONS];
+export type AppMenuAction = (typeof APP_MENU_ACTIONS)[keyof typeof APP_MENU_ACTIONS];

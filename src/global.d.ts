@@ -58,39 +58,26 @@ type SaveWorkbookFileAsResult =
 declare global {
   interface Window {
     appShell: {
-      applyTransaction: (
-        request: ApplyTransactionRequest,
-      ) => Promise<ApplyTransactionResult>;
+      applyTransaction: (request: ApplyTransactionRequest) => Promise<ApplyTransactionResult>;
       cutRange: (request: CutRangeRequest) => Promise<CutRangeResult>;
       getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
       getChart: (chartId: string) => Promise<WorkbookChartResult>;
       getChartPreview: (chartId: string) => Promise<WorkbookChartPreview>;
       getSheetCsv: (sheetId?: string) => Promise<string>;
-      getSheetChartPreviews: (
-        sheetId?: string,
-      ) => Promise<WorkbookSheetChartPreviewsResult>;
+      getSheetChartPreviews: (sheetId?: string) => Promise<WorkbookSheetChartPreviewsResult>;
       getSheetCharts: (sheetId?: string) => Promise<WorkbookSheetChartsResult>;
-      getSheetDisplayRange: (
-        request: SheetRangeRequest,
-      ) => Promise<SheetDisplayRangeResult>;
+      getSheetDisplayRange: (request: SheetRangeRequest) => Promise<SheetDisplayRangeResult>;
       getSheetRange: (request: SheetRangeRequest) => Promise<SheetRangeResult>;
-      getSheetStyleRange: (
-        request: SheetRangeRequest,
-      ) => Promise<SheetStyleRangeResult>;
+      getSheetStyleRange: (request: SheetRangeRequest) => Promise<SheetStyleRangeResult>;
       getUsedRange: (sheetId?: string) => Promise<UsedRangeResult>;
       getWorkbookSummary: () => Promise<WorkbookSummary>;
       name: string;
       readClipboard: () => Promise<ClipboardReadResult>;
       onMenuAction: (listener: (action: AppMenuAction) => void) => () => void;
-      onWorkbookChanged: (
-        listener: (summary: WorkbookSummary) => void,
-      ) => () => void;
+      onWorkbookChanged: (listener: (summary: WorkbookSummary) => void) => () => void;
       openCsvFile: () => Promise<OpenCsvFileResult>;
       openWorkbookFile: () => Promise<OpenWorkbookFileResult>;
-      saveCsvFile: (
-        content: string,
-        defaultPath?: string,
-      ) => Promise<SaveCsvFileResult>;
+      saveCsvFile: (content: string, defaultPath?: string) => Promise<SaveCsvFileResult>;
       setChartDialogOpen: (isOpen: boolean) => Promise<void>;
       showCellContextMenu: (request: {
         canCopy: boolean;
@@ -99,12 +86,8 @@ declare global {
         canFormat: boolean;
       }) => Promise<void>;
       writeClipboard: (request: ClipboardWriteRequest) => Promise<void>;
-      saveWorkbookFile: (
-        filePath: string,
-      ) => Promise<WorkbookFileOperationResult>;
-      saveWorkbookFileAs: (
-        defaultPath?: string,
-      ) => Promise<SaveWorkbookFileAsResult>;
+      saveWorkbookFile: (filePath: string) => Promise<WorkbookFileOperationResult>;
+      saveWorkbookFileAs: (defaultPath?: string) => Promise<SaveWorkbookFileAsResult>;
     };
   }
 }

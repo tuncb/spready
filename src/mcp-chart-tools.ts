@@ -7,13 +7,7 @@ import type {
   WorkbookSheetChartsResult,
 } from "./workbook-core";
 
-const workbookChartTypeSchema = z.enum([
-  "bar",
-  "line",
-  "area",
-  "scatter",
-  "pie",
-]);
+const workbookChartTypeSchema = z.enum(["bar", "line", "area", "scatter", "pie"]);
 const workbookChartStatusSchema = z.enum(["ok", "invalid"]);
 const workbookChartSeriesLayoutSchema = z.enum(["column", "row"]);
 const workbookChartDimensionTypeSchema = z.enum(["number", "ordinal", "time"]);
@@ -154,8 +148,7 @@ export const chartGuideTools = [
   },
   {
     defaultsToActiveSheet: false,
-    description:
-      "Return one chart definition plus validation status and issues.",
+    description: "Return one chart definition plus validation status and issues.",
     name: "get_chart",
     readOnly: true,
     useWhen:
@@ -172,8 +165,7 @@ export const chartGuideTools = [
   },
   {
     defaultsToActiveSheet: true,
-    description:
-      "Return renderer-ready chart previews for all charts owned by a sheet.",
+    description: "Return renderer-ready chart previews for all charts owned by a sheet.",
     name: "get_sheet_chart_previews",
     readOnly: true,
     useWhen:
@@ -206,9 +198,7 @@ interface ChartToolRegistrar {
 interface ChartToolControlClient {
   getChart(chartId: string): Promise<WorkbookChartResult>;
   getChartPreview(chartId: string): Promise<WorkbookChartPreview>;
-  getSheetChartPreviews(
-    sheetId?: string,
-  ): Promise<WorkbookSheetChartPreviewsResult>;
+  getSheetChartPreviews(sheetId?: string): Promise<WorkbookSheetChartPreviewsResult>;
   getSheetCharts(sheetId?: string): Promise<WorkbookSheetChartsResult>;
 }
 
@@ -242,8 +232,7 @@ export function registerChartTools(
         openWorldHint: false,
         readOnlyHint: true,
       },
-      description:
-        "Return one chart definition together with validation status and issues.",
+      description: "Return one chart definition together with validation status and issues.",
       inputSchema: chartIdInputSchema,
       outputSchema: workbookChartResultSchema,
     },
@@ -288,9 +277,7 @@ export function registerChartTools(
     async (args) => {
       const { sheetId } = optionalSheetIdInputSchema.parse(args);
 
-      return createTextResult(
-        await controlClient.getSheetChartPreviews(sheetId),
-      );
+      return createTextResult(await controlClient.getSheetChartPreviews(sheetId));
     },
   );
 }

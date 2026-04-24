@@ -61,8 +61,7 @@ export function enqueueToast(
   const existingToast = current.find((toast) => toast.signature === signature);
   const nextToast: ToastNotification = {
     description,
-    dismissAfterMs:
-      input.dismissAfterMs ?? DEFAULT_DISMISS_AFTER_MS[input.kind],
+    dismissAfterMs: input.dismissAfterMs ?? DEFAULT_DISMISS_AFTER_MS[input.kind],
     id: `toast-${now}-${toastSequence}`,
     kind: input.kind,
     occurrenceCount: (existingToast?.occurrenceCount ?? 0) + 1,
@@ -72,9 +71,7 @@ export function enqueueToast(
 
   toastSequence += 1;
 
-  const nextQueue = current
-    .filter((toast) => toast.signature !== signature)
-    .concat(nextToast);
+  const nextQueue = current.filter((toast) => toast.signature !== signature).concat(nextToast);
 
   return limit > 0 ? nextQueue.slice(-limit) : nextQueue;
 }

@@ -1,15 +1,6 @@
-import {
-  chmod,
-  cp,
-  mkdir,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { chmod, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 function parseArgs(argv) {
   const args = new Map();
@@ -17,11 +8,11 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
 
-    if (!token.startsWith('--')) {
+    if (!token.startsWith("--")) {
       continue;
     }
 
-    const separatorIndex = token.indexOf('=');
+    const separatorIndex = token.indexOf("=");
 
     if (separatorIndex !== -1) {
       const key = token.slice(2, separatorIndex);
@@ -38,7 +29,7 @@ function parseArgs(argv) {
     const key = token.slice(2);
     const value = argv[index + 1];
 
-    if (!value || value.startsWith('--')) {
+    if (!value || value.startsWith("--")) {
       throw new Error(`Missing value for --${key}.`);
     }
 
@@ -61,23 +52,23 @@ function requireArg(args, name) {
 
 function getPlatformSlug(platform) {
   switch (platform) {
-    case 'win32':
-      return 'windows';
-    case 'darwin':
-      return 'macos';
-    case 'linux':
-      return 'linux';
+    case "win32":
+      return "windows";
+    case "darwin":
+      return "macos";
+    case "linux":
+      return "linux";
     default:
       throw new Error(`Unsupported platform "${platform}".`);
   }
 }
 
 function getExecutableName(productName, platform) {
-  if (platform === 'win32') {
+  if (platform === "win32") {
     return `${productName}.exe`;
   }
 
-  if (platform === 'darwin') {
+  if (platform === "darwin") {
     return `${productName}.app`;
   }
 
@@ -85,7 +76,7 @@ function getExecutableName(productName, platform) {
 }
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(scriptDir, '..');
+const repoRoot = path.resolve(scriptDir, "..");
 
 async function copyDirectoryContents(sourceDir, targetDir) {
   const entries = await readdir(sourceDir);
@@ -99,31 +90,31 @@ async function copyDirectoryContents(sourceDir, targetDir) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const platform = requireArg(args, 'platform');
-  const arch = requireArg(args, 'arch');
-  const version = requireArg(args, 'version');
-  const packageJson = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8'));
+  const platform = requireArg(args, "platform");
+  const arch = requireArg(args, "arch");
+  const version = requireArg(args, "version");
+  const packageJson = JSON.parse(await readFile(path.join(repoRoot, "package.json"), "utf8"));
   const productName = packageJson.productName;
 
-  if (typeof productName !== 'string' || productName.length === 0) {
-    throw new Error('package.json must define a productName.');
+  if (typeof productName !== "string" || productName.length === 0) {
+    throw new Error("package.json must define a productName.");
   }
 
   const platformSlug = getPlatformSlug(platform);
   const bundleSlug = `spready-${platformSlug}-${arch}-${version}`;
-  const packagedAppDir = path.join(repoRoot, 'out', `${productName}-${platform}-${arch}`);
-  const mcpExecutableName = `spready-mcp${platform === 'win32' ? '.exe' : ''}`;
+  const packagedAppDir = path.join(repoRoot, "out", `${productName}-${platform}-${arch}`);
+  const mcpExecutableName = `spready-mcp${platform === "win32" ? ".exe" : ""}`;
   const mcpExecutablePath = path.join(
     repoRoot,
-    'out',
-    'mcp',
+    "out",
+    "mcp",
     `${platform}-${arch}`,
     mcpExecutableName,
   );
-  const stagingDir = path.join(repoRoot, 'out', 'release', bundleSlug);
+  const stagingDir = path.join(repoRoot, "out", "release", bundleSlug);
   const appTargetName = getExecutableName(productName, platform);
-  const mcpConfigPath = path.join(stagingDir, 'spready.mcp.json');
-  const notesPath = path.join(stagingDir, 'MCP-README.txt');
+  const mcpConfigPath = path.join(stagingDir, "spready.mcp.json");
+  const notesPath = path.join(stagingDir, "MCP-README.txt");
   const mcpCommand = `./${mcpExecutableName}`;
   const mcpConfig = {
     mcpServers: {
@@ -133,10 +124,10 @@ async function main() {
     },
   };
   const notes = [
-    '1. Start Spready before connecting your harness.',
+    "1. Start Spready before connecting your harness.",
     `2. Import or copy the server entry from spready.mcp.json.`,
     `3. If your harness requires absolute command paths, replace ${mcpCommand} with the extracted path to ${mcpExecutableName}.`,
-  ].join('\n');
+  ].join("\n");
 
   await stat(packagedAppDir);
   await stat(mcpExecutablePath);
@@ -147,10 +138,10 @@ async function main() {
   await cp(mcpExecutablePath, path.join(stagingDir, mcpExecutableName), {
     recursive: false,
   });
-  await writeFile(mcpConfigPath, `${JSON.stringify(mcpConfig, null, 2)}\n`, 'utf8');
-  await writeFile(notesPath, `${notes}\n`, 'utf8');
+  await writeFile(mcpConfigPath, `${JSON.stringify(mcpConfig, null, 2)}\n`, "utf8");
+  await writeFile(notesPath, `${notes}\n`, "utf8");
 
-  if (platform !== 'win32') {
+  if (platform !== "win32") {
     await chmod(path.join(stagingDir, mcpExecutableName), 0o755);
   }
 

@@ -38,12 +38,7 @@ type TextValue = {
   value: string;
 };
 
-type ScalarFormulaValue =
-  | BlankValue
-  | BooleanValue
-  | ErrorValue
-  | NumberValue
-  | TextValue;
+type ScalarFormulaValue = BlankValue | BooleanValue | ErrorValue | NumberValue | TextValue;
 
 type RangeValue = {
   type: "range";
@@ -77,21 +72,7 @@ type FormulaToken =
   | { type: "number"; value: number }
   | {
       type: "operator";
-      value:
-        | "+"
-        | "-"
-        | "*"
-        | "/"
-        | "^"
-        | "&"
-        | "="
-        | "<>"
-        | "<"
-        | "<="
-        | ">"
-        | ">="
-        | ":"
-        | "%";
+      value: "+" | "-" | "*" | "/" | "^" | "&" | "=" | "<>" | "<" | "<=" | ">" | ">=" | ":" | "%";
     }
   | { type: "rightParen" }
   | { type: "text"; value: string };
@@ -99,19 +80,7 @@ type FormulaToken =
 type FormulaAst =
   | {
       type: "binary";
-      operator:
-        | "+"
-        | "-"
-        | "*"
-        | "/"
-        | "^"
-        | "&"
-        | "="
-        | "<>"
-        | "<"
-        | "<="
-        | ">"
-        | ">=";
+      operator: "+" | "-" | "*" | "/" | "^" | "&" | "=" | "<>" | "<" | "<=" | ">" | ">=";
       left: FormulaAst;
       right: FormulaAst;
     }
@@ -131,18 +100,14 @@ type FunctionArgumentValue = {
   values: ScalarFormulaValue[];
 };
 
-type FormulaFunctionHandler = (
-  args: FormulaAst[],
-  dependencies: Set<CellKey>,
-) => FormulaValue;
+type FormulaFunctionHandler = (args: FormulaAst[], dependencies: Set<CellKey>) => FormulaValue;
 
 const BLANK_VALUE: BlankValue = {
   type: "blank",
 };
 
 const EMPTY_DEPENDENCIES: CellKey[] = [];
-const NUMBER_LITERAL_PATTERN =
-  /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[Ee][+-]?\d+)?$/;
+const NUMBER_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[Ee][+-]?\d+)?$/;
 const ERROR_LITERALS: ReadonlyArray<[string, FormulaErrorCode]> = [
   ["#DIV/0!", "DIV0"],
   ["#NAME?", "NAME"],
@@ -165,9 +130,7 @@ export function getCellEvaluation(
   const evaluation = snapshot.cells.get(createCellKey(rowIndex, columnIndex));
 
   if (!evaluation) {
-    throw new Error(
-      `Cell ${rowIndex}:${columnIndex} is missing from the evaluation snapshot.`,
-    );
+    throw new Error(`Cell ${rowIndex}:${columnIndex} is missing from the evaluation snapshot.`);
   }
 
   return evaluation;
@@ -272,9 +235,7 @@ export function tokenizeFormula(input: string): FormulaToken[] {
     }
 
     if (/[A-Za-z_\\]/.test(character)) {
-      const identifierMatch = /^[A-Za-z_\\][A-Za-z0-9_.]*/.exec(
-        expression.slice(index),
-      );
+      const identifierMatch = /^[A-Za-z_\\][A-Za-z0-9_.]*/.exec(expression.slice(index));
 
       if (!identifierMatch) {
         throw new Error(`Unexpected token "${character}" in formula.`);
@@ -288,9 +249,7 @@ export function tokenizeFormula(input: string): FormulaToken[] {
       continue;
     }
 
-    const numberMatch = /^(?:\d+(?:\.\d+)?|\.\d+)(?:[Ee][+-]?\d+)?/.exec(
-      expression.slice(index),
-    );
+    const numberMatch = /^(?:\d+(?:\.\d+)?|\.\d+)(?:[Ee][+-]?\d+)?/.exec(expression.slice(index));
 
     if (numberMatch) {
       tokens.push({
@@ -369,10 +328,7 @@ export function parseFormula(input: string): FormulaAst {
     let node = parseMultiplicative();
     let token = tokens[index];
 
-    while (
-      token?.type === "operator" &&
-      (token.value === "+" || token.value === "-")
-    ) {
+    while (token?.type === "operator" && (token.value === "+" || token.value === "-")) {
       const operator = token.value;
 
       index += 1;
@@ -392,10 +348,7 @@ export function parseFormula(input: string): FormulaAst {
     let node = parsePower();
     let token = tokens[index];
 
-    while (
-      token?.type === "operator" &&
-      (token.value === "*" || token.value === "/")
-    ) {
+    while (token?.type === "operator" && (token.value === "*" || token.value === "/")) {
       const operator = token.value;
 
       index += 1;
@@ -448,10 +401,7 @@ export function parseFormula(input: string): FormulaAst {
   function parseUnary(): FormulaAst {
     const token = tokens[index];
 
-    if (
-      token?.type === "operator" &&
-      (token.value === "+" || token.value === "-")
-    ) {
+    if (token?.type === "operator" && (token.value === "+" || token.value === "-")) {
       index += 1;
       return {
         type: "unary",
@@ -585,9 +535,7 @@ export function parseFormula(input: string): FormulaAst {
 
   function parseFunctionCall(name: string): FormulaAst {
     if (tokens[index]?.type !== "leftParen") {
-      throw new Error(
-        "Formula function call is missing an opening parenthesis.",
-      );
+      throw new Error("Formula function call is missing an opening parenthesis.");
     }
 
     index += 1;
@@ -610,9 +558,7 @@ export function parseFormula(input: string): FormulaAst {
     }
 
     if (tokens[index]?.type !== "rightParen") {
-      throw new Error(
-        "Formula function call is missing a closing parenthesis.",
-      );
+      throw new Error("Formula function call is missing a closing parenthesis.");
     }
 
     index += 1;
@@ -650,10 +596,7 @@ export function evaluateSheet(
     return sheet.cells[rowIndex]?.[columnIndex] ?? "";
   }
 
-  function recordDependencies(
-    cellKey: CellKey,
-    dependencies: readonly CellKey[],
-  ) {
+  function recordDependencies(cellKey: CellKey, dependencies: readonly CellKey[]) {
     if (dependencies.length === 0) {
       return;
     }
@@ -685,11 +628,7 @@ export function evaluateSheet(
         cycleCellKeys.add(cycleKey);
       }
 
-      return createErrorEvaluation(
-        getInput(rowIndex, columnIndex),
-        "CYCLE",
-        EMPTY_DEPENDENCIES,
-      );
+      return createErrorEvaluation(getInput(rowIndex, columnIndex), "CYCLE", EMPTY_DEPENDENCIES);
     }
 
     evaluationStack.push(cellKey);
@@ -765,10 +704,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateAst(
-    ast: FormulaAst,
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateAst(ast: FormulaAst, dependencies: Set<CellKey>): FormulaValue {
     switch (ast.type) {
       case "function":
         return evaluateFunctionCall(ast.name, ast.args, dependencies);
@@ -777,9 +713,7 @@ export function evaluateSheet(
       case "name":
         return createErrorValue("NAME");
       case "percent": {
-        const numericOperand = coerceToNumber(
-          evaluateAst(ast.operand, dependencies),
-        );
+        const numericOperand = coerceToNumber(evaluateAst(ast.operand, dependencies));
 
         if (numericOperand.type === "error") {
           return numericOperand;
@@ -805,9 +739,7 @@ export function evaluateSheet(
           dependencies,
         );
       case "unary": {
-        const numericOperand = coerceToNumber(
-          evaluateAst(ast.operand, dependencies),
-        );
+        const numericOperand = coerceToNumber(evaluateAst(ast.operand, dependencies));
 
         if (numericOperand.type === "error") {
           return numericOperand;
@@ -815,8 +747,7 @@ export function evaluateSheet(
 
         return {
           type: "number",
-          value:
-            ast.operator === "-" ? -numericOperand.value : numericOperand.value,
+          value: ast.operator === "-" ? -numericOperand.value : numericOperand.value,
         };
       }
       case "binary":
@@ -929,24 +860,17 @@ export function evaluateSheet(
     const endRow = Math.max(start.rowIndex, end.rowIndex);
     const startColumn = Math.min(start.columnIndex, end.columnIndex);
     const endColumn = Math.max(start.columnIndex, end.columnIndex);
-    const cellsInRange = Array.from(
-      { length: endRow - startRow + 1 },
-      (_, rowOffset) =>
-        Array.from(
-          { length: endColumn - startColumn + 1 },
-          (_, columnOffset) => {
-            const cellAddress = {
-              rowIndex: startRow + rowOffset,
-              columnIndex: startColumn + columnOffset,
-            };
+    const cellsInRange = Array.from({ length: endRow - startRow + 1 }, (_, rowOffset) =>
+      Array.from({ length: endColumn - startColumn + 1 }, (_, columnOffset) => {
+        const cellAddress = {
+          rowIndex: startRow + rowOffset,
+          columnIndex: startColumn + columnOffset,
+        };
 
-            dependencies.add(
-              createCellKey(cellAddress.rowIndex, cellAddress.columnIndex),
-            );
+        dependencies.add(createCellKey(cellAddress.rowIndex, cellAddress.columnIndex));
 
-            return cellAddress;
-          },
-        ),
+        return cellAddress;
+      }),
     );
 
     return {
@@ -966,8 +890,7 @@ export function evaluateSheet(
 
     const referencedCell = value.cells[0][0];
 
-    return evaluateCell(referencedCell.rowIndex, referencedCell.columnIndex)
-      .value;
+    return evaluateCell(referencedCell.rowIndex, referencedCell.columnIndex).value;
   }
 
   function coerceToNumber(value: FormulaValue): NumberValue | ErrorValue {
@@ -1040,10 +963,7 @@ export function evaluateSheet(
       return normalizedOperands;
     }
 
-    const comparison = compareScalarValues(
-      normalizedOperands.left,
-      normalizedOperands.right,
-    );
+    const comparison = compareScalarValues(normalizedOperands.left, normalizedOperands.right);
 
     switch (operator) {
       case "=":
@@ -1096,13 +1016,9 @@ export function evaluateSheet(
     }
 
     const normalizedLeft =
-      leftScalar.type === "blank"
-        ? coerceBlankForComparison(rightScalar)
-        : leftScalar;
+      leftScalar.type === "blank" ? coerceBlankForComparison(rightScalar) : leftScalar;
     const normalizedRight =
-      rightScalar.type === "blank"
-        ? coerceBlankForComparison(leftScalar)
-        : rightScalar;
+      rightScalar.type === "blank" ? coerceBlankForComparison(leftScalar) : rightScalar;
 
     return {
       left: normalizedLeft,
@@ -1110,9 +1026,7 @@ export function evaluateSheet(
     };
   }
 
-  function coerceBlankForComparison(
-    other: ScalarFormulaValue,
-  ): ScalarFormulaValue {
+  function coerceBlankForComparison(other: ScalarFormulaValue): ScalarFormulaValue {
     switch (other.type) {
       case "blank":
         return BLANK_VALUE;
@@ -1136,10 +1050,7 @@ export function evaluateSheet(
     }
   }
 
-  function compareScalarValues(
-    left: ScalarFormulaValue,
-    right: ScalarFormulaValue,
-  ): number {
+  function compareScalarValues(left: ScalarFormulaValue, right: ScalarFormulaValue): number {
     if (left.type === "boolean" && right.type === "boolean") {
       return Number(left.value) - Number(right.value);
     }
@@ -1237,10 +1148,7 @@ export function evaluateSheet(
     }
   }
 
-  function getScalarArgument(
-    arg: FormulaAst,
-    dependencies: Set<CellKey>,
-  ): ScalarFormulaValue {
+  function getScalarArgument(arg: FormulaAst, dependencies: Set<CellKey>): ScalarFormulaValue {
     return scalarizeFormulaValue(evaluateAst(arg, dependencies));
   }
 
@@ -1301,10 +1209,7 @@ export function evaluateSheet(
 
     for (const row of cellsInRange) {
       for (const cellAddress of row) {
-        const cellValue = evaluateCell(
-          cellAddress.rowIndex,
-          cellAddress.columnIndex,
-        ).value;
+        const cellValue = evaluateCell(cellAddress.rowIndex, cellAddress.columnIndex).value;
 
         if (cellValue.type === "error") {
           return cellValue;
@@ -1327,10 +1232,7 @@ export function evaluateSheet(
     return currentCell;
   }
 
-  function getRangeArgument(
-    arg: FormulaAst,
-    dependencies: Set<CellKey>,
-  ): RangeValue | ErrorValue {
+  function getRangeArgument(arg: FormulaAst, dependencies: Set<CellKey>): RangeValue | ErrorValue {
     const value = evaluateAst(arg, dependencies);
 
     if (value.type !== "range") {
@@ -1350,9 +1252,7 @@ export function evaluateSheet(
     return firstCell;
   }
 
-  function getVectorAddresses(
-    rangeValue: RangeValue,
-  ): CellAddress[] | ErrorValue {
+  function getVectorAddresses(rangeValue: RangeValue): CellAddress[] | ErrorValue {
     if (rangeValue.cells.length === 0 || rangeValue.cells[0]?.length === 0) {
       return createErrorValue("REF");
     }
@@ -1461,10 +1361,7 @@ export function evaluateSheet(
     return handler(args, dependencies);
   }
 
-  function evaluateSum(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateSum(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const numericValues = collectAggregateNumbers(args, dependencies);
 
     if (isErrorValue(numericValues)) {
@@ -1477,10 +1374,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateProduct(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateProduct(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const numericValues = collectAggregateNumbers(args, dependencies);
 
     if (isErrorValue(numericValues)) {
@@ -1500,10 +1394,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateMin(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateMin(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const numericValues = collectAggregateNumbers(args, dependencies);
 
     if (isErrorValue(numericValues)) {
@@ -1516,10 +1407,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateMax(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateMax(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const numericValues = collectAggregateNumbers(args, dependencies);
 
     if (isErrorValue(numericValues)) {
@@ -1532,10 +1420,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateAverage(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateAverage(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const numericValues = collectAggregateNumbers(args, dependencies);
 
     if (isErrorValue(numericValues)) {
@@ -1548,16 +1433,11 @@ export function evaluateSheet(
 
     return {
       type: "number",
-      value:
-        numericValues.reduce((total, value) => total + value, 0) /
-        numericValues.length,
+      value: numericValues.reduce((total, value) => total + value, 0) / numericValues.length,
     };
   }
 
-  function evaluateCount(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateCount(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentValues = getFunctionArgumentValues(args, dependencies);
 
     if (isErrorValue(argumentValues)) {
@@ -1594,10 +1474,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateCountA(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateCountA(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentValues = getFunctionArgumentValues(args, dependencies);
 
     if (isErrorValue(argumentValues)) {
@@ -1620,10 +1497,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateAbs(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateAbs(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -1642,10 +1516,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateRound(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateRound(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 2);
 
     if (argumentError) {
@@ -1673,10 +1544,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateInt(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateInt(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -1695,10 +1563,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateMod(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateMod(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 2);
 
     if (argumentError) {
@@ -1733,10 +1598,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluatePower(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluatePower(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 2);
 
     if (argumentError) {
@@ -1767,10 +1629,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateSqrt(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateSqrt(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -1819,10 +1678,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateAnd(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateAnd(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     if (args.length === 0) {
       return createErrorValue("VALUE");
     }
@@ -1853,10 +1709,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateOr(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateOr(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     if (args.length === 0) {
       return createErrorValue("VALUE");
     }
@@ -1887,10 +1740,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateNot(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateNot(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -1909,10 +1759,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateIf(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateIf(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 2, 3);
 
     if (argumentError) {
@@ -1939,19 +1786,14 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateIfError(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateIfError(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 2);
 
     if (argumentError) {
       return argumentError;
     }
 
-    const firstValue = scalarizeFormulaValue(
-      evaluateAst(args[0], dependencies),
-    );
+    const firstValue = scalarizeFormulaValue(evaluateAst(args[0], dependencies));
 
     if (firstValue.type === "error") {
       return evaluateAst(args[1], dependencies);
@@ -1960,10 +1802,7 @@ export function evaluateSheet(
     return firstValue;
   }
 
-  function evaluateLen(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateLen(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -1982,10 +1821,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateLeft(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateLeft(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1, 2);
 
     if (argumentError) {
@@ -2018,10 +1854,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateRight(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateRight(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1, 2);
 
     if (argumentError) {
@@ -2057,10 +1890,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateMid(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateMid(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 3);
 
     if (argumentError) {
@@ -2098,10 +1928,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateTrim(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateTrim(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -2120,10 +1947,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateLower(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateLower(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -2142,10 +1966,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateUpper(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateUpper(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -2164,10 +1985,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateConcat(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateConcat(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentValues = getFunctionArgumentValues(args, dependencies);
 
     if (isErrorValue(argumentValues)) {
@@ -2194,15 +2012,8 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateTextJoin(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
-    const argumentError = expectArgumentCount(
-      args,
-      3,
-      Number.POSITIVE_INFINITY,
-    );
+  function evaluateTextJoin(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
+    const argumentError = expectArgumentCount(args, 3, Number.POSITIVE_INFINITY);
 
     if (argumentError) {
       return argumentError;
@@ -2250,10 +2061,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateValue(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateValue(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 1);
 
     if (argumentError) {
@@ -2289,10 +2097,7 @@ export function evaluateSheet(
     }
   }
 
-  function evaluateChoose(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateChoose(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     if (args.length < 2) {
       return createErrorValue("VALUE");
     }
@@ -2312,10 +2117,7 @@ export function evaluateSheet(
     return evaluateAst(args[choiceIndex], dependencies);
   }
 
-  function evaluateRow(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateRow(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 0, 1);
 
     if (argumentError) {
@@ -2353,10 +2155,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateColumn(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateColumn(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 0, 1);
 
     if (argumentError) {
@@ -2394,10 +2193,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateIndex(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateIndex(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 2, 3);
 
     if (argumentError) {
@@ -2464,10 +2260,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateMatch(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateMatch(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 2, 3);
 
     if (argumentError) {
@@ -2565,10 +2358,7 @@ export function evaluateSheet(
     };
   }
 
-  function evaluateXLookup(
-    args: FormulaAst[],
-    dependencies: Set<CellKey>,
-  ): FormulaValue {
+  function evaluateXLookup(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     const argumentError = expectArgumentCount(args, 3, 4);
 
     if (argumentError) {
@@ -2619,10 +2409,7 @@ export function evaluateSheet(
       }
 
       if (compareScalarValues(candidateValue, lookupValue) === 0) {
-        return evaluateCell(
-          returnVector[index].rowIndex,
-          returnVector[index].columnIndex,
-        ).value;
+        return evaluateCell(returnVector[index].rowIndex, returnVector[index].columnIndex).value;
       }
     }
 
@@ -2740,12 +2527,7 @@ function createErrorValue(errorCode: FormulaErrorCode): ErrorValue {
 }
 
 function isErrorValue(value: unknown): value is ErrorValue {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    value.type === "error"
-  );
+  return typeof value === "object" && value !== null && "type" in value && value.type === "error";
 }
 
 function getDisplayForValue(value: ScalarFormulaValue): string {

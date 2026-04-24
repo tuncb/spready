@@ -215,10 +215,7 @@ export class SpreadyControlClient extends EventEmitter {
   }
 
   async getSheetChartPreviews(sheetId?: string) {
-    return this.call<WorkbookSheetChartPreviewsResult>(
-      "getSheetChartPreviews",
-      { sheetId },
-    );
+    return this.call<WorkbookSheetChartPreviewsResult>("getSheetChartPreviews", { sheetId });
   }
 
   async getSheetDisplayRange(request: SheetRangeRequest) {
@@ -354,9 +351,7 @@ export async function resolveControlTarget(
   const envPortValue = process.env.SPREADY_CONTROL_PORT;
 
   if (envHost || envPortValue) {
-    const envPort = envPortValue
-      ? Number.parseInt(envPortValue, 10)
-      : DEFAULT_CONTROL_PORT;
+    const envPort = envPortValue ? Number.parseInt(envPortValue, 10) : DEFAULT_CONTROL_PORT;
 
     if (Number.isNaN(envPort)) {
       throw new Error("SPREADY_CONTROL_PORT must be a valid integer.");

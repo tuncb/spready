@@ -66,15 +66,9 @@ type SaveWorkbookFileAsResult =
 
 contextBridge.exposeInMainWorld("appShell", {
   applyTransaction: (request: ApplyTransactionRequest) =>
-    ipcRenderer.invoke(
-      "workbook:apply-transaction",
-      request,
-    ) as Promise<ApplyTransactionResult>,
+    ipcRenderer.invoke("workbook:apply-transaction", request) as Promise<ApplyTransactionResult>,
   getCellData: (request: CellDataRequest) =>
-    ipcRenderer.invoke(
-      "workbook:get-cell-data",
-      request,
-    ) as Promise<CellDataResult>,
+    ipcRenderer.invoke("workbook:get-cell-data", request) as Promise<CellDataResult>,
   getChart: (chartId: string) =>
     ipcRenderer.invoke("workbook:get-chart", {
       chartId,
@@ -84,10 +78,7 @@ contextBridge.exposeInMainWorld("appShell", {
       chartId,
     }) as Promise<WorkbookChartPreview>,
   cutRange: (request: CutRangeRequest) =>
-    ipcRenderer.invoke(
-      "workbook:cut-range",
-      request,
-    ) as Promise<CutRangeResult>,
+    ipcRenderer.invoke("workbook:cut-range", request) as Promise<CutRangeResult>,
   getSheetCsv: (sheetId?: string) =>
     ipcRenderer.invoke("workbook:get-sheet-csv", {
       sheetId,
@@ -101,34 +92,20 @@ contextBridge.exposeInMainWorld("appShell", {
       sheetId,
     }) as Promise<WorkbookSheetChartPreviewsResult>,
   getSheetDisplayRange: (request: SheetRangeRequest) =>
-    ipcRenderer.invoke(
-      "workbook:get-display-range",
-      request,
-    ) as Promise<SheetDisplayRangeResult>,
+    ipcRenderer.invoke("workbook:get-display-range", request) as Promise<SheetDisplayRangeResult>,
   getSheetRange: (request: SheetRangeRequest) =>
-    ipcRenderer.invoke(
-      "workbook:get-range",
-      request,
-    ) as Promise<SheetRangeResult>,
+    ipcRenderer.invoke("workbook:get-range", request) as Promise<SheetRangeResult>,
   getSheetStyleRange: (request: SheetRangeRequest) =>
-    ipcRenderer.invoke(
-      "workbook:get-style-range",
-      request,
-    ) as Promise<SheetStyleRangeResult>,
+    ipcRenderer.invoke("workbook:get-style-range", request) as Promise<SheetStyleRangeResult>,
   getUsedRange: (sheetId?: string) =>
     ipcRenderer.invoke("workbook:get-used-range", {
       sheetId,
     }) as Promise<UsedRangeResult>,
-  getWorkbookSummary: () =>
-    ipcRenderer.invoke("workbook:get-summary") as Promise<WorkbookSummary>,
+  getWorkbookSummary: () => ipcRenderer.invoke("workbook:get-summary") as Promise<WorkbookSummary>,
   name: "Spready",
-  readClipboard: () =>
-    ipcRenderer.invoke("clipboard:read") as Promise<ClipboardReadResult>,
+  readClipboard: () => ipcRenderer.invoke("clipboard:read") as Promise<ClipboardReadResult>,
   onMenuAction: (listener: (action: AppMenuAction) => void) => {
-    const wrappedListener = (
-      _event: Electron.IpcRendererEvent,
-      action: AppMenuAction,
-    ) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, action: AppMenuAction) => {
       listener(action);
     };
 
@@ -139,10 +116,7 @@ contextBridge.exposeInMainWorld("appShell", {
     };
   },
   onWorkbookChanged: (listener: (summary: WorkbookSummary) => void) => {
-    const wrappedListener = (
-      _event: Electron.IpcRendererEvent,
-      summary: WorkbookSummary,
-    ) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, summary: WorkbookSummary) => {
       listener(summary);
     };
 
@@ -152,12 +126,9 @@ contextBridge.exposeInMainWorld("appShell", {
       ipcRenderer.off("workbook:changed", wrappedListener);
     };
   },
-  openCsvFile: () =>
-    ipcRenderer.invoke("dialog:open-csv-file") as Promise<OpenCsvFileResult>,
+  openCsvFile: () => ipcRenderer.invoke("dialog:open-csv-file") as Promise<OpenCsvFileResult>,
   openWorkbookFile: () =>
-    ipcRenderer.invoke(
-      "dialog:open-workbook-file",
-    ) as Promise<OpenWorkbookFileResult>,
+    ipcRenderer.invoke("dialog:open-workbook-file") as Promise<OpenWorkbookFileResult>,
   saveCsvFile: (content: string, defaultPath?: string) =>
     ipcRenderer.invoke("dialog:save-csv-file", {
       content,

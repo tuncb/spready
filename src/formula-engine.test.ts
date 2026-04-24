@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  evaluateSheet,
-  getCellEvaluation,
-  type CellKey,
-} from "./formula-engine";
+import { evaluateSheet, getCellEvaluation, type CellKey } from "./formula-engine";
 import { normalizeSheet, type WorkbookSheet } from "./workbook-core";
 
 function createSheet(rows: string[][]): WorkbookSheet {
@@ -17,13 +13,8 @@ function createSheet(rows: string[][]): WorkbookSheet {
   };
 }
 
-function getDisplay(
-  sheet: WorkbookSheet,
-  rowIndex: number,
-  columnIndex: number,
-) {
-  return getCellEvaluation(evaluateSheet(sheet, 1), rowIndex, columnIndex)
-    .display;
+function getDisplay(sheet: WorkbookSheet, rowIndex: number, columnIndex: number) {
+  return getCellEvaluation(evaluateSheet(sheet, 1), rowIndex, columnIndex).display;
 }
 
 function getDependents(snapshotCellKeys: Iterable<CellKey>) {
@@ -63,32 +54,15 @@ test("evaluateSheet records direct precedents and dependents for formula cells",
   const sheet = createSheet([["1", "2", "=A1+B1", "=C1*2"]]);
   const snapshot = evaluateSheet(sheet, 3);
 
-  assert.deepEqual(getCellEvaluation(snapshot, 0, 2).dependencies, [
-    "0:0",
-    "0:1",
-  ]);
+  assert.deepEqual(getCellEvaluation(snapshot, 0, 2).dependencies, ["0:0", "0:1"]);
   assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, ["0:2"]);
-  assert.deepEqual(getDependents(snapshot.precedents.get("0:2") ?? []), [
-    "0:0",
-    "0:1",
-  ]);
-  assert.deepEqual(getDependents(snapshot.dependents.get("0:2") ?? []), [
-    "0:3",
-  ]);
+  assert.deepEqual(getDependents(snapshot.precedents.get("0:2") ?? []), ["0:0", "0:1"]);
+  assert.deepEqual(getDependents(snapshot.dependents.get("0:2") ?? []), ["0:3"]);
 });
 
 test("evaluateSheet supports text, boolean, comparison, exponent, percent, and error literals", () => {
   const sheet = createSheet([
-    [
-      '= "Hello" & " " & "World"',
-      "=TRUE",
-      "=FALSE",
-      "=2^3",
-      "=50%",
-      '="A"="a"',
-      "=1<>2",
-      "=#N/A",
-    ],
+    ['= "Hello" & " " & "World"', "=TRUE", "=FALSE", "=2^3", "=50%", '="A"="a"', "=1<>2", "=#N/A"],
   ]);
   const snapshot = evaluateSheet(sheet, 11);
 
@@ -103,19 +77,14 @@ test("evaluateSheet supports text, boolean, comparison, exponent, percent, and e
 });
 
 test("evaluateSheet treats single-cell ranges as scalars and multi-cell ranges as value errors outside functions", () => {
-  const sheet = createSheet([
-    ["1", "2", "=A1:A1", "=A1:B1", "=A1:A1+4", "=A1:B1+1"],
-  ]);
+  const sheet = createSheet([["1", "2", "=A1:A1", "=A1:B1", "=A1:A1+4", "=A1:B1+1"]]);
   const snapshot = evaluateSheet(sheet, 19);
 
   assert.equal(getCellEvaluation(snapshot, 0, 2).display, "1");
   assert.equal(getCellEvaluation(snapshot, 0, 3).display, "#VALUE!");
   assert.equal(getCellEvaluation(snapshot, 0, 4).display, "5");
   assert.equal(getCellEvaluation(snapshot, 0, 5).display, "#VALUE!");
-  assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, [
-    "0:0",
-    "0:1",
-  ]);
+  assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, ["0:0", "0:1"]);
 });
 
 test("evaluateSheet supports core math, logical, and text functions over same-sheet values", () => {
@@ -191,19 +160,7 @@ test("evaluateSheet supports core math, logical, and text functions over same-sh
       getCellEvaluation(snapshot, 1, 9).display,
       getCellEvaluation(snapshot, 1, 10).display,
     ],
-    [
-      "5",
-      "12.35",
-      "3",
-      "1",
-      "16",
-      "3",
-      "TRUE",
-      "FALSE",
-      "TRUE",
-      "TRUE",
-      "FALSE",
-    ],
+    ["5", "12.35", "3", "1", "16", "3", "TRUE", "FALSE", "TRUE", "TRUE", "FALSE"],
   );
   assert.deepEqual(
     [
@@ -252,15 +209,7 @@ test("evaluateSheet supports same-sheet lookup and reference functions", () => {
       "=INDEX(A1:C3,2,3)",
       "=ROW(A3)",
     ],
-    [
-      "c",
-      "30",
-      "300",
-      "=MATCH(25,B1:B3,-1)",
-      "=ROW()",
-      "=COLUMN()",
-      "=COLUMN(C1)",
-    ],
+    ["c", "30", "300", "=MATCH(25,B1:B3,-1)", "=ROW()", "=COLUMN()", "=COLUMN(C1)"],
   ]);
   const snapshot = evaluateSheet(sheet, 31);
 

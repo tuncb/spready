@@ -160,9 +160,7 @@ const workbookDocumentSchema = z.object({
   }),
 });
 
-export function createWorkbookDocument(
-  workbook: WorkbookState,
-): WorkbookDocument {
+export function createWorkbookDocument(workbook: WorkbookState): WorkbookDocument {
   return {
     format: WORKBOOK_DOCUMENT_FORMAT,
     formatVersion: WORKBOOK_DOCUMENT_VERSION,
@@ -171,9 +169,7 @@ export function createWorkbookDocument(
       charts: workbook.charts.map((chart) => ({ ...chart })),
       nextChartNumber: workbook.nextChartNumber,
       nextSheetNumber: workbook.nextSheetNumber,
-      sheets: workbook.sheets.map((sheet) =>
-        createWorkbookDocumentSheet(sheet),
-      ),
+      sheets: workbook.sheets.map((sheet) => createWorkbookDocumentSheet(sheet)),
     },
   };
 }
@@ -197,9 +193,7 @@ export function parseWorkbookDocument(content: string): WorkbookState {
 
   for (const sheet of document.workbook.sheets) {
     if (sheetIds.has(sheet.id)) {
-      throw new Error(
-        `Workbook file contains a duplicate sheet id "${sheet.id}".`,
-      );
+      throw new Error(`Workbook file contains a duplicate sheet id "${sheet.id}".`);
     }
 
     sheetIds.add(sheet.id);
@@ -207,9 +201,7 @@ export function parseWorkbookDocument(content: string): WorkbookState {
 
   for (const chart of document.workbook.charts) {
     if (chartIds.has(chart.id)) {
-      throw new Error(
-        `Workbook file contains a duplicate chart id "${chart.id}".`,
-      );
+      throw new Error(`Workbook file contains a duplicate chart id "${chart.id}".`);
     }
 
     chartIds.add(chart.id);
@@ -223,15 +215,11 @@ export function parseWorkbookDocument(content: string): WorkbookState {
 
   const workbook: WorkbookState = {
     activeSheetId: document.workbook.activeSheetId,
-    charts: document.workbook.charts.map((chart) =>
-      restoreWorkbookChart(chart),
-    ),
+    charts: document.workbook.charts.map((chart) => restoreWorkbookChart(chart)),
     hasUnsavedChanges: false,
     nextChartNumber: document.workbook.nextChartNumber,
     nextSheetNumber: document.workbook.nextSheetNumber,
-    sheets: document.workbook.sheets.map((sheet) =>
-      restoreWorkbookSheet(sheet),
-    ),
+    sheets: document.workbook.sheets.map((sheet) => restoreWorkbookSheet(sheet)),
     version: 0,
   };
 
@@ -240,9 +228,7 @@ export function parseWorkbookDocument(content: string): WorkbookState {
   return workbook;
 }
 
-function createWorkbookDocumentSheet(
-  sheet: WorkbookSheet,
-): WorkbookDocumentSheet {
+function createWorkbookDocumentSheet(sheet: WorkbookSheet): WorkbookDocumentSheet {
   const cells: WorkbookDocumentCell[] = [];
   const styles: WorkbookDocumentCellStyle[] = [];
 

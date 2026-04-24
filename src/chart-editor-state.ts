@@ -56,11 +56,8 @@ export function createChartEditorFormState(
     summary.sheets[0];
   const minimumRowCount = Math.min(sheet?.rowCount ?? 2, 6);
   const rowCount =
-    usedRange.rowCount > 0
-      ? Math.max(2, usedRange.rowCount)
-      : Math.max(2, minimumRowCount);
-  const columnCount =
-    usedRange.columnCount > 0 ? Math.max(2, usedRange.columnCount) : 2;
+    usedRange.rowCount > 0 ? Math.max(2, usedRange.rowCount) : Math.max(2, minimumRowCount);
+  const columnCount = usedRange.columnCount > 0 ? Math.max(2, usedRange.columnCount) : 2;
   const sourceRange =
     request.mode === "create" && request.sourceRange
       ? request.sourceRange
@@ -86,33 +83,22 @@ export function createChartEditorFormState(
   };
 }
 
-export function createChartEditorFormStateFromChart(
-  chart: WorkbookChart,
-): ChartEditorFormState {
+export function createChartEditorFormStateFromChart(chart: WorkbookChart): ChartEditorFormState {
   const range = chart.spec.source.range;
 
   return {
-    categoryDimension:
-      chart.spec.family === "cartesian"
-        ? `${chart.spec.categoryDimension}`
-        : "0",
+    categoryDimension: chart.spec.family === "cartesian" ? `${chart.spec.categoryDimension}` : "0",
     chartType: chart.spec.chartType,
     name: chart.name,
-    nameDimension:
-      chart.spec.family === "pie" ? `${chart.spec.nameDimension}` : "0",
+    nameDimension: chart.spec.family === "pie" ? `${chart.spec.nameDimension}` : "0",
     seriesLayoutBy: chart.spec.source.seriesLayoutBy,
-    smooth:
-      chart.spec.family === "cartesian" ? (chart.spec.smooth ?? false) : false,
+    smooth: chart.spec.family === "cartesian" ? (chart.spec.smooth ?? false) : false,
     sourceRange: formatChartEditorRange(range),
     sourceHeader: chart.spec.source.sourceHeader,
-    stacked:
-      chart.spec.family === "cartesian" ? (chart.spec.stacked ?? false) : false,
-    valueDimension:
-      chart.spec.family === "pie" ? `${chart.spec.valueDimension}` : "1",
+    stacked: chart.spec.family === "cartesian" ? (chart.spec.stacked ?? false) : false,
+    valueDimension: chart.spec.family === "pie" ? `${chart.spec.valueDimension}` : "1",
     valueDimensions:
-      chart.spec.family === "cartesian"
-        ? chart.spec.valueDimensions.join(", ")
-        : "1",
+      chart.spec.family === "cartesian" ? chart.spec.valueDimensions.join(", ") : "1",
   };
 }
 
@@ -232,10 +218,7 @@ export function getChartEditorValidationIssues(
     return [
       {
         code: "INVALID_DIMENSION",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Chart settings are invalid.",
+        message: error instanceof Error ? error.message : "Chart settings are invalid.",
       },
     ];
   }
@@ -251,9 +234,7 @@ export function getChartEditorSheetId(
   }
 
   if (request.mode === "create") {
-    return (
-      request.sourceRange?.sheetId ?? request.sheetId ?? summary.activeSheetId
-    );
+    return request.sourceRange?.sheetId ?? request.sheetId ?? summary.activeSheetId;
   }
 
   return summary.activeSheetId;
@@ -278,10 +259,7 @@ function parseIntegerListField(value: string): number[] {
 }
 
 export function formatChartEditorRange(
-  range: Pick<
-    WorkbookChartRange,
-    "columnCount" | "rowCount" | "startColumn" | "startRow"
-  >,
+  range: Pick<WorkbookChartRange, "columnCount" | "rowCount" | "startColumn" | "startRow">,
 ): string {
   if (range.columnCount < 1 || range.rowCount < 1) {
     return "";
@@ -295,18 +273,11 @@ export function formatChartEditorRange(
   )}${endRow}`;
 }
 
-function parseChartEditorRange(
-  value: string,
-  sheetId: string,
-): WorkbookChartRange {
+function parseChartEditorRange(value: string, sheetId: string): WorkbookChartRange {
   const normalizedValue = value.trim();
   const parts = normalizedValue.split(":").map((part) => part.trim());
 
-  if (
-    parts.length < 1 ||
-    parts.length > 2 ||
-    parts.some((part) => part === "")
-  ) {
+  if (parts.length < 1 || parts.length > 2 || parts.some((part) => part === "")) {
     throw new Error(`"${value}" is not a valid cell range.`);
   }
 

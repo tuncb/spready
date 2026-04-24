@@ -1,9 +1,9 @@
-import { mkdir, writeFile, chmod } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { mkdir, writeFile, chmod } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
-import { build } from 'esbuild';
+import { build } from "esbuild";
 
 function parseArgs(argv) {
   const args = new Map();
@@ -11,11 +11,11 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
 
-    if (!token.startsWith('--')) {
+    if (!token.startsWith("--")) {
       continue;
     }
 
-    const separatorIndex = token.indexOf('=');
+    const separatorIndex = token.indexOf("=");
 
     if (separatorIndex !== -1) {
       const key = token.slice(2, separatorIndex);
@@ -32,7 +32,7 @@ function parseArgs(argv) {
     const key = token.slice(2);
     const value = argv[index + 1];
 
-    if (!value || value.startsWith('--')) {
+    if (!value || value.startsWith("--")) {
       throw new Error(`Missing value for --${key}.`);
     }
 
@@ -54,7 +54,7 @@ function requireArg(args, name) {
 }
 
 function ensureSupportedNodeVersion() {
-  const [majorText, minorText] = process.versions.node.split('.');
+  const [majorText, minorText] = process.versions.node.split(".");
   const major = Number.parseInt(majorText, 10);
   const minor = Number.parseInt(minorText, 10);
 
@@ -72,29 +72,29 @@ function ensureSupportedNodeVersion() {
 }
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(scriptDir, '..');
+const repoRoot = path.resolve(scriptDir, "..");
 
 async function main() {
   ensureSupportedNodeVersion();
 
   const args = parseArgs(process.argv.slice(2));
-  const platform = requireArg(args, 'platform');
-  const arch = requireArg(args, 'arch');
-  const outputDir = path.join(repoRoot, 'out', 'mcp', `${platform}-${arch}`);
-  const executableName = `spready-mcp${platform === 'win32' ? '.exe' : ''}`;
-  const bundlePath = path.join(outputDir, 'spready-mcp.bundle.cjs');
-  const seaConfigPath = path.join(outputDir, 'sea-config.json');
+  const platform = requireArg(args, "platform");
+  const arch = requireArg(args, "arch");
+  const outputDir = path.join(repoRoot, "out", "mcp", `${platform}-${arch}`);
+  const executableName = `spready-mcp${platform === "win32" ? ".exe" : ""}`;
+  const bundlePath = path.join(outputDir, "spready-mcp.bundle.cjs");
+  const seaConfigPath = path.join(outputDir, "sea-config.json");
   const executablePath = path.join(outputDir, executableName);
 
   await mkdir(outputDir, { recursive: true });
 
   await build({
     bundle: true,
-    entryPoints: [path.join(repoRoot, 'src', 'mcp-stdio.ts')],
-    format: 'cjs',
-    logLevel: 'info',
+    entryPoints: [path.join(repoRoot, "src", "mcp-stdio.ts")],
+    format: "cjs",
+    logLevel: "info",
     outfile: bundlePath,
-    platform: 'node',
+    platform: "node",
     target: `node${process.versions.node}`,
   });
 
@@ -106,18 +106,18 @@ async function main() {
     useSnapshot: false,
   };
 
-  await writeFile(seaConfigPath, `${JSON.stringify(seaConfig, null, 2)}\n`, 'utf8');
+  await writeFile(seaConfigPath, `${JSON.stringify(seaConfig, null, 2)}\n`, "utf8");
 
-  const result = spawnSync(process.execPath, ['--build-sea', seaConfigPath], {
+  const result = spawnSync(process.execPath, ["--build-sea", seaConfigPath], {
     cwd: repoRoot,
-    stdio: 'inherit',
+    stdio: "inherit",
   });
 
   if (result.status !== 0) {
-    throw new Error(`Node SEA build failed with exit code ${result.status ?? 'unknown'}.`);
+    throw new Error(`Node SEA build failed with exit code ${result.status ?? "unknown"}.`);
   }
 
-  if (platform !== 'win32') {
+  if (platform !== "win32") {
     await chmod(executablePath, 0o755);
   }
 

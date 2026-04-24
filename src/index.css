@@ -19,16 +19,8 @@
   --color-danger-soft: rgba(177, 74, 47, 0.12);
   color: var(--color-text-dark);
   background:
-    radial-gradient(
-      circle at top left,
-      rgba(255, 255, 255, 0.9),
-      transparent 32%
-    ),
-    linear-gradient(
-      160deg,
-      var(--color-chrome-bg-strong) 0%,
-      var(--color-chrome-bg) 100%
-    );
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.9), transparent 32%),
+    linear-gradient(160deg, var(--color-chrome-bg-strong) 0%, var(--color-chrome-bg) 100%);
   font-family: Aptos, "Segoe UI Variable", "Segoe UI", sans-serif;
 }
 
@@ -68,16 +60,8 @@ select {
   height: 100%;
   padding: 8px;
   background:
-    radial-gradient(
-      circle at right top,
-      rgba(37, 99, 235, 0.12),
-      transparent 22%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.52),
-      rgba(248, 250, 252, 0.88)
-    );
+    radial-gradient(circle at right top, rgba(37, 99, 235, 0.12), transparent 22%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(248, 250, 252, 0.88));
 }
 
 .app-shell__meta {
@@ -392,11 +376,7 @@ select {
   justify-content: center;
   padding: 10px;
   background:
-    radial-gradient(
-      circle at top left,
-      rgba(37, 99, 235, 0.12),
-      transparent 34%
-    ),
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 34%),
     linear-gradient(180deg, #f6f8fb, #eef2f7);
 }
 
@@ -670,11 +650,7 @@ select {
   pointer-events: auto;
   border: 1px solid rgba(177, 74, 47, 0.28);
   border-radius: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 248, 245, 0.98),
-    rgba(255, 255, 255, 0.98)
-  );
+  background: linear-gradient(180deg, rgba(255, 248, 245, 0.98), rgba(255, 255, 255, 0.98));
   box-shadow: 0 18px 42px rgba(20, 32, 51, 0.16);
   animation: toast-enter 160ms ease-out;
   backdrop-filter: blur(16px);

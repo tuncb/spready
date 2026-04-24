@@ -87,12 +87,7 @@ test("WorkbookController exposes expanded formula compatibility through the same
         type: "setRange",
         values: [
           ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)"],
-          [
-            "b",
-            "20",
-            '=XLOOKUP("b",A1:A2,B1:B2,"nf")',
-            '=TEXTJOIN(", ",TRUE,A1:A2)',
-          ],
+          ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)'],
         ],
       },
     ],
@@ -473,9 +468,7 @@ test("WorkbookController exposes persisted chart reads and normalized preview da
   ];
   workbook.nextChartNumber = 4;
 
-  const tempDirectory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "spready-controller-charts-"),
-  );
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-controller-charts-"));
   const filePath = path.join(tempDirectory, "charts.spready");
 
   try {
@@ -1107,9 +1100,7 @@ test("WorkbookController saves and opens native workbook files", async () => {
     ],
   });
 
-  const tempDirectory = await fs.mkdtemp(
-    path.join(os.tmpdir(), "spready-controller-"),
-  );
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-controller-"));
 
   try {
     assert.equal(controller.getSummary().hasUnsavedChanges, true);
@@ -1122,10 +1113,7 @@ test("WorkbookController saves and opens native workbook files", async () => {
     assert.equal(saveResult.summary.documentFilePath, saveResult.filePath);
     assert.equal(saveResult.summary.hasUnsavedChanges, false);
     assert.match(saveResult.filePath, /\.spready$/);
-    assert.match(
-      await fs.readFile(saveResult.filePath, "utf8"),
-      /"format": "spready-workbook"/,
-    );
+    assert.match(await fs.readFile(saveResult.filePath, "utf8"), /"format": "spready-workbook"/);
 
     controller.applyTransaction({
       operations: [
@@ -1201,10 +1189,7 @@ test("WorkbookController creates a new workbook and guards unsaved replacement",
 
   assert.equal(controller.getSummary().hasUnsavedChanges, true);
 
-  assert.throws(
-    () => controller.createNewWorkbook(),
-    /discardUnsavedChanges: true/,
-  );
+  assert.throws(() => controller.createNewWorkbook(), /discardUnsavedChanges: true/);
 
   const resetResult = controller.createNewWorkbook({
     discardUnsavedChanges: true,

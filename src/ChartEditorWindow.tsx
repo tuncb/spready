@@ -82,9 +82,7 @@ export function ChartEditorDialog({
         }
 
         setErrorMessage(
-          error instanceof Error
-            ? error.message
-            : "Chart editor could not be loaded.",
+          error instanceof Error ? error.message : "Chart editor could not be loaded.",
         );
       } finally {
         if (!isCancelled) {
@@ -101,9 +99,7 @@ export function ChartEditorDialog({
   }, [request]);
 
   const sheetId =
-    summary && formState
-      ? getChartEditorSheetId(request, summary, chart ?? undefined)
-      : null;
+    summary && formState ? getChartEditorSheetId(request, summary, chart ?? undefined) : null;
   const validationIssues =
     summary && formState && sheetId
       ? getChartEditorValidationIssues(
@@ -140,9 +136,7 @@ export function ChartEditorDialog({
     );
   };
 
-  const handleChartTypeChange = (
-    nextChartType: ChartEditorFormState["chartType"],
-  ) => {
+  const handleChartTypeChange = (nextChartType: ChartEditorFormState["chartType"]) => {
     setFormState((current) => {
       if (current === null) {
         return current;
@@ -152,14 +146,8 @@ export function ChartEditorDialog({
         ...current,
         chartType: nextChartType,
         nameDimension: nextChartType === "pie" ? current.nameDimension : "0",
-        smooth:
-          nextChartType === "line" || nextChartType === "area"
-            ? current.smooth
-            : false,
-        stacked:
-          nextChartType === "bar" || nextChartType === "area"
-            ? current.stacked
-            : false,
+        smooth: nextChartType === "line" || nextChartType === "area" ? current.smooth : false,
+        stacked: nextChartType === "bar" || nextChartType === "area" ? current.stacked : false,
         valueDimension: nextChartType === "pie" ? current.valueDimension : "1",
       };
     });
@@ -180,8 +168,7 @@ export function ChartEditorDialog({
       });
       onClose();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Chart could not be saved.";
+      const message = error instanceof Error ? error.message : "Chart could not be saved.";
 
       if (isExpectedVersionConflict(message)) {
         onVersionConflict(message);
@@ -203,15 +190,10 @@ export function ChartEditorDialog({
       }}
       ref={dialogRef}
     >
-      {isLoading ||
-      formState === null ||
-      summary === null ||
-      sheetId === null ? (
+      {isLoading || formState === null || summary === null || sheetId === null ? (
         <main className="chart-editor-window">
           <section className="chart-editor-panel">
-            <div className="chart-editor__loading">
-              {errorMessage ?? "Loading chart editor..."}
-            </div>
+            <div className="chart-editor__loading">{errorMessage ?? "Loading chart editor..."}</div>
             <footer className="chart-editor__footer">
               <button
                 className="chart-editor__button chart-editor__button--secondary"
@@ -288,8 +270,7 @@ export function ChartEditorDialog({
                     onChange={(event) => {
                       updateField(
                         "seriesLayoutBy",
-                        event.target
-                          .value as ChartEditorFormState["seriesLayoutBy"],
+                        event.target.value as ChartEditorFormState["seriesLayoutBy"],
                       );
                     }}
                     value={formState.seriesLayoutBy}
@@ -313,9 +294,7 @@ export function ChartEditorDialog({
 
               {formState.chartType === "pie" ? (
                 <section className="chart-editor__section chart-editor__section--grid">
-                  <h2 className="chart-editor__section-title">
-                    Pie dimensions
-                  </h2>
+                  <h2 className="chart-editor__section-title">Pie dimensions</h2>
 
                   <div className="chart-editor__field chart-editor__field--short">
                     <label htmlFor="chart-name-dimension">Name dimension</label>
@@ -330,9 +309,7 @@ export function ChartEditorDialog({
                   </div>
 
                   <div className="chart-editor__field chart-editor__field--short">
-                    <label htmlFor="chart-value-dimension">
-                      Value dimension
-                    </label>
+                    <label htmlFor="chart-value-dimension">Value dimension</label>
                     <input
                       id="chart-value-dimension"
                       inputMode="numeric"
@@ -345,14 +322,10 @@ export function ChartEditorDialog({
                 </section>
               ) : (
                 <section className="chart-editor__section chart-editor__section--grid">
-                  <h2 className="chart-editor__section-title">
-                    Cartesian dimensions
-                  </h2>
+                  <h2 className="chart-editor__section-title">Cartesian dimensions</h2>
 
                   <div className="chart-editor__field chart-editor__field--short">
-                    <label htmlFor="chart-category-dimension">
-                      X axis / category column
-                    </label>
+                    <label htmlFor="chart-category-dimension">X axis / category column</label>
                     <input
                       id="chart-category-dimension"
                       inputMode="numeric"
@@ -365,9 +338,7 @@ export function ChartEditorDialog({
                   </div>
 
                   <div className="chart-editor__field chart-editor__field--medium">
-                    <label htmlFor="chart-value-dimensions">
-                      Y value columns
-                    </label>
+                    <label htmlFor="chart-value-dimensions">Y value columns</label>
                     <input
                       id="chart-value-dimensions"
                       onChange={(event) => {
@@ -378,8 +349,7 @@ export function ChartEditorDialog({
                     />
                   </div>
 
-                  {formState.chartType === "line" ||
-                  formState.chartType === "area" ? (
+                  {formState.chartType === "line" || formState.chartType === "area" ? (
                     <label className="chart-editor__checkbox">
                       <input
                         checked={formState.smooth}
@@ -392,8 +362,7 @@ export function ChartEditorDialog({
                     </label>
                   ) : null}
 
-                  {formState.chartType === "bar" ||
-                  formState.chartType === "area" ? (
+                  {formState.chartType === "bar" || formState.chartType === "area" ? (
                     <label className="chart-editor__checkbox">
                       <input
                         checked={formState.stacked}

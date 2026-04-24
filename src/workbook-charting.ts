@@ -78,9 +78,7 @@ function createEmptyPreviewDataset(): WorkbookChartPreviewDataset {
   };
 }
 
-function createInvalidChartOption(
-  chart: WorkbookChart,
-): Record<string, unknown> {
+function createInvalidChartOption(chart: WorkbookChart): Record<string, unknown> {
   return {
     series: [],
     title: {
@@ -96,19 +94,12 @@ function normalizeChartSourceMatrix(
 ): CellEvaluation[][] {
   const { range, seriesLayoutBy } = chart.spec.source;
   const maxRowCount = Math.max(0, sheet.cells.length - range.startRow);
-  const maxColumnCount = Math.max(
-    0,
-    (sheet.cells[0]?.length ?? 0) - range.startColumn,
-  );
+  const maxColumnCount = Math.max(0, (sheet.cells[0]?.length ?? 0) - range.startColumn);
   const rowCount = Math.max(0, Math.min(range.rowCount, maxRowCount));
   const columnCount = Math.max(0, Math.min(range.columnCount, maxColumnCount));
   const matrix = Array.from({ length: rowCount }, (_, rowOffset) =>
     Array.from({ length: columnCount }, (_, columnOffset) =>
-      getCellEvaluation(
-        snapshot,
-        range.startRow + rowOffset,
-        range.startColumn + columnOffset,
-      ),
+      getCellEvaluation(snapshot, range.startRow + rowOffset, range.startColumn + columnOffset),
     ),
   );
 
@@ -120,10 +111,7 @@ function transposeMatrix(matrix: CellEvaluation[][]): CellEvaluation[][] {
   const columnCount = Math.max(0, ...matrix.map((row) => row.length));
 
   return Array.from({ length: columnCount }, (_, columnIndex) =>
-    Array.from(
-      { length: rowCount },
-      (_, rowIndex) => matrix[rowIndex]?.[columnIndex],
-    ),
+    Array.from({ length: rowCount }, (_, rowIndex) => matrix[rowIndex]?.[columnIndex]),
   );
 }
 
@@ -152,9 +140,7 @@ function buildPreviewDataset(
   return {
     dimensions,
     seriesLayoutBy: "column",
-    source: sourceHeader
-      ? [dimensions.map((dimension) => dimension.name), ...source]
-      : source,
+    source: sourceHeader ? [dimensions.map((dimension) => dimension.name), ...source] : source,
     sourceHeader,
   };
 }
@@ -173,10 +159,7 @@ function createPreviewDimension(
   };
 }
 
-function getDimensionName(
-  headerCell: CellEvaluation | undefined,
-  columnIndex: number,
-): string {
+function getDimensionName(headerCell: CellEvaluation | undefined, columnIndex: number): string {
   if (!headerCell) {
     return `Dimension ${columnIndex + 1}`;
   }
@@ -211,9 +194,7 @@ function toPreviewValue(
   }
 }
 
-function inferDimensionType(
-  values: Array<string | number | null>,
-): WorkbookChartDimensionType {
+function inferDimensionType(values: Array<string | number | null>): WorkbookChartDimensionType {
   const nonNullValues = values.filter((value) => value !== null);
 
   if (nonNullValues.length === 0) {
@@ -224,11 +205,7 @@ function inferDimensionType(
     return "number";
   }
 
-  if (
-    nonNullValues.every(
-      (value) => typeof value === "string" && looksLikeTimeString(value),
-    )
-  ) {
+  if (nonNullValues.every((value) => typeof value === "string" && looksLikeTimeString(value))) {
     return "time";
   }
 
@@ -258,14 +235,9 @@ function buildCartesianChartOption(
   chart: WorkbookCartesianChart,
   dataset: WorkbookChartPreviewDataset,
 ): Record<string, unknown> {
-  const categoryKey = getDimensionEncodeKey(
-    dataset,
-    chart.spec.categoryDimension,
-  );
-  const categoryDimension =
-    dataset.dimensions[chart.spec.categoryDimension]?.type ?? "ordinal";
-  const seriesType =
-    chart.spec.chartType === "area" ? "line" : chart.spec.chartType;
+  const categoryKey = getDimensionEncodeKey(dataset, chart.spec.categoryDimension);
+  const categoryDimension = dataset.dimensions[chart.spec.categoryDimension]?.type ?? "ordinal";
+  const seriesType = chart.spec.chartType === "area" ? "line" : chart.spec.chartType;
   const xAxisName = getDimensionLabel(dataset, chart.spec.categoryDimension);
   const yAxisName = getValueAxisLabel(dataset, chart.spec.valueDimensions);
   const yAxisNameGap = getValueAxisNameGap(chart, dataset);
@@ -279,10 +251,7 @@ function buildCartesianChartOption(
     grid: {
       bottom: CARTESIAN_GRID_BOTTOM,
       containLabel: true,
-      left: Math.max(
-        CARTESIAN_GRID_LEFT_MIN,
-        yAxisNameGap + Y_AXIS_NAME_GRID_PADDING,
-      ),
+      left: Math.max(CARTESIAN_GRID_LEFT_MIN, yAxisNameGap + Y_AXIS_NAME_GRID_PADDING),
       right: CARTESIAN_GRID_RIGHT,
       top: CARTESIAN_GRID_TOP,
     },
@@ -302,9 +271,7 @@ function buildCartesianChartOption(
           x: categoryKey,
           y: valueKey,
         },
-        name:
-          dataset.dimensions[valueDimension]?.name ??
-          `Series ${valueDimension + 1}`,
+        name: dataset.dimensions[valueDimension]?.name ?? `Series ${valueDimension + 1}`,
         type: seriesType,
       };
     }),
@@ -370,14 +337,8 @@ function buildPieChartOption(
   };
 }
 
-function getDimensionLabel(
-  dataset: WorkbookChartPreviewDataset,
-  dimensionIndex: number,
-): string {
-  return (
-    dataset.dimensions[dimensionIndex]?.name ??
-    `Dimension ${dimensionIndex + 1}`
-  );
+function getDimensionLabel(dataset: WorkbookChartPreviewDataset, dimensionIndex: number): string {
+  return dataset.dimensions[dimensionIndex]?.name ?? `Dimension ${dimensionIndex + 1}`;
 }
 
 function getValueAxisLabel(
@@ -413,8 +374,7 @@ function getEstimatedValueAxisTickLabelWidth(
     .map((value) => formatValueAxisTickLabel(value));
 
   return candidates.reduce(
-    (width, label) =>
-      Math.max(width, estimateAxisLabelWidth(label, AXIS_LABEL_FONT_SIZE)),
+    (width, label) => Math.max(width, estimateAxisLabelWidth(label, AXIS_LABEL_FONT_SIZE)),
     0,
   );
 }
@@ -477,9 +437,7 @@ function getNumericPreviewValue(
 ): number | undefined {
   const value = row[dimensionIndex];
 
-  return typeof value === "number" && Number.isFinite(value)
-    ? value
-    : undefined;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function formatValueAxisTickLabel(value: number): string {
@@ -504,10 +462,7 @@ function estimateAxisLabelWidth(label: string, fontSize: number): number {
   return width;
 }
 
-function getAxisLabelCharacterWidth(
-  character: string,
-  fontSize: number,
-): number {
+function getAxisLabelCharacterWidth(character: string, fontSize: number): number {
   if (/[0-9]/.test(character)) {
     return fontSize * 0.56;
   }
@@ -530,9 +485,7 @@ function getDimensionEncodeKey(
   return dataset.dimensions[dimensionIndex]?.name ?? dimensionIndex;
 }
 
-function toAxisType(
-  dimensionType: WorkbookChartDimensionType,
-): "category" | "time" | "value" {
+function toAxisType(dimensionType: WorkbookChartDimensionType): "category" | "time" | "value" {
   if (dimensionType === "number") {
     return "value";
   }
@@ -544,8 +497,6 @@ function toAxisType(
   return "category";
 }
 
-function isCartesianChart(
-  chart: WorkbookChart,
-): chart is WorkbookCartesianChart {
+function isCartesianChart(chart: WorkbookChart): chart is WorkbookCartesianChart {
   return chart.spec.family === "cartesian";
 }

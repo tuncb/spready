@@ -265,17 +265,17 @@ This is why range-based aggregation is generally safer when mixed user-entered d
 
 The evaluator can return these display errors:
 
-| Display | Meaning |
-| --- | --- |
-| `#ERROR!` | Parse failure or malformed formula syntax |
-| `#REF!` | Invalid reference, invalid range target, or out-of-bounds lookup/index target |
-| `#DIV/0!` | Division by zero or averaging no numeric values |
+| Display   | Meaning                                                                               |
+| --------- | ------------------------------------------------------------------------------------- |
+| `#ERROR!` | Parse failure or malformed formula syntax                                             |
+| `#REF!`   | Invalid reference, invalid range target, or out-of-bounds lookup/index target         |
+| `#DIV/0!` | Division by zero or averaging no numeric values                                       |
 | `#VALUE!` | Type mismatch, invalid argument count, invalid scalar/range shape, or failed coercion |
-| `#CYCLE!` | Circular dependency between cells |
-| `#NAME?` | Unknown function name or unsupported named reference |
-| `#NUM!` | Invalid numeric result, such as `SQRT(-1)` |
-| `#N/A` | Lookup miss or explicit `#N/A` literal |
-| `#NULL!` | Supported as an error literal |
+| `#CYCLE!` | Circular dependency between cells                                                     |
+| `#NAME?`  | Unknown function name or unsupported named reference                                  |
+| `#NUM!`   | Invalid numeric result, such as `SQRT(-1)`                                            |
+| `#N/A`    | Lookup miss or explicit `#N/A` literal                                                |
+| `#NULL!`  | Supported as an error literal                                                         |
 
 ## Dependency And Cycle Behavior
 

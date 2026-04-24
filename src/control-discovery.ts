@@ -1,8 +1,8 @@
-import { promises as fs } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-import type { ControlServerInfo } from './workbook-core';
+import type { ControlServerInfo } from "./workbook-core";
 
 export interface DiscoveredControlInfo extends ControlServerInfo {
   appName: string;
@@ -10,7 +10,7 @@ export interface DiscoveredControlInfo extends ControlServerInfo {
   updatedAt: string;
 }
 
-export const CONTROL_DISCOVERY_FILE_PATH = path.join(os.tmpdir(), 'spready-control.json');
+export const CONTROL_DISCOVERY_FILE_PATH = path.join(os.tmpdir(), "spready-control.json");
 
 export async function clearDiscoveredControlInfo(expectedPid = process.pid) {
   try {
@@ -22,7 +22,7 @@ export async function clearDiscoveredControlInfo(expectedPid = process.pid) {
 
     await fs.unlink(CONTROL_DISCOVERY_FILE_PATH);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
       throw error;
     }
   }
@@ -30,23 +30,23 @@ export async function clearDiscoveredControlInfo(expectedPid = process.pid) {
 
 export async function readDiscoveredControlInfo(): Promise<DiscoveredControlInfo | null> {
   try {
-    const content = await fs.readFile(CONTROL_DISCOVERY_FILE_PATH, 'utf8');
+    const content = await fs.readFile(CONTROL_DISCOVERY_FILE_PATH, "utf8");
     const parsed = JSON.parse(content) as Partial<DiscoveredControlInfo>;
 
     if (
-      typeof parsed.appName !== 'string' ||
-      typeof parsed.host !== 'string' ||
-      typeof parsed.pid !== 'number' ||
-      typeof parsed.port !== 'number' ||
-      parsed.protocol !== 'jsonl' ||
-      typeof parsed.updatedAt !== 'string'
+      typeof parsed.appName !== "string" ||
+      typeof parsed.host !== "string" ||
+      typeof parsed.pid !== "number" ||
+      typeof parsed.port !== "number" ||
+      parsed.protocol !== "jsonl" ||
+      typeof parsed.updatedAt !== "string"
     ) {
       return null;
     }
 
     return parsed as DiscoveredControlInfo;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return null;
     }
 
@@ -71,6 +71,6 @@ export async function writeDiscoveredControlInfo(
   await fs.writeFile(
     CONTROL_DISCOVERY_FILE_PATH,
     JSON.stringify(discoveredControlInfo, null, 2),
-    'utf8',
+    "utf8",
   );
 }

@@ -10,11 +10,7 @@ import {
   getChartEditorValidationIssues,
   type ChartEditorWindowRequest,
 } from "./chart-editor-state";
-import type {
-  WorkbookChart,
-  WorkbookSummary,
-  UsedRangeResult,
-} from "./workbook-core";
+import type { WorkbookChart, WorkbookSummary, UsedRangeResult } from "./workbook-core";
 
 const summary: WorkbookSummary = {
   activeSheetId: "sheet-1",
@@ -106,10 +102,7 @@ test("chart editor state creates valid default create-form operations", () => {
       type: "addChart",
     },
   ]);
-  assert.deepEqual(
-    getChartEditorValidationIssues(formState, "sheet-1", summary),
-    [],
-  );
+  assert.deepEqual(getChartEditorValidationIssues(formState, "sheet-1", summary), []);
 });
 
 test("chart editor state uses selected cells as create-form source range", () => {
@@ -164,9 +157,7 @@ test("chart editor state reports invalid settings before submit", () => {
   formState.valueDimensions = "";
 
   assert.deepEqual(
-    getChartEditorValidationIssues(formState, "sheet-1", summary).map(
-      (issue) => issue.message,
-    ),
+    getChartEditorValidationIssues(formState, "sheet-1", summary).map((issue) => issue.message),
     ["Chart name is required."],
   );
 });
@@ -215,9 +206,7 @@ test("chart editor state reports invalid current-sheet cell ranges before submit
   formState.sourceRange = "1:6";
 
   assert.deepEqual(
-    getChartEditorValidationIssues(formState, "sheet-1", summary).map(
-      (issue) => issue.message,
-    ),
+    getChartEditorValidationIssues(formState, "sheet-1", summary).map((issue) => issue.message),
     ['Invalid cell reference "1".'],
   );
 });

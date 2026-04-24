@@ -60,9 +60,7 @@ export class SpreadyControlServer {
   getInfo(): ControlServerInfo {
     const address = this.#server?.address();
     const activePort =
-      typeof address === "object" && address && "port" in address
-        ? address.port
-        : this.#port;
+      typeof address === "object" && address && "port" in address ? address.port : this.#port;
 
     return {
       host: this.#host,
@@ -175,10 +173,7 @@ export class SpreadyControlServer {
     }
 
     try {
-      const result = await this.#dispatchRequest(
-        request.method,
-        request.params,
-      );
+      const result = await this.#dispatchRequest(request.method, request.params);
 
       this.#writeMessage(socket, {
         id: request.id ?? null,
@@ -234,9 +229,7 @@ export class SpreadyControlServer {
   async #dispatchRequest(method: string, params: unknown) {
     switch (method) {
       case "applyTransaction":
-        return this.#controller.applyTransaction(
-          params as ApplyTransactionRequest,
-        );
+        return this.#controller.applyTransaction(params as ApplyTransactionRequest);
       case "clearRange":
         return this.#controller.clearRange(params as ClearRangeRequest);
       case "copyRange":
@@ -258,19 +251,13 @@ export class SpreadyControlServer {
           params as { columnIndex: number; rowIndex: number; sheetId?: string },
         );
       case "getChart":
-        return this.#controller.getChart(
-          (params as { chartId: string }).chartId,
-        );
+        return this.#controller.getChart((params as { chartId: string }).chartId);
       case "getChartPreview":
-        return this.#controller.getChartPreview(
-          (params as { chartId: string }).chartId,
-        );
+        return this.#controller.getChartPreview((params as { chartId: string }).chartId);
       case "getControlInfo":
         return this.getInfo();
       case "getSheetCsv":
-        return this.#controller.getSheetCsv(
-          (params as { sheetId?: string } | undefined)?.sheetId,
-        );
+        return this.#controller.getSheetCsv((params as { sheetId?: string } | undefined)?.sheetId);
       case "getSheetCharts":
         return this.#controller.getSheetCharts(
           (params as { sheetId?: string } | undefined)?.sheetId,
@@ -280,33 +267,23 @@ export class SpreadyControlServer {
           (params as { sheetId?: string } | undefined)?.sheetId,
         );
       case "getSheetDisplayRange":
-        return this.#controller.getSheetDisplayRange(
-          params as SheetRangeRequest,
-        );
+        return this.#controller.getSheetDisplayRange(params as SheetRangeRequest);
       case "getSheetRange":
         return this.#controller.getSheetRange(params as SheetRangeRequest);
       case "getSheetStyleRange":
-        return this.#controller.getSheetStyleRange(
-          params as SheetRangeRequest,
-        );
+        return this.#controller.getSheetStyleRange(params as SheetRangeRequest);
       case "getUsedRange":
-        return this.#controller.getUsedRange(
-          (params as { sheetId?: string } | undefined)?.sheetId,
-        );
+        return this.#controller.getUsedRange((params as { sheetId?: string } | undefined)?.sheetId);
       case "getWorkbookSummary":
         return this.#controller.getSummary();
       case "importCsvFile":
         return this.#controller.importCsvFile(params as ImportCsvFileRequest);
       case "openWorkbookFile":
-        return this.#controller.openWorkbookFile(
-          params as OpenWorkbookFileRequest,
-        );
+        return this.#controller.openWorkbookFile(params as OpenWorkbookFileRequest);
       case "pasteRange":
         return this.#controller.pasteRange(params as PasteRangeRequest);
       case "saveWorkbookFile":
-        return this.#controller.saveWorkbookFile(
-          params as SaveWorkbookFileRequest,
-        );
+        return this.#controller.saveWorkbookFile(params as SaveWorkbookFileRequest);
       case "listMethods":
         return [
           "applyTransaction",

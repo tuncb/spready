@@ -143,9 +143,7 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
   const parsed = parseWorkbookDocument(serialized);
 
   assert.ok(serialized.includes(`"format": "${WORKBOOK_DOCUMENT_FORMAT}"`));
-  assert.ok(
-    serialized.includes(`"formatVersion": ${WORKBOOK_DOCUMENT_VERSION}`),
-  );
+  assert.ok(serialized.includes(`"formatVersion": ${WORKBOOK_DOCUMENT_VERSION}`));
   assert.ok(!serialized.includes("documentFilePath"));
   assert.equal(parsed.version, 0);
   assert.equal(parsed.documentFilePath, undefined);
@@ -178,16 +176,8 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
       },
     ],
   );
-  assert.deepEqual(parsed.sheets[0].cells[0].slice(0, 3), [
-    "Revenue",
-    "2026",
-    "=B2*2",
-  ]);
-  assert.deepEqual(parsed.sheets[0].cells[1].slice(0, 3), [
-    "North",
-    "1200",
-    "",
-  ]);
+  assert.deepEqual(parsed.sheets[0].cells[0].slice(0, 3), ["Revenue", "2026", "=B2*2"]);
+  assert.deepEqual(parsed.sheets[0].cells[1].slice(0, 3), ["North", "1200", ""]);
   assert.deepEqual(parsed.sheets[0].cellStyles, {
     "0:0": {
       bold: true,

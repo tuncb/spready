@@ -5,9 +5,7 @@ import { test } from "node:test";
 import type { WorkbookSummary } from "./workbook-core";
 import { formatWorkbookWindowTitle } from "./window-title";
 
-function createSummary(
-  overrides: Partial<WorkbookSummary> = {},
-): WorkbookSummary {
+function createSummary(overrides: Partial<WorkbookSummary> = {}): WorkbookSummary {
   return {
     activeSheetId: "sheet-1",
     activeSheetName: "Sheet 1",

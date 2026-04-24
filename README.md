@@ -100,9 +100,7 @@ Each response is a single JSON line:
     "activeSheetId": "sheet-1",
     "activeSheetName": "Sheet 1",
     "hasUnsavedChanges": false,
-    "sheets": [
-      { "id": "sheet-1", "name": "Sheet 1", "rowCount": 200, "columnCount": 50 }
-    ],
+    "sheets": [{ "id": "sheet-1", "name": "Sheet 1", "rowCount": 200, "columnCount": 50 }],
     "version": 0
   }
 }

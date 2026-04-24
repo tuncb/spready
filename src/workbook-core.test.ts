@@ -36,9 +36,7 @@ import {
 } from "./workbook-core";
 
 function getActiveSheet(state: WorkbookState): WorkbookSheet {
-  const activeSheet = state.sheets.find(
-    (sheet) => sheet.id === state.activeSheetId,
-  );
+  const activeSheet = state.sheets.find((sheet) => sheet.id === state.activeSheetId);
 
   assert.ok(activeSheet, "Expected an active sheet in workbook state.");
 
@@ -105,9 +103,7 @@ test("createSheet and normalizeSheet build rectangular matrices", () => {
 test("parseCsv handles empty input, CRLF rows, quotes, and embedded newlines", () => {
   assert.deepEqual(parseCsv(""), [[""]]);
   assert.deepEqual(
-    parseCsv(
-      'Name,Note\r\n"Ada","He said ""hi"""\r\n"Linus","line1\nline2"\r\nSolo',
-    ),
+    parseCsv('Name,Note\r\n"Ada","He said ""hi"""\r\n"Linus","line1\nline2"\r\nSolo'),
     [
       ["Name", "Note"],
       ["Ada", 'He said "hi"'],
@@ -126,10 +122,7 @@ test("parseTsv and serializeTsv handle tabs, quotes, and embedded newlines", () 
 
   const text = serializeTsv(values);
 
-  assert.equal(
-    text,
-    'Name\tNote\r\nAda\t"tab\t""quote"""\r\nLinus\t"line1\nline2"',
-  );
+  assert.equal(text, 'Name\tNote\r\nAda\t"tab\t""quote"""\r\nLinus\t"line1\nline2"');
   assert.deepEqual(parseTsv(text), values);
 });
 
@@ -145,10 +138,7 @@ test("serializeCsv trims to the used range and escapes special characters", () =
     name: "Sheet Under Test",
   };
 
-  assert.equal(
-    serializeCsv(sheet),
-    'Name,Note\r\nAda,"comma, ""quote""\nline"',
-  );
+  assert.equal(serializeCsv(sheet), 'Name,Note\r\nAda,"comma, ""quote""\nline"');
   assert.equal(
     serializeCsv({
       ...sheet,
@@ -222,9 +212,7 @@ test("workbook chart helpers validate same-sheet range contracts and summarize s
     status: "ok",
   });
   assert.deepEqual(
-    getWorkbookChartValidationIssues(invalidChart, sheets).map(
-      (issue) => issue.code,
-    ),
+    getWorkbookChartValidationIssues(invalidChart, sheets).map((issue) => issue.code),
     [
       "CROSS_SHEET_SOURCE",
       "EMPTY_RANGE",
@@ -240,8 +228,7 @@ test("workbook chart helpers rewrite source ranges for structural row and column
   const baseChart = createBarChart();
 
   assert.deepEqual(
-    adjustWorkbookChartForInsertedRows(baseChart, "sheet-1", 1, 2).spec.source
-      .range,
+    adjustWorkbookChartForInsertedRows(baseChart, "sheet-1", 1, 2).spec.source.range,
     {
       columnCount: 3,
       rowCount: 4,
@@ -251,8 +238,7 @@ test("workbook chart helpers rewrite source ranges for structural row and column
     },
   );
   assert.deepEqual(
-    adjustWorkbookChartForInsertedRows(baseChart, "sheet-1", 4, 2).spec.source
-      .range,
+    adjustWorkbookChartForInsertedRows(baseChart, "sheet-1", 4, 2).spec.source.range,
     {
       columnCount: 3,
       rowCount: 6,
@@ -262,8 +248,7 @@ test("workbook chart helpers rewrite source ranges for structural row and column
     },
   );
   assert.deepEqual(
-    adjustWorkbookChartForDeletedRows(baseChart, "sheet-1", 0, 3).spec.source
-      .range,
+    adjustWorkbookChartForDeletedRows(baseChart, "sheet-1", 0, 3).spec.source.range,
     {
       columnCount: 3,
       rowCount: 3,
@@ -273,8 +258,7 @@ test("workbook chart helpers rewrite source ranges for structural row and column
     },
   );
   assert.deepEqual(
-    adjustWorkbookChartForInsertedColumns(baseChart, "sheet-1", 0, 2).spec
-      .source.range,
+    adjustWorkbookChartForInsertedColumns(baseChart, "sheet-1", 0, 2).spec.source.range,
     {
       columnCount: 3,
       rowCount: 4,
@@ -284,8 +268,7 @@ test("workbook chart helpers rewrite source ranges for structural row and column
     },
   );
   assert.deepEqual(
-    adjustWorkbookChartForDeletedColumns(baseChart, "sheet-1", 2, 5).spec.source
-      .range,
+    adjustWorkbookChartForDeletedColumns(baseChart, "sheet-1", 2, 5).spec.source.range,
     {
       columnCount: 1,
       rowCount: 4,
@@ -305,18 +288,8 @@ test("workbook chart helpers preserve invalid charts explicitly when structural 
     },
   ];
   const chart = createBarChart();
-  const withoutRows = adjustWorkbookChartForDeletedRows(
-    chart,
-    "sheet-1",
-    0,
-    20,
-  );
-  const withoutColumns = adjustWorkbookChartForDeletedColumns(
-    chart,
-    "sheet-1",
-    0,
-    20,
-  );
+  const withoutRows = adjustWorkbookChartForDeletedRows(chart, "sheet-1", 0, 20);
+  const withoutColumns = adjustWorkbookChartForDeletedColumns(chart, "sheet-1", 0, 20);
 
   assert.deepEqual(withoutRows.spec.source.range, {
     columnCount: 3,
@@ -438,9 +411,7 @@ test("applyWorkbookTransaction manages sheet lifecycle operations", () => {
     ],
   }).state;
 
-  const addedSheet = afterAdd.sheets.find(
-    (sheet) => sheet.id === "sheet-alpha",
-  );
+  const addedSheet = afterAdd.sheets.find((sheet) => sheet.id === "sheet-alpha");
 
   assert.ok(addedSheet);
   assert.equal(afterAdd.activeSheetId, defaultSheetId);
@@ -464,8 +435,7 @@ test("applyWorkbookTransaction manages sheet lifecycle operations", () => {
 
   assert.equal(afterRenameAndActivate.activeSheetId, "sheet-alpha");
   assert.equal(
-    afterRenameAndActivate.sheets.find((sheet) => sheet.id === "sheet-alpha")
-      ?.name,
+    afterRenameAndActivate.sheets.find((sheet) => sheet.id === "sheet-alpha")?.name,
     "Budget",
   );
 

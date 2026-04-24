@@ -100,17 +100,7 @@ const cellDataSchema = z.object({
   columnIndex: z.int().min(0),
   display: z.string(),
   errorCode: z
-    .enum([
-      "PARSE",
-      "REF",
-      "DIV0",
-      "VALUE",
-      "CYCLE",
-      "NAME",
-      "NUM",
-      "NA",
-      "NULL",
-    ])
+    .enum(["PARSE", "REF", "DIV0", "VALUE", "CYCLE", "NAME", "NUM", "NA", "NULL"])
     .optional(),
   input: z.string(),
   isFormula: z.boolean(),
@@ -346,8 +336,7 @@ const WORKBOOK_TASK_PROMPT_NAME = "spready_workbook_task";
 const transactionOperations = [
   {
     type: "addSheet",
-    description:
-      "Add a new sheet, optionally naming it, sizing it, and making it active.",
+    description: "Add a new sheet, optionally naming it, sizing it, and making it active.",
   },
   {
     type: "addChart",
@@ -364,8 +353,7 @@ const transactionOperations = [
   },
   {
     type: "deleteColumns",
-    description:
-      "Delete one or more columns starting at a zero-based column index.",
+    description: "Delete one or more columns starting at a zero-based column index.",
   },
   {
     type: "deleteRows",
@@ -373,8 +361,7 @@ const transactionOperations = [
   },
   {
     type: "deleteSheet",
-    description:
-      "Delete a sheet by id and optionally choose which sheet becomes active next.",
+    description: "Delete a sheet by id and optionally choose which sheet becomes active next.",
   },
   {
     type: "deleteChart",
@@ -382,8 +369,7 @@ const transactionOperations = [
   },
   {
     type: "insertColumns",
-    description:
-      "Insert one or more blank columns at a zero-based column index.",
+    description: "Insert one or more blank columns at a zero-based column index.",
   },
   {
     type: "insertRows",
@@ -415,13 +401,11 @@ const transactionOperations = [
   },
   {
     type: "setChartSpec",
-    description:
-      "Replace one chart definition with a fully validated shared chart spec.",
+    description: "Replace one chart definition with a fully validated shared chart spec.",
   },
   {
     type: "setChartLayout",
-    description:
-      "Move or resize one embedded chart by replacing its persisted layout.",
+    description: "Move or resize one embedded chart by replacing its persisted layout.",
   },
   {
     type: "setSheetSourceFile",
@@ -433,18 +417,15 @@ const transactionOperations = [
   },
   {
     type: "setCellStyle",
-    description:
-      "Replace rendered styling for one cell. Omit style to clear styling.",
+    description: "Replace rendered styling for one cell. Omit style to clear styling.",
   },
   {
     type: "setRange",
-    description:
-      "Write a rectangular 2D string array starting at a zero-based row and column.",
+    description: "Write a rectangular 2D string array starting at a zero-based row and column.",
   },
   {
     type: "setRangeStyle",
-    description:
-      "Replace rendered styling for a rectangular range. Omit style to clear styling.",
+    description: "Replace rendered styling for a rectangular range. Omit style to clear styling.",
   },
 ] as const;
 
@@ -482,8 +463,7 @@ const guideResourceSchema = z.object({
 
 const guideResource = {
   prompt: {
-    description:
-      "Prompt template for planning or executing one workbook task with Spready.",
+    description: "Prompt template for planning or executing one workbook task with Spready.",
     name: WORKBOOK_TASK_PROMPT_NAME,
   },
   resources: [
@@ -494,8 +474,7 @@ const guideResource = {
       uri: WORKBOOK_SUMMARY_RESOURCE_URI,
     },
     {
-      description:
-        "Usage guide for third-party harnesses integrating with Spready.",
+      description: "Usage guide for third-party harnesses integrating with Spready.",
       mimeType: "text/markdown",
       name: "server-guide",
       uri: SERVER_GUIDE_RESOURCE_URI,
@@ -506,29 +485,25 @@ const guideResource = {
   tools: [
     {
       defaultsToActiveSheet: false,
-      description:
-        "Return workbook metadata including active sheet, version, and sheet sizes.",
+      description: "Return workbook metadata including active sheet, version, and sheet sizes.",
       name: "get_workbook_summary",
       readOnly: true,
     },
     {
       defaultsToActiveSheet: false,
-      description:
-        "Create a new blank workbook and replace the in-app workbook state.",
+      description: "Create a new blank workbook and replace the in-app workbook state.",
       name: "create_new_workbook",
       readOnly: false,
     },
     {
       defaultsToActiveSheet: false,
-      description:
-        "Open a native Spready workbook file and replace the in-app workbook state.",
+      description: "Open a native Spready workbook file and replace the in-app workbook state.",
       name: "open_workbook_file",
       readOnly: false,
     },
     {
       defaultsToActiveSheet: false,
-      description:
-        "Save the current workbook as a native Spready workbook file.",
+      description: "Save the current workbook as a native Spready workbook file.",
       name: "save_workbook_file",
       readOnly: false,
     },
@@ -540,22 +515,19 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: true,
-      description:
-        "Read one cell with both raw input and evaluated display output.",
+      description: "Read one cell with both raw input and evaluated display output.",
       name: "get_cell_data",
       readOnly: true,
     },
     {
       defaultsToActiveSheet: true,
-      description:
-        "Read a rectangular range of evaluated display values from a sheet.",
+      description: "Read a rectangular range of evaluated display values from a sheet.",
       name: "get_sheet_display_range",
       readOnly: true,
     },
     {
       defaultsToActiveSheet: true,
-      description:
-        "Read a rectangular range of rendered cell styles from a sheet.",
+      description: "Read a rectangular range of rendered cell styles from a sheet.",
       name: "get_sheet_style_range",
       readOnly: true,
     },
@@ -626,15 +598,13 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: true,
-      description:
-        "Import a local CSV file into a sheet and update its source file metadata.",
+      description: "Import a local CSV file into a sheet and update its source file metadata.",
       name: "import_csv_file",
       readOnly: false,
     },
     {
       defaultsToActiveSheet: true,
-      description:
-        "Export one sheet as CSV to a local file and update its source file metadata.",
+      description: "Export one sheet as CSV to a local file and update its source file metadata.",
       name: "export_csv_file",
       readOnly: false,
     },
@@ -690,9 +660,7 @@ ${guideResource.startupRequirement}
 
 ## Recommended workflow
 
-${guideResource.workflow
-  .map((step, index) => `${index + 1}. ${step}`)
-  .join("\n")}
+${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n")}
 
 ## Usage conventions
 
@@ -834,8 +802,7 @@ async function main() {
   try {
     await controlClient.connect();
   } catch (error) {
-    const detail =
-      error instanceof Error ? error.message : "unknown connection error";
+    const detail = error instanceof Error ? error.message : "unknown connection error";
 
     throw new Error(
       `Could not connect to the Spready control server at tcp://${target.host}:${target.port}. ` +
@@ -861,10 +828,7 @@ async function main() {
     },
   );
   const subscribedResourceUris = new Set<string>();
-  const knownResourceUris = new Set([
-    SERVER_GUIDE_RESOURCE_URI,
-    WORKBOOK_SUMMARY_RESOURCE_URI,
-  ]);
+  const knownResourceUris = new Set([SERVER_GUIDE_RESOURCE_URI, WORKBOOK_SUMMARY_RESOURCE_URI]);
 
   controlClient.on("workbookChanged", async () => {
     if (!subscribedResourceUris.has(WORKBOOK_SUMMARY_RESOURCE_URI)) {
@@ -923,8 +887,7 @@ async function main() {
     "server-guide",
     SERVER_GUIDE_RESOURCE_URI,
     {
-      description:
-        "Usage guide for third-party harnesses integrating with Spready.",
+      description: "Usage guide for third-party harnesses integrating with Spready.",
       mimeType: "text/markdown",
       title: "Spready MCP Guide",
     },
@@ -948,8 +911,7 @@ async function main() {
         openWorldHint: false,
         readOnlyHint: true,
       },
-      description:
-        "Return workbook metadata including active sheet, version, and sheet sizes.",
+      description: "Return workbook metadata including active sheet, version, and sheet sizes.",
       outputSchema: workbookSummarySchema,
     },
     async () => createTextResult(await controlClient.getWorkbookSummary()),
@@ -964,8 +926,7 @@ async function main() {
         openWorldHint: false,
         readOnlyHint: false,
       },
-      description:
-        "Create a new blank workbook and replace the in-app workbook state.",
+      description: "Create a new blank workbook and replace the in-app workbook state.",
       inputSchema: z.object({
         discardUnsavedChanges: z
           .boolean()
@@ -976,8 +937,7 @@ async function main() {
       }),
       outputSchema: applyTransactionResultSchema,
     },
-    async (args) =>
-      createTextResult(await controlClient.createNewWorkbook(args)),
+    async (args) => createTextResult(await controlClient.createNewWorkbook(args)),
   );
 
   server.registerTool(
@@ -989,8 +949,7 @@ async function main() {
         openWorldHint: false,
         readOnlyHint: false,
       },
-      description:
-        "Open a native Spready workbook file and replace the in-app workbook state.",
+      description: "Open a native Spready workbook file and replace the in-app workbook state.",
       inputSchema: z.object({
         discardUnsavedChanges: z
           .boolean()
@@ -1001,14 +960,11 @@ async function main() {
         filePath: z
           .string()
           .min(1)
-          .describe(
-            "Path to a .spready workbook file on the machine running Spready.",
-          ),
+          .describe("Path to a .spready workbook file on the machine running Spready."),
       }),
       outputSchema: workbookFileOperationResultSchema,
     },
-    async (args) =>
-      createTextResult(await controlClient.openWorkbookFile(args)),
+    async (args) => createTextResult(await controlClient.openWorkbookFile(args)),
   );
 
   server.registerTool(
@@ -1020,8 +976,7 @@ async function main() {
         openWorldHint: false,
         readOnlyHint: false,
       },
-      description:
-        "Save the current workbook as a native Spready workbook file.",
+      description: "Save the current workbook as a native Spready workbook file.",
       inputSchema: z.object({
         filePath: z
           .string()
@@ -1032,8 +987,7 @@ async function main() {
       }),
       outputSchema: workbookFileOperationResultSchema,
     },
-    async (args) =>
-      createTextResult(await controlClient.saveWorkbookFile(args)),
+    async (args) => createTextResult(await controlClient.saveWorkbookFile(args)),
   );
 
   server.registerTool(
@@ -1066,8 +1020,7 @@ async function main() {
           },
           {
             defaultsToActiveSheet: false,
-            description:
-              "Create a new blank workbook and replace the in-app workbook state.",
+            description: "Create a new blank workbook and replace the in-app workbook state.",
             name: "create_new_workbook",
             readOnly: false,
             useWhen:
@@ -1084,8 +1037,7 @@ async function main() {
           },
           {
             defaultsToActiveSheet: false,
-            description:
-              "Save the current workbook as a native Spready workbook file.",
+            description: "Save the current workbook as a native Spready workbook file.",
             name: "save_workbook_file",
             readOnly: false,
             useWhen:
@@ -1096,31 +1048,25 @@ async function main() {
             description: "Return the used range bounds for a sheet.",
             name: "get_used_range",
             readOnly: true,
-            useWhen:
-              "Use this to find the populated area before reading a range or exporting CSV.",
+            useWhen: "Use this to find the populated area before reading a range or exporting CSV.",
           },
           {
             defaultsToActiveSheet: true,
-            description:
-              "Return one cell with both raw input and evaluated display output.",
+            description: "Return one cell with both raw input and evaluated display output.",
             name: "get_cell_data",
             readOnly: true,
-            useWhen:
-              "Use this when the task needs a formula cell's raw text and computed result.",
+            useWhen: "Use this when the task needs a formula cell's raw text and computed result.",
           },
           {
             defaultsToActiveSheet: true,
-            description:
-              "Read a rectangular range of evaluated display values from a sheet.",
+            description: "Read a rectangular range of evaluated display values from a sheet.",
             name: "get_sheet_display_range",
             readOnly: true,
-            useWhen:
-              "Use this for formula-aware grid reads where displayed results matter.",
+            useWhen: "Use this for formula-aware grid reads where displayed results matter.",
           },
           {
             defaultsToActiveSheet: true,
-            description:
-              "Read a rectangular range of rendered cell styles from a sheet.",
+            description: "Read a rectangular range of rendered cell styles from a sheet.",
             name: "get_sheet_style_range",
             readOnly: true,
             useWhen:
@@ -1140,8 +1086,7 @@ async function main() {
             description: "Read a rectangular range from a sheet.",
             name: "get_sheet_range",
             readOnly: true,
-            useWhen:
-              "Use this for targeted inspection of raw workbook input strings.",
+            useWhen: "Use this for targeted inspection of raw workbook input strings.",
           },
           ...chartGuideTools,
           {
@@ -1173,12 +1118,10 @@ async function main() {
           },
           {
             defaultsToActiveSheet: true,
-            description:
-              "Return the sheet as CSV text trimmed to its used range.",
+            description: "Return the sheet as CSV text trimmed to its used range.",
             name: "get_sheet_csv",
             readOnly: true,
-            useWhen:
-              "Use this when you need the full used range in one text payload.",
+            useWhen: "Use this when you need the full used range in one text payload.",
           },
           {
             defaultsToActiveSheet: true,
@@ -1191,8 +1134,7 @@ async function main() {
           },
           {
             defaultsToActiveSheet: true,
-            description:
-              "Clear a rectangular range without resizing the sheet.",
+            description: "Clear a rectangular range without resizing the sheet.",
             name: "clear_range",
             readOnly: false,
             useWhen:
@@ -1212,8 +1154,7 @@ async function main() {
               "Import a local CSV file into a sheet and update its source file metadata.",
             name: "import_csv_file",
             readOnly: false,
-            useWhen:
-              "Use this when your task starts from a CSV file that already exists on disk.",
+            useWhen: "Use this when your task starts from a CSV file that already exists on disk.",
           },
           {
             defaultsToActiveSheet: true,
@@ -1221,8 +1162,7 @@ async function main() {
               "Export one sheet as CSV to a local file and update its source file metadata.",
             name: "export_csv_file",
             readOnly: false,
-            useWhen:
-              "Use this when the final result should be written to a CSV file on disk.",
+            useWhen: "Use this when the final result should be written to a CSV file on disk.",
           },
         ],
         transactionOperations: guideResource.transactionOperations,
@@ -1249,8 +1189,7 @@ async function main() {
       }),
       outputSchema: usedRangeSchema,
     },
-    async ({ sheetId }) =>
-      createTextResult(await controlClient.getUsedRange(sheetId)),
+    async ({ sheetId }) => createTextResult(await controlClient.getUsedRange(sheetId)),
   );
 
   server.registerTool(
@@ -1263,14 +1202,8 @@ async function main() {
       description:
         "Return one cell with both the raw stored input and the evaluated display value. Omit sheetId to use the active sheet.",
       inputSchema: z.object({
-        columnIndex: z
-          .int()
-          .min(0)
-          .describe("Zero-based column index of the cell to read."),
-        rowIndex: z
-          .int()
-          .min(0)
-          .describe("Zero-based row index of the cell to read."),
+        columnIndex: z.int().min(0).describe("Zero-based column index of the cell to read."),
+        rowIndex: z.int().min(0).describe("Zero-based row index of the cell to read."),
         sheetId: z
           .string()
           .min(1)
@@ -1304,8 +1237,7 @@ async function main() {
       }),
       outputSchema: sheetDisplayRangeSchema,
     },
-    async (args) =>
-      createTextResult(await controlClient.getSheetDisplayRange(args)),
+    async (args) => createTextResult(await controlClient.getSheetDisplayRange(args)),
   );
 
   server.registerTool(
@@ -1315,8 +1247,7 @@ async function main() {
         openWorldHint: false,
         readOnlyHint: true,
       },
-      description:
-        "Read a rectangular range of rendered cell styles from a sheet.",
+      description: "Read a rectangular range of rendered cell styles from a sheet.",
       inputSchema: z.object({
         columnCount: z.int().min(1).describe("Number of columns to read."),
         rowCount: z.int().min(1).describe("Number of rows to read."),
@@ -1330,8 +1261,7 @@ async function main() {
       }),
       outputSchema: sheetStyleRangeSchema,
     },
-    async (args) =>
-      createTextResult(await controlClient.getSheetStyleRange(args)),
+    async (args) => createTextResult(await controlClient.getSheetStyleRange(args)),
   );
 
   server.registerTool(
@@ -1349,9 +1279,7 @@ async function main() {
         dryRun: z
           .boolean()
           .optional()
-          .describe(
-            "Validate and simulate the formatting without mutating the workbook.",
-          ),
+          .describe("Validate and simulate the formatting without mutating the workbook."),
         expectedVersion: z
           .int()
           .min(0)
@@ -1423,9 +1351,7 @@ async function main() {
           .int()
           .min(0)
           .optional()
-          .describe(
-            "Cartesian charts only. Dimension index to use as categories. Defaults to 0.",
-          ),
+          .describe("Cartesian charts only. Dimension index to use as categories. Defaults to 0."),
         chartId: z
           .string()
           .min(1)
@@ -1437,9 +1363,7 @@ async function main() {
         dryRun: z
           .boolean()
           .optional()
-          .describe(
-            "Validate and simulate the chart creation without mutating the workbook.",
-          ),
+          .describe("Validate and simulate the chart creation without mutating the workbook."),
         expectedVersion: z
           .int()
           .min(0)
@@ -1452,11 +1376,7 @@ async function main() {
           .describe(
             "Optional embedded chart layout. Defaults to the right of the source range when space permits.",
           ),
-        name: z
-          .string()
-          .min(1)
-          .optional()
-          .describe("Optional display name. Defaults to Chart N."),
+        name: z.string().min(1).optional().describe("Optional display name. Defaults to Chart N."),
         nameDimension: z
           .int()
           .min(0)
@@ -1465,18 +1385,13 @@ async function main() {
         seriesLayoutBy: z
           .enum(["column", "row"])
           .optional()
-          .describe(
-            'How to read dimensions from the source table. Defaults to "column".',
-          ),
+          .describe('How to read dimensions from the source table. Defaults to "column".'),
         sheetId: z
           .string()
           .min(1)
           .optional()
           .describe("Optional target sheet id. Defaults to the active sheet."),
-        smooth: z
-          .boolean()
-          .optional()
-          .describe("Line and area charts only. Defaults to false."),
+        smooth: z.boolean().optional().describe("Line and area charts only. Defaults to false."),
         sourceHeader: z
           .boolean()
           .optional()
@@ -1486,10 +1401,7 @@ async function main() {
           .describe(
             "Optional explicit source range on the target sheet. Omit to use the sheet used range.",
           ),
-        stacked: z
-          .boolean()
-          .optional()
-          .describe("Bar and area charts only. Defaults to false."),
+        stacked: z.boolean().optional().describe("Bar and area charts only. Defaults to false."),
         valueDimension: z
           .int()
           .min(0)
@@ -1664,37 +1576,29 @@ async function main() {
         openWorldHint: false,
         readOnlyHint: false,
       },
-      description:
-        "Paste tab-delimited text or explicit values into a sheet starting at one cell.",
+      description: "Paste tab-delimited text or explicit values into a sheet starting at one cell.",
       inputSchema: z
         .object({
           sheetId: z
             .string()
             .min(1)
             .optional()
-            .describe(
-              "Optional target sheet id. Defaults to the active sheet.",
-            ),
+            .describe("Optional target sheet id. Defaults to the active sheet."),
           startColumn: z.int().min(0).describe("Zero-based start column."),
           startRow: z.int().min(0).describe("Zero-based start row."),
           text: z
             .string()
             .optional()
-            .describe(
-              "Optional tab-delimited text payload to parse into a 2D string matrix.",
-            ),
+            .describe("Optional tab-delimited text payload to parse into a 2D string matrix."),
           values: z
             .array(z.array(z.string()))
             .optional()
             .describe("Optional explicit 2D string matrix to paste."),
         })
-        .refine(
-          (value) => value.text !== undefined || value.values !== undefined,
-          {
-            message: 'Provide either "text" or "values".',
-            path: ["text"],
-          },
-        ),
+        .refine((value) => value.text !== undefined || value.values !== undefined, {
+          message: 'Provide either "text" or "values".',
+          path: ["text"],
+        }),
       outputSchema: applyTransactionResultSchema,
     },
     async (args) => createTextResult(await controlClient.pasteRange(args)),
@@ -1742,9 +1646,7 @@ async function main() {
         dryRun: z
           .boolean()
           .optional()
-          .describe(
-            "Validate and simulate the transaction without mutating the workbook.",
-          ),
+          .describe("Validate and simulate the transaction without mutating the workbook."),
         expectedVersion: z
           .int()
           .min(0)
@@ -1759,15 +1661,13 @@ async function main() {
       }),
       outputSchema: applyTransactionResultSchema,
     },
-    async (args) =>
-      createTextResult(await controlClient.applyTransaction(args)),
+    async (args) => createTextResult(await controlClient.applyTransaction(args)),
   );
 
   server.registerPrompt(
     WORKBOOK_TASK_PROMPT_NAME,
     {
-      description:
-        "Template prompt for planning or executing one workbook task with Spready.",
+      description: "Template prompt for planning or executing one workbook task with Spready.",
       argsSchema: {
         goal: z.string().min(1).describe("The workbook task to accomplish."),
       },

@@ -280,11 +280,25 @@ Update `listMethods` accordingly.
 Recommended examples:
 
 ```json
-{"id":7,"method":"getCellData","params":{"sheetId":"sheet-1","rowIndex":1,"columnIndex":2}}
+{
+  "id": 7,
+  "method": "getCellData",
+  "params": { "sheetId": "sheet-1", "rowIndex": 1, "columnIndex": 2 }
+}
 ```
 
 ```json
-{"id":8,"method":"getSheetDisplayRange","params":{"sheetId":"sheet-1","startRow":0,"startColumn":0,"rowCount":20,"columnCount":8}}
+{
+  "id": 8,
+  "method": "getSheetDisplayRange",
+  "params": {
+    "sheetId": "sheet-1",
+    "startRow": 0,
+    "startColumn": 0,
+    "rowCount": 20,
+    "columnCount": 8
+  }
+}
 ```
 
 ## MCP Changes

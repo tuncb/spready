@@ -56,9 +56,7 @@ export function ToastViewport({ onDismiss, toasts }: ToastViewportProps) {
           <div className="toast__header">
             <div className="toast__content">
               <div className="toast__label-row">
-                <span className="toast__label">
-                  {capitalizeToastKind(toast.kind)}
-                </span>
+                <span className="toast__label">{capitalizeToastKind(toast.kind)}</span>
                 {toast.occurrenceCount > 1 ? (
                   <span
                     className="toast__count"
@@ -69,9 +67,7 @@ export function ToastViewport({ onDismiss, toasts }: ToastViewportProps) {
                 ) : null}
               </div>
               <div className="toast__title">{toast.title}</div>
-              {toast.description ? (
-                <p className="toast__description">{toast.description}</p>
-              ) : null}
+              {toast.description ? <p className="toast__description">{toast.description}</p> : null}
             </div>
 
             <button

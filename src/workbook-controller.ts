@@ -56,11 +56,7 @@ import {
   type WorkbookState,
   type WorkbookSummary,
 } from "./workbook-core";
-import {
-  evaluateSheet,
-  getCellEvaluation,
-  type SheetEvaluationSnapshot,
-} from "./formula-engine";
+import { evaluateSheet, getCellEvaluation, type SheetEvaluationSnapshot } from "./formula-engine";
 import { buildWorkbookChartPreview } from "./workbook-charting";
 import {
   parseWorkbookDocument,
@@ -85,9 +81,7 @@ export class WorkbookController extends EventEmitter {
 
     return {
       previews: sheetCharts.charts.map((chart) => {
-        const chartSheet = this.#state.sheets.find(
-          (sheet) => sheet.id === chart.sheetId,
-        );
+        const chartSheet = this.#state.sheets.find((sheet) => sheet.id === chart.sheetId);
 
         return buildWorkbookChartPreview(
           chart,
@@ -107,18 +101,13 @@ export class WorkbookController extends EventEmitter {
     return {
       chart: cloneWorkbookChart(chart),
       status: getWorkbookChartStatus(chart, this.#getChartSheetReferences()),
-      validationIssues: getWorkbookChartValidationIssues(
-        chart,
-        this.#getChartSheetReferences(),
-      ),
+      validationIssues: getWorkbookChartValidationIssues(chart, this.#getChartSheetReferences()),
     };
   }
 
   getChartPreview(chartId: string): WorkbookChartPreview {
     const chart = getWorkbookChartById(this.#state, chartId);
-    const chartSheet = this.#state.sheets.find(
-      (sheet) => sheet.id === chart.sheetId,
-    );
+    const chartSheet = this.#state.sheets.find((sheet) => sheet.id === chart.sheetId);
 
     return buildWorkbookChartPreview(
       cloneWorkbookChart(chart),
@@ -196,9 +185,7 @@ export class WorkbookController extends EventEmitter {
   copyRange(request: CopyRangeRequest): CopyRangeResult {
     const mode = request.mode ?? "raw";
     const range =
-      mode === "display"
-        ? this.getSheetDisplayRange(request)
-        : this.getSheetRange(request);
+      mode === "display" ? this.getSheetDisplayRange(request) : this.getSheetRange(request);
 
     return {
       ...range,
@@ -249,10 +236,7 @@ export class WorkbookController extends EventEmitter {
   }
 
   createChart(request: CreateChartRequest): CreateChartResult {
-    const { chartId, operation } = buildCreateChartOperation(
-      this.#state,
-      request,
-    );
+    const { chartId, operation } = buildCreateChartOperation(this.#state, request);
     const result = this.applyTransaction({
       dryRun: request.dryRun,
       expectedVersion: request.expectedVersion,
@@ -302,9 +286,7 @@ export class WorkbookController extends EventEmitter {
     });
   }
 
-  createNewWorkbook(
-    request: CreateNewWorkbookRequest = {},
-  ): ApplyTransactionResult {
+  createNewWorkbook(request: CreateNewWorkbookRequest = {}): ApplyTransactionResult {
     if (this.#state.hasUnsavedChanges && !request.discardUnsavedChanges) {
       throw new Error(
         "Workbook has unsaved changes. Save it first or retry with discardUnsavedChanges: true.",
@@ -326,10 +308,7 @@ export class WorkbookController extends EventEmitter {
   }
 
   applyTransaction(request: ApplyTransactionRequest): ApplyTransactionResult {
-    if (
-      request.expectedVersion !== undefined &&
-      request.expectedVersion !== this.#state.version
-    ) {
+    if (request.expectedVersion !== undefined && request.expectedVersion !== this.#state.version) {
       throw new Error(
         `Expected workbook version ${request.expectedVersion}, but current version is ${this.#state.version}.`,
       );
@@ -356,9 +335,7 @@ export class WorkbookController extends EventEmitter {
     };
   }
 
-  async exportCsvFile(
-    request: ExportCsvFileRequest,
-  ): Promise<CsvFileOperationResult> {
+  async exportCsvFile(request: ExportCsvFileRequest): Promise<CsvFileOperationResult> {
     const filePath = normalizeCsvFilePath(request.filePath);
     const content = this.getSheetCsv(request.sheetId);
 
@@ -380,9 +357,7 @@ export class WorkbookController extends EventEmitter {
     };
   }
 
-  async openWorkbookFile(
-    request: OpenWorkbookFileRequest,
-  ): Promise<WorkbookFileOperationResult> {
+  async openWorkbookFile(request: OpenWorkbookFileRequest): Promise<WorkbookFileOperationResult> {
     if (this.#state.hasUnsavedChanges && !request.discardUnsavedChanges) {
       throw new Error(
         "Workbook has unsaved changes. Save it first or retry with discardUnsavedChanges: true.",
@@ -409,16 +384,10 @@ export class WorkbookController extends EventEmitter {
     };
   }
 
-  async saveWorkbookFile(
-    request: SaveWorkbookFileRequest,
-  ): Promise<WorkbookFileOperationResult> {
+  async saveWorkbookFile(request: SaveWorkbookFileRequest): Promise<WorkbookFileOperationResult> {
     const filePath = normalizeWorkbookFilePath(request.filePath);
 
-    await fs.writeFile(
-      filePath,
-      serializeWorkbookDocument(this.#state),
-      "utf8",
-    );
+    await fs.writeFile(filePath, serializeWorkbookDocument(this.#state), "utf8");
 
     const result = this.#updateDocumentFilePath(filePath);
 
@@ -430,9 +399,7 @@ export class WorkbookController extends EventEmitter {
     };
   }
 
-  async importCsvFile(
-    request: ImportCsvFileRequest,
-  ): Promise<CsvFileOperationResult> {
+  async importCsvFile(request: ImportCsvFileRequest): Promise<CsvFileOperationResult> {
     const filePath = path.resolve(request.filePath);
     const content = await fs.readFile(filePath, "utf8");
     const result = this.applyTransaction({
@@ -457,10 +424,7 @@ export class WorkbookController extends EventEmitter {
     const sheet = getWorkbookSheet(this.#state, sheetId);
     const cachedSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);
 
-    if (
-      cachedSnapshot &&
-      cachedSnapshot.workbookVersion === this.#state.version
-    ) {
+    if (cachedSnapshot && cachedSnapshot.workbookVersion === this.#state.version) {
       return cachedSnapshot;
     }
 
@@ -488,10 +452,7 @@ export class WorkbookController extends EventEmitter {
     changed: boolean;
     summary: WorkbookSummary;
   } {
-    if (
-      this.#state.documentFilePath === filePath &&
-      !this.#state.hasUnsavedChanges
-    ) {
+    if (this.#state.documentFilePath === filePath && !this.#state.hasUnsavedChanges) {
       return {
         changed: false,
         summary: getWorkbookSummary(this.#state),
@@ -534,9 +495,7 @@ function normalizeWorkbookFilePath(filePath: string): string {
 
 function assertCellIndex(value: number, limit: number, label: string) {
   if (!Number.isInteger(value) || value < 0 || value >= limit) {
-    throw new Error(
-      `${label} index must be a non-negative integer within sheet bounds.`,
-    );
+    throw new Error(`${label} index must be a non-negative integer within sheet bounds.`);
   }
 }
 

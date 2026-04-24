@@ -14,24 +14,19 @@ import {
 const GRID_COLUMN_WIDTH = 140;
 const GRID_ROW_HEIGHT = 34;
 
-type ChartInteraction =
-  | {
-      chartId: string;
-      kind: "move" | "resize";
-      originClientX: number;
-      originClientY: number;
-      originLayout: WorkbookChartLayout;
-      pointerId: number;
-    }
-  | null;
+type ChartInteraction = {
+  chartId: string;
+  kind: "move" | "resize";
+  originClientX: number;
+  originClientY: number;
+  originLayout: WorkbookChartLayout;
+  pointerId: number;
+} | null;
 
 interface WorkbookChartOverlayProps {
   gridRef: RefObject<DataEditorRef>;
   isLoading: boolean;
-  onCommitChartLayout: (
-    chartId: string,
-    layout: WorkbookChartLayout,
-  ) => Promise<void>;
+  onCommitChartLayout: (chartId: string, layout: WorkbookChartLayout) => Promise<void>;
   onEditChart: (chartId: string) => void;
   onSelectChart: (chartId: string | null) => void;
   previews: WorkbookChartPreview[];
@@ -51,13 +46,9 @@ export function WorkbookChartOverlay({
   surfaceRef,
 }: WorkbookChartOverlayProps) {
   const [interaction, setInteraction] = useState<ChartInteraction>(null);
-  const [previewLayout, setPreviewLayout] =
-    useState<WorkbookChartLayout | null>(null);
+  const [previewLayout, setPreviewLayout] = useState<WorkbookChartLayout | null>(null);
   const sortedPreviews = useMemo(
-    () =>
-      [...previews].sort(
-        (left, right) => left.chart.layout.zIndex - right.chart.layout.zIndex,
-      ),
+    () => [...previews].sort((left, right) => left.chart.layout.zIndex - right.chart.layout.zIndex),
     [previews],
   );
 
@@ -71,10 +62,7 @@ export function WorkbookChartOverlay({
       : preview.chart.layout;
 
   const getOverlayRect = (layout: WorkbookChartLayout) => {
-    const cellBounds = gridRef.current?.getBounds(
-      layout.startColumn,
-      layout.startRow,
-    );
+    const cellBounds = gridRef.current?.getBounds(layout.startColumn, layout.startRow);
     const surfaceBounds = surfaceRef.current?.getBoundingClientRect();
 
     if (!cellBounds || !surfaceBounds) {
@@ -170,9 +158,7 @@ export function WorkbookChartOverlay({
               left: rect.left,
               top: rect.top,
               width: rect.width,
-              zIndex: isSelected
-                ? 100000 + layout.zIndex
-                : Math.max(1, layout.zIndex + 1),
+              zIndex: isSelected ? 100000 + layout.zIndex : Math.max(1, layout.zIndex + 1),
             }}
           >
             <header
@@ -210,9 +196,7 @@ export function WorkbookChartOverlay({
                   style={{ height: "100%", width: "100%" }}
                 />
               ) : (
-                <div className="chart-overlay-card__invalid">
-                  Invalid chart
-                </div>
+                <div className="chart-overlay-card__invalid">Invalid chart</div>
               )}
             </div>
             <button
@@ -262,11 +246,7 @@ function normalizeMovedLayout(
     layout.offsetX + deltaX,
     GRID_COLUMN_WIDTH,
   );
-  const vertical = normalizeAxisPosition(
-    layout.startRow,
-    layout.offsetY + deltaY,
-    GRID_ROW_HEIGHT,
-  );
+  const vertical = normalizeAxisPosition(layout.startRow, layout.offsetY + deltaY, GRID_ROW_HEIGHT);
 
   return {
     ...layout,
@@ -277,11 +257,7 @@ function normalizeMovedLayout(
   };
 }
 
-function normalizeAxisPosition(
-  originIndex: number,
-  offset: number,
-  unitSize: number,
-) {
+function normalizeAxisPosition(originIndex: number, offset: number, unitSize: number) {
   const indexShift = Math.floor(offset / unitSize);
   const nextIndex = originIndex + indexShift;
 

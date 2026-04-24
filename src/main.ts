@@ -22,10 +22,7 @@ import {
   type SpreadyClipboardPayload,
 } from "./clipboard";
 import { SpreadyControlServer } from "./control-server";
-import {
-  clearDiscoveredControlInfo,
-  writeDiscoveredControlInfo,
-} from "./control-discovery";
+import { clearDiscoveredControlInfo, writeDiscoveredControlInfo } from "./control-discovery";
 import { formatWorkbookWindowTitle } from "./window-title";
 import { WorkbookController } from "./workbook-controller";
 import type {
@@ -50,9 +47,7 @@ const configuredControlPort = Number.parseInt(
 const controlServer = new SpreadyControlServer(
   workbookController,
   DEFAULT_CONTROL_HOST,
-  Number.isNaN(configuredControlPort)
-    ? DEFAULT_CONTROL_PORT
-    : configuredControlPort,
+  Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
 );
 let isChartDialogOpen = false;
 
@@ -94,9 +89,7 @@ function readSpreadyClipboardPayload(): SpreadyClipboardPayload | undefined {
   }
 }
 
-function getTargetWindow(
-  browserWindow?: BrowserWindow | null,
-): BrowserWindow | null {
+function getTargetWindow(browserWindow?: BrowserWindow | null): BrowserWindow | null {
   return (
     browserWindow ??
     BrowserWindow.getAllWindows().find((window) => window.isFocused()) ??
@@ -105,10 +98,7 @@ function getTargetWindow(
   );
 }
 
-function sendMenuAction(
-  action: AppMenuAction,
-  browserWindow?: BrowserWindow | null,
-) {
+function sendMenuAction(action: AppMenuAction, browserWindow?: BrowserWindow | null) {
   if (isChartDialogOpen) {
     return;
   }
@@ -126,9 +116,7 @@ function broadcastWorkbookChanged() {
   }
 }
 
-function runMenuCommand(
-  command: () => void | Promise<void>,
-) {
+function runMenuCommand(command: () => void | Promise<void>) {
   if (isChartDialogOpen) {
     return;
   }
@@ -155,10 +143,7 @@ async function showAboutDialog(browserWindow?: BrowserWindow | null) {
   await dialog.showMessageBox(options);
 }
 
-function buildCellContextMenu(
-  browserWindow: BrowserWindow,
-  args: ShowCellContextMenuArgs,
-) {
+function buildCellContextMenu(browserWindow: BrowserWindow, args: ShowCellContextMenuArgs) {
   return Menu.buildFromTemplate([
     {
       enabled: args.canCut,
@@ -228,10 +213,7 @@ function buildCellContextMenu(
   ]);
 }
 
-async function chooseWorkbookSavePath(
-  browserWindow?: BrowserWindow | null,
-  defaultPath?: string,
-) {
+async function chooseWorkbookSavePath(browserWindow?: BrowserWindow | null, defaultPath?: string) {
   const targetWindow = getTargetWindow(browserWindow);
   const dialogOptions: SaveDialogOptions = {
     title: "Save Workbook",
@@ -269,9 +251,7 @@ async function saveCurrentWorkbook(
   } catch (error) {
     dialog.showErrorBox(
       "Save workbook failed",
-      error instanceof Error
-        ? error.message
-        : "The workbook file could not be saved.",
+      error instanceof Error ? error.message : "The workbook file could not be saved.",
     );
 
     return null;
@@ -303,9 +283,7 @@ async function resolveUnsavedChanges(
     : await dialog.showMessageBox(options);
 
   if (result.response === 0) {
-    return (await saveCurrentWorkbook(browserWindow, undefined, undefined))
-      ? "save"
-      : "cancel";
+    return (await saveCurrentWorkbook(browserWindow, undefined, undefined)) ? "save" : "cancel";
   }
 
   if (result.response === 1) {
@@ -315,9 +293,7 @@ async function resolveUnsavedChanges(
   return "cancel";
 }
 
-async function createNewWorkbookWithPrompt(
-  browserWindow?: BrowserWindow | null,
-) {
+async function createNewWorkbookWithPrompt(browserWindow?: BrowserWindow | null) {
   try {
     const unsavedChangesResolution = await resolveUnsavedChanges(browserWindow);
 
@@ -331,9 +307,7 @@ async function createNewWorkbookWithPrompt(
   } catch (error) {
     dialog.showErrorBox(
       "New workbook failed",
-      error instanceof Error
-        ? error.message
-        : "The new workbook could not be created.",
+      error instanceof Error ? error.message : "The new workbook could not be created.",
     );
   }
 }
@@ -585,19 +559,12 @@ const createWindow = () => {
       sandbox: true,
     },
   });
-  mainWindow.setTitle(
-    formatWorkbookWindowTitle(
-      workbookController.getSummary(),
-      APP_DISPLAY_NAME,
-    ),
-  );
+  mainWindow.setTitle(formatWorkbookWindowTitle(workbookController.getSummary(), APP_DISPLAY_NAME));
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(
-      path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`),
-    );
+    mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 
   mainWindow.once("ready-to-show", () => {
@@ -662,9 +629,7 @@ ipcMain.handle("dialog:open-csv-file", async (event) => {
   } catch (error) {
     dialog.showErrorBox(
       "Import failed",
-      error instanceof Error
-        ? error.message
-        : "The CSV file could not be opened.",
+      error instanceof Error ? error.message : "The CSV file could not be opened.",
     );
 
     return { canceled: true as const };
@@ -704,9 +669,7 @@ ipcMain.handle("dialog:open-workbook-file", async (event) => {
   } catch (error) {
     dialog.showErrorBox(
       "Open workbook failed",
-      error instanceof Error
-        ? error.message
-        : "The workbook file could not be opened.",
+      error instanceof Error ? error.message : "The workbook file could not be opened.",
     );
 
     return { canceled: true as const };
@@ -743,9 +706,7 @@ ipcMain.handle("dialog:save-csv-file", async (event, args: SaveCsvFileArgs) => {
   } catch (error) {
     dialog.showErrorBox(
       "Export failed",
-      error instanceof Error
-        ? error.message
-        : "The CSV file could not be saved.",
+      error instanceof Error ? error.message : "The CSV file could not be saved.",
     );
 
     return { canceled: true as const };
@@ -775,63 +736,49 @@ ipcMain.handle("clipboard:write", (_event, request: ClipboardWriteRequest) => {
   );
 });
 
-ipcMain.handle(
-  "menu:show-cell-context-menu",
-  async (event, args: ShowCellContextMenuArgs) => {
-    const browserWindow = BrowserWindow.fromWebContents(event.sender);
+ipcMain.handle("menu:show-cell-context-menu", async (event, args: ShowCellContextMenuArgs) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
 
-    if (!browserWindow) {
-      return;
-    }
+  if (!browserWindow) {
+    return;
+  }
 
-    buildCellContextMenu(browserWindow, args).popup({
-      window: browserWindow,
-    });
-  },
-);
+  buildCellContextMenu(browserWindow, args).popup({
+    window: browserWindow,
+  });
+});
 
-ipcMain.handle(
-  "menu:set-chart-dialog-open",
-  (_event, isOpen: boolean) => {
-    if (isChartDialogOpen === isOpen) {
-      return;
-    }
+ipcMain.handle("menu:set-chart-dialog-open", (_event, isOpen: boolean) => {
+  if (isChartDialogOpen === isOpen) {
+    return;
+  }
 
-    isChartDialogOpen = isOpen;
-    buildAppMenu();
-  },
-);
+  isChartDialogOpen = isOpen;
+  buildAppMenu();
+});
 
-ipcMain.handle(
-  "dialog:save-workbook-file-as",
-  async (event, args?: SaveWorkbookFileAsArgs) => {
-    const browserWindow = BrowserWindow.fromWebContents(event.sender);
-    const filePath = await chooseWorkbookSavePath(
-      browserWindow,
-      args?.defaultPath,
-    );
+ipcMain.handle("dialog:save-workbook-file-as", async (event, args?: SaveWorkbookFileAsArgs) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  const filePath = await chooseWorkbookSavePath(browserWindow, args?.defaultPath);
 
-    if (!filePath) {
-      return { canceled: true as const };
-    }
+  if (!filePath) {
+    return { canceled: true as const };
+  }
 
-    const result = await saveCurrentWorkbook(browserWindow, filePath);
+  const result = await saveCurrentWorkbook(browserWindow, filePath);
 
-    if (!result) {
-      return { canceled: true as const };
-    }
+  if (!result) {
+    return { canceled: true as const };
+  }
 
-    return {
-      canceled: false as const,
-      ...result,
-    };
-  },
-);
+  return {
+    canceled: false as const,
+    ...result,
+  };
+});
 
-ipcMain.handle(
-  "workbook:apply-transaction",
-  (_event, args: ApplyTransactionRequest) =>
-    workbookController.applyTransaction(args),
+ipcMain.handle("workbook:apply-transaction", (_event, args: ApplyTransactionRequest) =>
+  workbookController.applyTransaction(args),
 );
 
 ipcMain.handle("workbook:get-cell-data", (_event, args: CellDataRequest) =>
@@ -842,48 +789,36 @@ ipcMain.handle("workbook:get-chart", (_event, args: { chartId: string }) =>
   workbookController.getChart(args.chartId),
 );
 
-ipcMain.handle(
-  "workbook:get-chart-preview",
-  (_event, args: { chartId: string }) =>
-    workbookController.getChartPreview(args.chartId),
+ipcMain.handle("workbook:get-chart-preview", (_event, args: { chartId: string }) =>
+  workbookController.getChartPreview(args.chartId),
 );
 
 ipcMain.handle("workbook:cut-range", (_event, args: CutRangeRequest) =>
   workbookController.cutRange(args),
 );
 
-ipcMain.handle(
-  "workbook:get-display-range",
-  (_event, args: SheetRangeRequest) =>
-    workbookController.getSheetDisplayRange(args),
+ipcMain.handle("workbook:get-display-range", (_event, args: SheetRangeRequest) =>
+  workbookController.getSheetDisplayRange(args),
 );
 
 ipcMain.handle("workbook:get-range", (_event, args: SheetRangeRequest) =>
   workbookController.getSheetRange(args),
 );
 
-ipcMain.handle(
-  "workbook:get-style-range",
-  (_event, args: SheetRangeRequest) =>
-    workbookController.getSheetStyleRange(args),
+ipcMain.handle("workbook:get-style-range", (_event, args: SheetRangeRequest) =>
+  workbookController.getSheetStyleRange(args),
 );
 
-ipcMain.handle(
-  "workbook:get-sheet-csv",
-  (_event, args?: { sheetId?: string }) =>
-    workbookController.getSheetCsv(args?.sheetId),
+ipcMain.handle("workbook:get-sheet-csv", (_event, args?: { sheetId?: string }) =>
+  workbookController.getSheetCsv(args?.sheetId),
 );
 
-ipcMain.handle(
-  "workbook:get-sheet-charts",
-  (_event, args?: { sheetId?: string }) =>
-    workbookController.getSheetCharts(args?.sheetId),
+ipcMain.handle("workbook:get-sheet-charts", (_event, args?: { sheetId?: string }) =>
+  workbookController.getSheetCharts(args?.sheetId),
 );
 
-ipcMain.handle(
-  "workbook:get-sheet-chart-previews",
-  (_event, args?: { sheetId?: string }) =>
-    workbookController.getSheetChartPreviews(args?.sheetId),
+ipcMain.handle("workbook:get-sheet-chart-previews", (_event, args?: { sheetId?: string }) =>
+  workbookController.getSheetChartPreviews(args?.sheetId),
 );
 
 ipcMain.handle("workbook:save-file", (_event, args: { filePath: string }) =>
@@ -892,10 +827,8 @@ ipcMain.handle("workbook:save-file", (_event, args: { filePath: string }) =>
 
 ipcMain.handle("workbook:get-summary", () => workbookController.getSummary());
 
-ipcMain.handle(
-  "workbook:get-used-range",
-  (_event, args?: { sheetId?: string }) =>
-    workbookController.getUsedRange(args?.sheetId),
+ipcMain.handle("workbook:get-used-range", (_event, args?: { sheetId?: string }) =>
+  workbookController.getUsedRange(args?.sheetId),
 );
 
 workbookController.on("changed", () => {

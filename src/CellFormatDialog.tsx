@@ -26,9 +26,7 @@ export function CellFormatDialog({
 }: CellFormatDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [formState, setFormState] = useState<WorkbookCellStyle>(
-    () => initialStyle ?? {},
-  );
+  const [formState, setFormState] = useState<WorkbookCellStyle>(() => initialStyle ?? {});
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -60,13 +58,11 @@ export function CellFormatDialog({
 
     try {
       const style = normalizeDialogCellStyle(formState);
-      const operations: WorkbookTransactionOperation[] = ranges.map(
-        (range) => ({
-          ...range,
-          style,
-          type: "setRangeStyle",
-        }),
-      );
+      const operations: WorkbookTransactionOperation[] = ranges.map((range) => ({
+        ...range,
+        style,
+        type: "setRangeStyle",
+      }));
 
       await window.appShell.applyTransaction({
         expectedVersion,
@@ -74,8 +70,7 @@ export function CellFormatDialog({
       });
       onClose();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Cell format could not be saved.";
+      const message = error instanceof Error ? error.message : "Cell format could not be saved.";
 
       if (isExpectedVersionConflict(message)) {
         onVersionConflict(message);
@@ -110,9 +105,7 @@ export function CellFormatDialog({
               <div className="cell-format__toggle-group">
                 <button
                   className={
-                    formState.bold
-                      ? "cell-format__toggle is-active"
-                      : "cell-format__toggle"
+                    formState.bold ? "cell-format__toggle is-active" : "cell-format__toggle"
                   }
                   onClick={() => {
                     updateStyle({ bold: !formState.bold });
@@ -171,13 +164,11 @@ export function CellFormatDialog({
                   value={formState.fontSize?.toString() ?? ""}
                 >
                   <option value="">13</option>
-                  {[10, 11, 12, 14, 16, 18, 20, 24, 28, 32].map(
-                    (fontSize) => (
-                      <option key={fontSize} value={fontSize}>
-                        {fontSize}
-                      </option>
-                    ),
-                  )}
+                  {[10, 11, 12, 14, 16, 18, 20, 24, 28, 32].map((fontSize) => (
+                    <option key={fontSize} value={fontSize}>
+                      {fontSize}
+                    </option>
+                  ))}
                 </select>
               </div>
 
@@ -190,8 +181,7 @@ export function CellFormatDialog({
                       horizontalAlign:
                         event.target.value === ""
                           ? undefined
-                          : (event.target
-                              .value as WorkbookCellStyle["horizontalAlign"]),
+                          : (event.target.value as WorkbookCellStyle["horizontalAlign"]),
                     });
                   }}
                   value={formState.horizontalAlign ?? ""}
@@ -212,10 +202,7 @@ export function CellFormatDialog({
                     });
                   }}
                   type="color"
-                  value={getColorInputValue(
-                    formState.textColor,
-                    DEFAULT_TEXT_COLOR,
-                  )}
+                  value={getColorInputValue(formState.textColor, DEFAULT_TEXT_COLOR)}
                 />
               </div>
 
@@ -229,10 +216,7 @@ export function CellFormatDialog({
                     });
                   }}
                   type="color"
-                  value={getColorInputValue(
-                    formState.backgroundColor,
-                    DEFAULT_FILL_COLOR,
-                  )}
+                  value={getColorInputValue(formState.backgroundColor, DEFAULT_FILL_COLOR)}
                 />
               </div>
 
@@ -287,9 +271,7 @@ export function CellFormatDialog({
   );
 }
 
-function normalizeDialogCellStyle(
-  style: WorkbookCellStyle,
-): WorkbookCellStyle | undefined {
+function normalizeDialogCellStyle(style: WorkbookCellStyle): WorkbookCellStyle | undefined {
   const normalized: WorkbookCellStyle = {};
 
   if (style.backgroundColor) {
@@ -332,10 +314,7 @@ function getColorInputValue(value: string | undefined, fallback: string) {
 }
 
 function formatRangeCount(ranges: readonly SheetRangeRequest[]) {
-  const cellCount = ranges.reduce(
-    (total, range) => total + range.rowCount * range.columnCount,
-    0,
-  );
+  const cellCount = ranges.reduce((total, range) => total + range.rowCount * range.columnCount, 0);
 
   return cellCount === 1 ? "1 cell selected" : `${cellCount} cells selected`;
 }

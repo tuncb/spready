@@ -144,29 +144,17 @@ test("registerChartTools wires thin MCP adapters over the TCP chart methods", as
 
   assert.deepEqual(
     [...registrations.keys()],
-    [
-      "get_sheet_charts",
-      "get_chart",
-      "get_chart_preview",
-      "get_sheet_chart_previews",
-    ],
+    ["get_sheet_charts", "get_chart", "get_chart_preview", "get_sheet_chart_previews"],
   );
   assert.deepEqual(
     chartGuideTools.map((tool) => tool.name),
-    [
-      "get_sheet_charts",
-      "get_chart",
-      "get_chart_preview",
-      "get_sheet_chart_previews",
-    ],
+    ["get_sheet_charts", "get_chart", "get_chart_preview", "get_sheet_chart_previews"],
   );
 
   const sheetChartsRegistration = registrations.get("get_sheet_charts");
   const chartRegistration = registrations.get("get_chart");
   const previewRegistration = registrations.get("get_chart_preview");
-  const sheetPreviewsRegistration = registrations.get(
-    "get_sheet_chart_previews",
-  );
+  const sheetPreviewsRegistration = registrations.get("get_sheet_chart_previews");
 
   assert.ok(sheetChartsRegistration);
   assert.ok(chartRegistration);
@@ -192,30 +180,20 @@ test("registerChartTools wires thin MCP adapters over the TCP chart methods", as
     "getSheetChartPreviews:active",
   ]);
   assert.deepEqual(
-    workbookSheetChartsResultSchema.parse(
-      sheetChartsResponse.structuredContent,
-    ),
+    workbookSheetChartsResultSchema.parse(sheetChartsResponse.structuredContent),
     sheetChartsResult,
   );
-  assert.deepEqual(
-    workbookChartResultSchema.parse(chartResponse.structuredContent),
-    chartResult,
-  );
+  assert.deepEqual(workbookChartResultSchema.parse(chartResponse.structuredContent), chartResult);
   assert.deepEqual(
     workbookChartPreviewSchema.parse(previewResponse.structuredContent),
     chartPreviewResult,
   );
   assert.deepEqual(
-    workbookSheetChartPreviewsResultSchema.parse(
-      sheetPreviewsResponse.structuredContent,
-    ),
+    workbookSheetChartPreviewsResultSchema.parse(sheetPreviewsResponse.structuredContent),
     sheetChartPreviewsResult,
   );
   assert.equal(sheetChartsResponse.content[0]?.type, "text");
-  assert.match(
-    sheetChartsResponse.content[0]?.text ?? "",
-    /"sheetId": "sheet-1"/,
-  );
+  assert.match(sheetChartsResponse.content[0]?.text ?? "", /"sheetId": "sheet-1"/);
   assert.match(chartResponse.content[0]?.text ?? "", /"chart-1"/);
   assert.match(previewResponse.content[0]?.text ?? "", /"Revenue"/);
 });

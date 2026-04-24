@@ -43,11 +43,7 @@ import {
   type WorkbookTransactionOperation,
 } from "./workbook-core";
 import { ToastViewport } from "./ToastViewport";
-import {
-  enqueueToast,
-  removeToast,
-  type ToastNotification,
-} from "./toast-state";
+import { enqueueToast, removeToast, type ToastNotification } from "./toast-state";
 
 const DEFAULT_COLUMN_WIDTH = 140;
 const DEFAULT_CELL_FONT_SIZE = 13;
@@ -125,17 +121,11 @@ function buildRangeRequest(
   return {
     columnCount: Math.max(
       1,
-      Math.min(
-        columnCount - startColumn,
-        targetRegion.width + VISIBLE_COLUMN_PADDING * 2,
-      ),
+      Math.min(columnCount - startColumn, targetRegion.width + VISIBLE_COLUMN_PADDING * 2),
     ),
     rowCount: Math.max(
       1,
-      Math.min(
-        rowCount - startRow,
-        targetRegion.height + VISIBLE_ROW_PADDING * 2,
-      ),
+      Math.min(rowCount - startRow, targetRegion.height + VISIBLE_ROW_PADDING * 2),
     ),
     sheetId: activeSheetId,
     startColumn,
@@ -184,9 +174,7 @@ function createLoadingCell(): GridCell {
   };
 }
 
-function getCellThemeOverride(
-  style: WorkbookCellStyle | undefined,
-): Partial<Theme> | undefined {
+function getCellThemeOverride(style: WorkbookCellStyle | undefined): Partial<Theme> | undefined {
   if (!style) {
     return undefined;
   }
@@ -208,11 +196,7 @@ function getCellThemeOverride(
   return Object.keys(theme).length > 0 ? theme : undefined;
 }
 
-function createTextCell(
-  input: string,
-  display: string,
-  style?: WorkbookCellStyle,
-): GridCell {
+function createTextCell(input: string, display: string, style?: WorkbookCellStyle): GridCell {
   return {
     allowOverlay: true,
     allowWrapping: style?.wrapText,
@@ -505,10 +489,7 @@ function getClearSelectionOperations(
   return operations;
 }
 
-function cellWouldBeCleared(
-  selection: GridSelection,
-  cell: Item | null,
-): boolean {
+function cellWouldBeCleared(selection: GridSelection, cell: Item | null): boolean {
   if (!cell) {
     return false;
   }
@@ -517,15 +498,10 @@ function cellWouldBeCleared(
     return true;
   }
 
-  return (
-    selection.columns.hasIndex(cell[0]) || selection.rows.hasIndex(cell[1])
-  );
+  return selection.columns.hasIndex(cell[0]) || selection.rows.hasIndex(cell[1]);
 }
 
-function chartLayoutsEqual(
-  left: WorkbookChartLayout,
-  right: WorkbookChartLayout,
-): boolean {
+function chartLayoutsEqual(left: WorkbookChartLayout, right: WorkbookChartLayout): boolean {
   return (
     left.height === right.height &&
     left.offsetX === right.offsetX &&
@@ -543,10 +519,7 @@ function replaceInputSelection(
 ): { selectionStart: number; value: string } {
   const selectionStart = input.selectionStart ?? input.value.length;
   const selectionEnd = input.selectionEnd ?? input.value.length;
-  const value =
-    input.value.slice(0, selectionStart) +
-    nextText +
-    input.value.slice(selectionEnd);
+  const value = input.value.slice(0, selectionStart) + nextText + input.value.slice(selectionEnd);
 
   return {
     selectionStart: selectionStart + nextText.length,
@@ -575,25 +548,17 @@ function getDefaultWorkbookFilePath(summary: WorkbookSummary | null): string {
 }
 
 export default function App() {
-  const [cellFormatSession, setCellFormatSession] =
-    useState<CellFormatSession | null>(null);
-  const [chartEditorSession, setChartEditorSession] =
-    useState<ChartEditorSession | null>(null);
+  const [cellFormatSession, setCellFormatSession] = useState<CellFormatSession | null>(null);
+  const [chartEditorSession, setChartEditorSession] = useState<ChartEditorSession | null>(null);
   const [formulaInputValue, setFormulaInputValue] = useState("");
-  const [gridSelection, setGridSelection] = useState<GridSelection>(
-    createEmptyGridSelection,
-  );
+  const [gridSelection, setGridSelection] = useState<GridSelection>(createEmptyGridSelection);
   const [gridViewportNonce, setGridViewportNonce] = useState(0);
-  const [isSheetChartPreviewsLoading, setIsSheetChartPreviewsLoading] =
-    useState(false);
+  const [isSheetChartPreviewsLoading, setIsSheetChartPreviewsLoading] = useState(false);
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
-  const [selectedCellData, setSelectedCellData] =
-    useState<CellDataResult | null>(null);
+  const [selectedCellData, setSelectedCellData] = useState<CellDataResult | null>(null);
   const [sheetChartPreviews, setSheetChartPreviews] =
     useState<WorkbookSheetChartPreviewsResult | null>(null);
-  const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(
-    null,
-  );
+  const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(null);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [viewNonce, setViewNonce] = useState(0);
 
@@ -613,17 +578,11 @@ export default function App() {
   const isModalDialogOpen = isChartEditorOpen || isCellFormatOpen;
 
   const activeSheet = useMemo(
-    () =>
-      sheetSummary?.sheets.find(
-        (sheet) => sheet.id === sheetSummary.activeSheetId,
-      ) ?? null,
+    () => sheetSummary?.sheets.find((sheet) => sheet.id === sheetSummary.activeSheetId) ?? null,
     [sheetSummary],
   );
   const selectedCell = gridSelection.current?.cell ?? null;
-  const selectedCellAddress = useMemo(
-    () => getSelectedCellAddress(selectedCell),
-    [selectedCell],
-  );
+  const selectedCellAddress = useMemo(() => getSelectedCellAddress(selectedCell), [selectedCell]);
   const activeSheetChartEntries = useMemo(() => {
     const activeSheetCharts = (sheetSummary?.charts ?? []).filter(
       (chart) => chart.sheetId === activeSheet?.id,
@@ -639,9 +598,7 @@ export default function App() {
       }));
     }
 
-    const chartStatuses = new Map(
-      activeSheetCharts.map((chart) => [chart.id, chart.status]),
-    );
+    const chartStatuses = new Map(activeSheetCharts.map((chart) => [chart.id, chart.status]));
 
     return sheetChartPreviews.previews.map((preview) => ({
       chartType: preview.chart.spec.chartType,
@@ -655,10 +612,7 @@ export default function App() {
   const columnCount = activeSheet?.columnCount ?? 1;
   const columns = useMemo(() => createColumns(columnCount), [columnCount]);
   const currentSelectionRange = useMemo(
-    () =>
-      activeSheet
-        ? getCurrentSelectionRange(gridSelection, activeSheet.id)
-        : null,
+    () => (activeSheet ? getCurrentSelectionRange(gridSelection, activeSheet.id) : null),
     [activeSheet, gridSelection],
   );
   const dismissToast = useCallback((toastId: string) => {
@@ -674,11 +628,7 @@ export default function App() {
   }, []);
 
   const applyTransaction = useCallback(
-    async (
-      operations: Parameters<
-        typeof window.appShell.applyTransaction
-      >[0]["operations"],
-    ) => {
+    async (operations: Parameters<typeof window.appShell.applyTransaction>[0]["operations"]) => {
       const result = await window.appShell.applyTransaction({ operations });
 
       setSheetSummary(result.summary);
@@ -894,11 +844,7 @@ export default function App() {
       const nextValues = values.map((row) => [...row]);
 
       for (let rowOffset = 0; rowOffset < nextValues.length; rowOffset += 1) {
-        for (
-          let columnOffset = 0;
-          columnOffset < nextValues[rowOffset].length;
-          columnOffset += 1
-        ) {
+        for (let columnOffset = 0; columnOffset < nextValues[rowOffset].length; columnOffset += 1) {
           const nextValue = nextValues[rowOffset][columnOffset] ?? "";
 
           rawRangeCacheRef.current = setCachedCellValue(
@@ -918,11 +864,7 @@ export default function App() {
         }
       }
 
-      const selectedPastedValue = getPastedCellValue(
-        target,
-        selectedCell,
-        values,
-      );
+      const selectedPastedValue = getPastedCellValue(target, selectedCell, values);
 
       if (selectedPastedValue !== null) {
         setFormulaInputValue(selectedPastedValue);
@@ -979,10 +921,7 @@ export default function App() {
 
     requestAnimationFrame(() => {
       input.focus();
-      input.setSelectionRange(
-        nextState.selectionStart,
-        nextState.selectionStart,
-      );
+      input.setSelectionRange(nextState.selectionStart, nextState.selectionStart);
     });
 
     return true;
@@ -998,17 +937,12 @@ export default function App() {
     const selectionStart = input.selectionStart ?? input.value.length;
     const selectionEnd = input.selectionEnd ?? input.value.length;
 
-    if (
-      selectionStart === selectionEnd &&
-      selectionStart >= input.value.length
-    ) {
+    if (selectionStart === selectionEnd && selectionStart >= input.value.length) {
       return false;
     }
 
-    const deleteEnd =
-      selectionStart === selectionEnd ? selectionStart + 1 : selectionEnd;
-    const value =
-      input.value.slice(0, selectionStart) + input.value.slice(deleteEnd);
+    const deleteEnd = selectionStart === selectionEnd ? selectionStart + 1 : selectionEnd;
+    const value = input.value.slice(0, selectionStart) + input.value.slice(deleteEnd);
 
     setFormulaInputValue(value);
 
@@ -1116,10 +1050,7 @@ export default function App() {
 
         setSheetSummary(result.summary);
 
-        if (
-          selectedCell &&
-          selectionContainsCell(gridSelection, selectedCell)
-        ) {
+        if (selectedCell && selectionContainsCell(gridSelection, selectedCell)) {
           setFormulaInputValue("");
           setSelectedCellData((current) =>
             current
@@ -1160,11 +1091,7 @@ export default function App() {
             ? (clipboard.payload?.displayText ?? clipboard.text)
             : (clipboard.payload?.rawText ?? clipboard.text);
 
-        if (
-          nextText.length === 0 &&
-          !clipboard.payload &&
-          clipboard.text.length === 0
-        ) {
+        if (nextText.length === 0 && !clipboard.payload && clipboard.text.length === 0) {
           return false;
         }
 
@@ -1370,13 +1297,7 @@ export default function App() {
       initialStyle: selectedCellData?.style,
       ranges,
     });
-  }, [
-    activeSheet,
-    gridSelection,
-    isModalDialogOpen,
-    selectedCellData?.style,
-    sheetSummary,
-  ]);
+  }, [activeSheet, gridSelection, isModalDialogOpen, selectedCellData?.style, sheetSummary]);
 
   const clearSelectionFormatting = useCallback(() => {
     if (!activeSheet) {
@@ -1496,12 +1417,9 @@ export default function App() {
     [applyTransaction, pushErrorToast],
   );
 
-  const handleFormulaInputChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      setFormulaInputValue(event.target.value);
-    },
-    [],
-  );
+  const handleFormulaInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setFormulaInputValue(event.target.value);
+  }, []);
 
   const handleFormulaInputKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
@@ -1608,9 +1526,7 @@ export default function App() {
         return;
       }
 
-      const result = await window.appShell.saveWorkbookFile(
-        sheetSummary.documentFilePath,
-      );
+      const result = await window.appShell.saveWorkbookFile(sheetSummary.documentFilePath);
 
       setSheetSummary(result.summary);
     } catch (error) {
@@ -1731,14 +1647,9 @@ export default function App() {
             return current;
           }
 
-          const currentPreview = current.previews.find(
-            (preview) => preview.chart.id === chartId,
-          );
+          const currentPreview = current.previews.find((preview) => preview.chart.id === chartId);
 
-          if (
-            currentPreview &&
-            !chartLayoutsEqual(currentPreview.chart.layout, nextLayout)
-          ) {
+          if (currentPreview && !chartLayoutsEqual(currentPreview.chart.layout, nextLayout)) {
             return current;
           }
 
@@ -1783,13 +1694,11 @@ export default function App() {
   useEffect(() => {
     let isCancelled = false;
 
-    void window.appShell
-      .setChartDialogOpen(isModalDialogOpen)
-      .catch((error) => {
-        if (!isCancelled) {
-          pushErrorToast(error);
-        }
-      });
+    void window.appShell.setChartDialogOpen(isModalDialogOpen).catch((error) => {
+      if (!isCancelled) {
+        pushErrorToast(error);
+      }
+    });
 
     return () => {
       isCancelled = true;
@@ -1814,12 +1723,7 @@ export default function App() {
     }
 
     void refreshSelectedCellData();
-  }, [
-    activeSheet,
-    refreshSelectedCellData,
-    selectedCell,
-    sheetSummary?.version,
-  ]);
+  }, [activeSheet, refreshSelectedCellData, selectedCell, sheetSummary?.version]);
 
   useEffect(() => {
     if (!activeSheet) {
@@ -1865,9 +1769,7 @@ export default function App() {
 
         setSheetChartPreviews(result);
         setSelectedChartId((current) =>
-          result.previews.some((preview) => preview.chart.id === current)
-            ? current
-            : null,
+          result.previews.some((preview) => preview.chart.id === current) ? current : null,
         );
       })
       .catch((error) => {
@@ -2021,12 +1923,7 @@ export default function App() {
         return;
       }
 
-      if (
-        event.key === "Delete" &&
-        !event.shiftKey &&
-        !event.ctrlKey &&
-        !event.metaKey
-      ) {
+      if (event.key === "Delete" && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
         event.preventDefault();
         deleteSelection();
       }
@@ -2037,20 +1934,12 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleWindowKeyDown, true);
     };
-  }, [
-    copySelection,
-    cutSelection,
-    deleteSelection,
-    isModalDialogOpen,
-    pasteSelection,
-  ]);
+  }, [copySelection, cutSelection, deleteSelection, isModalDialogOpen, pasteSelection]);
 
   return (
     <main className="app-shell">
       <section className="formula-bar" aria-label="Formula bar">
-        <div className="formula-bar__address">
-          {selectedCellAddress || "Cell"}
-        </div>
+        <div className="formula-bar__address">{selectedCellAddress || "Cell"}</div>
         <div className="formula-bar__field">
           <input
             aria-label="Selected cell formula or value"
