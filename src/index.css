@@ -391,6 +391,19 @@ select {
   box-shadow: 0 24px 64px rgba(20, 32, 51, 0.14);
 }
 
+.rename-sheet-window {
+  width: min(100vw - 24px, 420px);
+}
+
+.rename-sheet-panel {
+  width: min(100%, 420px);
+}
+
+.rename-sheet__section {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
 .chart-editor__header,
 .chart-editor__footer {
   padding: 14px 16px;

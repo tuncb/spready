@@ -24,6 +24,7 @@ import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
 import { CellFormatDialog } from "./CellFormatDialog";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
+import { RenameSheetDialog } from "./RenameSheetDialog";
 import { WorkbookChartOverlay } from "./WorkbookChartOverlay";
 import {
   getColumnTitle,
@@ -98,6 +99,12 @@ type CellFormatSession = {
   expectedVersion: number;
   initialStyle?: WorkbookCellStyle;
   ranges: SheetRangeRequest[];
+};
+
+type RenameSheetSession = {
+  expectedVersion: number;
+  name: string;
+  sheetId: string;
 };
 
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
@@ -554,6 +561,7 @@ export default function App() {
   const [gridSelection, setGridSelection] = useState<GridSelection>(createEmptyGridSelection);
   const [gridViewportNonce, setGridViewportNonce] = useState(0);
   const [isSheetChartPreviewsLoading, setIsSheetChartPreviewsLoading] = useState(false);
+  const [renameSheetSession, setRenameSheetSession] = useState<RenameSheetSession | null>(null);
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
   const [selectedCellData, setSelectedCellData] = useState<CellDataResult | null>(null);
   const [sheetChartPreviews, setSheetChartPreviews] =
@@ -575,7 +583,8 @@ export default function App() {
   const styleRangeCacheRef = useRef<SheetStyleRangeResult | null>(null);
   const isChartEditorOpen = chartEditorSession !== null;
   const isCellFormatOpen = cellFormatSession !== null;
-  const isModalDialogOpen = isChartEditorOpen || isCellFormatOpen;
+  const isRenameSheetOpen = renameSheetSession !== null;
+  const isModalDialogOpen = isChartEditorOpen || isCellFormatOpen || isRenameSheetOpen;
 
   const activeSheet = useMemo(
     () => sheetSummary?.sheets.find((sheet) => sheet.id === sheetSummary.activeSheetId) ?? null,
@@ -1388,6 +1397,18 @@ export default function App() {
     });
   }, [applyTransaction, pushErrorToast]);
 
+  const openRenameSheetDialog = useCallback(() => {
+    if (!activeSheet || !sheetSummary || isModalDialogOpen) {
+      return;
+    }
+
+    setRenameSheetSession({
+      expectedVersion: sheetSummary.version,
+      name: activeSheet.name,
+      sheetId: activeSheet.id,
+    });
+  }, [activeSheet, isModalDialogOpen, sheetSummary]);
+
   const deleteSheet = useCallback(() => {
     if (!activeSheet) {
       return;
@@ -1542,10 +1563,19 @@ export default function App() {
     setCellFormatSession(null);
   }, []);
 
+  const closeRenameSheetDialog = useCallback(() => {
+    setRenameSheetSession(null);
+  }, []);
+
+  const handleRenameSheetSaved = useCallback((summary: WorkbookSummary) => {
+    setSheetSummary(summary);
+  }, []);
+
   const handleChartEditorVersionConflict = useCallback(
     (message: string) => {
       setChartEditorSession(null);
       setCellFormatSession(null);
+      setRenameSheetSession(null);
       pushErrorToast(new Error(message));
     },
     [pushErrorToast],
@@ -1847,6 +1877,9 @@ export default function App() {
           case APP_MENU_ACTIONS.newSheet:
             addSheet();
             return;
+          case APP_MENU_ACTIONS.renameSheet:
+            openRenameSheetDialog();
+            return;
           case APP_MENU_ACTIONS.deleteSheet:
             deleteSheet();
             return;
@@ -1874,6 +1907,7 @@ export default function App() {
     isModalDialogOpen,
     openCellFormatDialog,
     openCreateChartEditor,
+    openRenameSheetDialog,
     pasteSelection,
   ]);
 
@@ -2073,6 +2107,18 @@ export default function App() {
           onClose={closeCellFormatDialog}
           onVersionConflict={handleChartEditorVersionConflict}
           ranges={cellFormatSession.ranges}
+        />
+      ) : null}
+
+      {renameSheetSession ? (
+        <RenameSheetDialog
+          expectedVersion={renameSheetSession.expectedVersion}
+          initialName={renameSheetSession.name}
+          key={`rename:${renameSheetSession.sheetId}:${renameSheetSession.expectedVersion}`}
+          onClose={closeRenameSheetDialog}
+          onSaved={handleRenameSheetSaved}
+          onVersionConflict={handleChartEditorVersionConflict}
+          sheetId={renameSheetSession.sheetId}
         />
       ) : null}
 

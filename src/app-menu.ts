@@ -14,6 +14,7 @@ export const APP_MENU_ACTIONS = {
   openWorkbook: "workbook:open",
   paste: "edit:paste",
   pasteValues: "edit:paste-values",
+  renameSheet: "sheet:rename-sheet",
   formatCells: "edit:format-cells",
   clearFormatting: "edit:clear-formatting",
   saveWorkbook: "workbook:save",

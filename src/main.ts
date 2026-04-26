@@ -516,6 +516,14 @@ function buildAppMenu() {
           },
         },
         {
+          label: "Rename Sheet...",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.renameSheet);
+            });
+          },
+        },
+        {
           label: "Delete Sheet",
           click: () => {
             runMenuCommand(() => {
