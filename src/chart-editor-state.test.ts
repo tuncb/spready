@@ -24,6 +24,12 @@ const summary: WorkbookSummary = {
       name: "Sheet 1",
       rowCount: 20,
     },
+    {
+      columnCount: 8,
+      id: "sheet-data",
+      name: "Data Sheet",
+      rowCount: 12,
+    },
   ],
   version: 3,
 };
@@ -82,6 +88,7 @@ test("chart editor state creates valid default create-form operations", () => {
   assert.deepEqual(buildChartEditorOperations(request, "sheet-1", formState), [
     {
       name: "New Scatter Chart",
+      sheetId: "sheet-1",
       spec: {
         categoryDimension: 0,
         chartType: "scatter",
@@ -174,6 +181,7 @@ test("chart editor state parses current-sheet cell ranges into chart source coor
   assert.deepEqual(buildChartEditorOperations(request, "sheet-1", formState), [
     {
       name: "New Scatter Chart",
+      sheetId: "sheet-1",
       spec: {
         categoryDimension: 0,
         chartType: "scatter",
@@ -194,6 +202,55 @@ test("chart editor state parses current-sheet cell ranges into chart source coor
       type: "addChart",
     },
   ]);
+});
+
+test("chart editor state parses and formats cross-sheet source ranges", () => {
+  const request: ChartEditorWindowRequest = {
+    mode: "create",
+    sheetId: "sheet-1",
+  };
+  const formState = createChartEditorFormState(request, summary, usedRange);
+
+  formState.sourceRange = "'Data Sheet'!B2:C5";
+
+  assert.deepEqual(buildChartEditorOperations(request, "sheet-1", formState, summary), [
+    {
+      name: "New Scatter Chart",
+      sheetId: "sheet-1",
+      spec: {
+        categoryDimension: 0,
+        chartType: "scatter",
+        family: "cartesian",
+        source: {
+          range: {
+            columnCount: 2,
+            rowCount: 4,
+            sheetId: "sheet-data",
+            startColumn: 1,
+            startRow: 1,
+          },
+          seriesLayoutBy: "column",
+          sourceHeader: true,
+        },
+        valueDimensions: [1],
+      },
+      type: "addChart",
+    },
+  ]);
+  assert.equal(
+    formatChartEditorRange(
+      {
+        columnCount: 2,
+        rowCount: 4,
+        sheetId: "sheet-data",
+        startColumn: 1,
+        startRow: 1,
+      },
+      summary,
+      "sheet-1",
+    ),
+    "'Data Sheet'!B2:C5",
+  );
 });
 
 test("chart editor state reports invalid current-sheet cell ranges before submit", () => {

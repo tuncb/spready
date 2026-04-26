@@ -56,7 +56,11 @@ import {
   type WorkbookState,
   type WorkbookSummary,
 } from "./workbook-core";
-import { evaluateSheet, getCellEvaluation, type SheetEvaluationSnapshot } from "./formula-engine";
+import {
+  evaluateWorkbook,
+  getCellEvaluation,
+  type SheetEvaluationSnapshot,
+} from "./formula-engine";
 import { buildWorkbookChartPreview } from "./workbook-charting";
 import {
   parseWorkbookDocument,
@@ -81,12 +85,14 @@ export class WorkbookController extends EventEmitter {
 
     return {
       previews: sheetCharts.charts.map((chart) => {
-        const chartSheet = this.#state.sheets.find((sheet) => sheet.id === chart.sheetId);
+        const sourceSheet = this.#state.sheets.find(
+          (sheet) => sheet.id === chart.spec.source.range.sheetId,
+        );
 
         return buildWorkbookChartPreview(
           chart,
-          chartSheet,
-          chartSheet ? this.#getEvaluationSnapshot(chartSheet.id) : undefined,
+          sourceSheet,
+          sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id) : undefined,
           this.#getChartSheetReferences(),
         );
       }),
@@ -107,12 +113,14 @@ export class WorkbookController extends EventEmitter {
 
   getChartPreview(chartId: string): WorkbookChartPreview {
     const chart = getWorkbookChartById(this.#state, chartId);
-    const chartSheet = this.#state.sheets.find((sheet) => sheet.id === chart.sheetId);
+    const sourceSheet = this.#state.sheets.find(
+      (sheet) => sheet.id === chart.spec.source.range.sheetId,
+    );
 
     return buildWorkbookChartPreview(
       cloneWorkbookChart(chart),
-      chartSheet,
-      chartSheet ? this.#getEvaluationSnapshot(chartSheet.id) : undefined,
+      sourceSheet,
+      sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id) : undefined,
       this.#getChartSheetReferences(),
     );
   }
@@ -428,9 +436,15 @@ export class WorkbookController extends EventEmitter {
       return cachedSnapshot;
     }
 
-    const nextSnapshot = evaluateSheet(sheet, this.#state.version);
+    const nextSnapshots = evaluateWorkbook(this.#state, this.#state.version);
 
-    this.#sheetEvaluationSnapshots.set(sheet.id, nextSnapshot);
+    this.#sheetEvaluationSnapshots = nextSnapshots;
+    const nextSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);
+
+    if (!nextSnapshot) {
+      throw new Error(`Sheet "${sheet.id}" was not found in the evaluation snapshot.`);
+    }
+
     return nextSnapshot;
   }
 

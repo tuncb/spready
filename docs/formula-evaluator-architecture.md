@@ -170,7 +170,7 @@ Keep formatting intentionally simple for v1:
 
 ### Reference rules
 
-- References are same-sheet only.
+- References were initially same-sheet only; current workbook-aware evaluation also supports sheet-name references.
 - `A1` means row `0`, column `0`.
 - References outside the current sheet bounds return `#REF!`.
 

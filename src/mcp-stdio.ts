@@ -154,6 +154,7 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     chartId: z.string().min(1).optional(),
     layout: workbookChartLayoutSchema.optional(),
     name: z.string().min(1).optional(),
+    sheetId: z.string().min(1).optional(),
     spec: workbookChartSpecSchema,
     type: z.literal("addChart"),
   }),
@@ -296,6 +297,11 @@ const applyTransactionResultSchema = z.object({
 const createChartSourceRangeSchema = z.object({
   columnCount: z.int().min(1).describe("Number of source columns."),
   rowCount: z.int().min(1).describe("Number of source rows."),
+  sheetId: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional source sheet id. Defaults to the chart owner sheet."),
   startColumn: z.int().min(0).describe("Zero-based source start column."),
   startRow: z.int().min(0).describe("Zero-based source start row."),
 });
@@ -627,10 +633,10 @@ const guideResource = {
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
     "Use format_cells for common cell styling; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
-    "Use create_chart for common chart creation; omit sourceRange to chart the target sheet's used range, and omit dimensions to use the first dimension as labels and remaining dimensions as values.",
+    "Use create_chart for common chart creation; omit sourceRange to chart the chart owner sheet's used range, set sourceRange.sheetId to chart data from another sheet, and omit dimensions to use the first dimension as labels and remaining dimensions as values.",
     "Use apply_transaction chart operations when you need exact persisted chart specs, renames, layout changes, or deletes; chart previews remain derived read models.",
-    "Evaluated display reads include same-sheet arithmetic, comparisons, text operators, ranges, core worksheet functions, and same-sheet lookup functions such as INDEX, MATCH, and XLOOKUP.",
-    "Current formula exclusions include absolute references with $, cross-sheet references, defined names, and LET.",
+    "Evaluated display reads include arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, core worksheet functions, and lookup functions such as INDEX, MATCH, and XLOOKUP.",
+    "Current formula exclusions include absolute references with $, defined names, and LET.",
     "Use copy_range when you need a tab-delimited clipboard-style payload for one explicit rectangular range.",
     "Use cut_range when you need clipboard payloads plus a clear of the source range in one controller-backed mutation.",
     "Use get_cell_data when you need one cell's raw formula text plus its evaluated display result.",
@@ -686,7 +692,7 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 - get_sheet_charts: Return the chart definitions owned by a sheet. Omitting sheetId uses the active sheet.
 - get_chart: Return one chart definition plus validation status and issues.
 - get_chart_preview: Return one chart's normalized preview dataset, warnings, and derived ECharts option.
-- create_chart: Create a chart from a source range using defaults for layout, headers, and dimensions. Omitting sourceRange uses the target sheet's used range.
+- create_chart: Create a chart from a source range using defaults for layout, headers, and dimensions. Omitting sourceRange uses the chart owner sheet's used range; sourceRange.sheetId can point at another sheet.
 - copy_range: Return one rectangular range plus tab-delimited text using raw input or displayed values.
 - cut_range: Return clipboard payloads for one rectangular range and clear the same source cells.
 - get_sheet_csv: Return trimmed CSV for one sheet. Omitting sheetId uses the active sheet.
@@ -1383,7 +1389,7 @@ async function main() {
         sourceRange: createChartSourceRangeSchema
           .optional()
           .describe(
-            "Optional explicit source range on the target sheet. Omit to use the sheet used range.",
+            "Optional explicit source range. Omit sheetId to use the chart owner sheet; set sheetId to chart data from another sheet.",
           ),
         stacked: z.boolean().optional().describe("Bar and area charts only. Defaults to false."),
         valueDimension: z

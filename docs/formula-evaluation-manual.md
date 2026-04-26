@@ -241,10 +241,10 @@ Notes:
 
 - `ROW()` and `COLUMN()` without arguments use the current formula cell.
 - `ROW(range)` and `COLUMN(range)` return the row or column of the first cell in the range.
-- `INDEX(range, row, column?)` supports one-dimensional and two-dimensional same-sheet ranges.
+- `INDEX(range, row, column?)` supports one-dimensional and two-dimensional ranges.
 - `MATCH(value, lookupRange, matchType?)` supports `0`, `1`, and `-1`.
 - `MATCH` requires a one-dimensional lookup range.
-- `XLOOKUP(lookup, lookupRange, returnRange, notFound?)` performs same-sheet lookup over one-dimensional ranges of equal length.
+- `XLOOKUP(lookup, lookupRange, returnRange, notFound?)` performs lookup over one-dimensional ranges of equal length, including ranges on other sheets.
 - `XLOOKUP` currently behaves as exact match lookup.
 
 ## Aggregate Function Range Behavior
@@ -294,13 +294,12 @@ Cycles are reported at display time and remain part of the evaluated view until 
 The current evaluator intentionally does not support:
 
 - absolute references with `$`
-- cross-sheet references
 - defined names
 - `LET`
 
 Also keep these implementation boundaries in mind:
 
-- formula evaluation is same-sheet only
+- formulas can reference other sheets by name, for example `=Data!A1` or `='Data Sheet'!A1`
 - there is no separate array formula model
 - multi-cell ranges are not implicitly spilled into neighboring cells
 - unknown identifiers resolve to `#NAME?`

@@ -154,7 +154,7 @@ export function ChartEditorDialog({
   };
 
   const handleSubmit = async () => {
-    if (!formState || !sheetId) {
+    if (!formState || !sheetId || !summary) {
       return;
     }
 
@@ -164,7 +164,7 @@ export function ChartEditorDialog({
     try {
       await window.appShell.applyTransaction({
         expectedVersion,
-        operations: buildChartEditorOperations(request, sheetId, formState),
+        operations: buildChartEditorOperations(request, sheetId, formState, summary),
       });
       onClose();
     } catch (error) {

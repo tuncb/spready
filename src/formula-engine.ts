@@ -4,12 +4,20 @@ import {
   isFormulaInput,
   parseCellReference,
   type FormulaErrorCode,
+  type WorkbookState,
   type WorkbookSheet,
 } from "./workbook-core";
 
-export type CellKey = `${number}:${number}`;
+export type CellKey = string;
 
 type CellAddress = {
+  sheetId: string;
+  rowIndex: number;
+  columnIndex: number;
+};
+
+type FormulaReferenceAddress = {
+  sheetName?: string;
   rowIndex: number;
   columnIndex: number;
 };
@@ -67,6 +75,7 @@ export interface SheetEvaluationSnapshot {
 type FormulaToken =
   | { type: "comma" }
   | { type: "error"; errorCode: FormulaErrorCode }
+  | { type: "bang" }
   | { type: "identifier"; value: string }
   | { type: "leftParen" }
   | { type: "number"; value: number }
@@ -75,6 +84,7 @@ type FormulaToken =
       value: "+" | "-" | "*" | "/" | "^" | "&" | "=" | "<>" | "<" | "<=" | ">" | ">=" | ":" | "%";
     }
   | { type: "rightParen" }
+  | { type: "sheetName"; value: string }
   | { type: "text"; value: string };
 
 type FormulaAst =
@@ -91,8 +101,8 @@ type FormulaAst =
       type: "percent";
       operand: FormulaAst;
     }
-  | { type: "range"; start: CellAddress; end: CellAddress }
-  | { type: "reference"; rowIndex: number; columnIndex: number }
+  | { type: "range"; start: FormulaReferenceAddress; end: FormulaReferenceAddress }
+  | { type: "reference"; sheetName?: string; rowIndex: number; columnIndex: number }
   | { type: "unary"; operator: "+" | "-"; operand: FormulaAst };
 
 type FunctionArgumentValue = {
@@ -118,8 +128,8 @@ const ERROR_LITERALS: ReadonlyArray<[string, FormulaErrorCode]> = [
   ["#N/A", "NA"],
 ];
 
-export function createCellKey(rowIndex: number, columnIndex: number): CellKey {
-  return `${rowIndex}:${columnIndex}`;
+export function createCellKey(sheetId: string, rowIndex: number, columnIndex: number): CellKey {
+  return `${sheetId}:${rowIndex}:${columnIndex}`;
 }
 
 export function getCellEvaluation(
@@ -127,7 +137,7 @@ export function getCellEvaluation(
   rowIndex: number,
   columnIndex: number,
 ): CellEvaluation {
-  const evaluation = snapshot.cells.get(createCellKey(rowIndex, columnIndex));
+  const evaluation = snapshot.cells.get(createCellKey(snapshot.sheetId, rowIndex, columnIndex));
 
   if (!evaluation) {
     throw new Error(`Cell ${rowIndex}:${columnIndex} is missing from the evaluation snapshot.`);
@@ -154,6 +164,17 @@ export function tokenizeFormula(input: string): FormulaToken[] {
 
       tokens.push({
         type: "text",
+        value,
+      });
+      index = nextIndex;
+      continue;
+    }
+
+    if (character === "'") {
+      const { nextIndex, value } = readQuotedSheetName(expression, index);
+
+      tokens.push({
+        type: "sheetName",
         value,
       });
       index = nextIndex;
@@ -218,6 +239,12 @@ export function tokenizeFormula(input: string): FormulaToken[] {
 
     if (character === ",") {
       tokens.push({ type: "comma" });
+      index += 1;
+      continue;
+    }
+
+    if (character === "!") {
+      tokens.push({ type: "bang" });
       index += 1;
       continue;
     }
@@ -436,10 +463,12 @@ export function parseFormula(input: string): FormulaAst {
     return {
       type: "range",
       start: {
+        sheetName: node.sheetName,
         rowIndex: node.rowIndex,
         columnIndex: node.columnIndex,
       },
       end: {
+        sheetName: endNode.sheetName ?? node.sheetName,
         rowIndex: endNode.rowIndex,
         columnIndex: endNode.columnIndex,
       },
@@ -486,6 +515,10 @@ export function parseFormula(input: string): FormulaAst {
     if (token.type === "identifier") {
       index += 1;
 
+      if (tokens[index]?.type === "bang") {
+        return parseSheetQualifiedReference(token.value);
+      }
+
       if (tokens[index]?.type === "leftParen") {
         return parseFunctionCall(token.value);
       }
@@ -516,6 +549,11 @@ export function parseFormula(input: string): FormulaAst {
         type: "name",
         name: token.value,
       };
+    }
+
+    if (token.type === "sheetName") {
+      index += 1;
+      return parseSheetQualifiedReference(token.value);
     }
 
     if (token.type === "leftParen") {
@@ -570,6 +608,31 @@ export function parseFormula(input: string): FormulaAst {
     };
   }
 
+  function parseSheetQualifiedReference(sheetName: string): FormulaAst {
+    if (tokens[index]?.type !== "bang") {
+      throw new Error("Formula sheet reference is missing !.");
+    }
+
+    index += 1;
+
+    const referenceToken = tokens[index];
+
+    if (referenceToken?.type !== "identifier" || !isCellReferenceIdentifier(referenceToken.value)) {
+      throw new Error("Formula sheet reference must point to a cell reference.");
+    }
+
+    index += 1;
+
+    const parsedReference = parseCellReference(referenceToken.value);
+
+    return {
+      type: "reference",
+      sheetName,
+      rowIndex: parsedReference.rowIndex,
+      columnIndex: parsedReference.columnIndex,
+    };
+  }
+
   const ast = parseExpression();
 
   if (index !== tokens.length) {
@@ -583,39 +646,87 @@ export function evaluateSheet(
   sheet: WorkbookSheet,
   workbookVersion: number,
 ): SheetEvaluationSnapshot {
-  const rowCount = getSheetRowCount(sheet);
-  const columnCount = getSheetColumnCount(sheet);
-  const cells = new Map<CellKey, CellEvaluation>();
-  const dependents = new Map<CellKey, Set<CellKey>>();
-  const precedents = new Map<CellKey, Set<CellKey>>();
+  return evaluateWorkbookSheet(
+    {
+      sheets: [sheet],
+    },
+    sheet.id,
+    workbookVersion,
+  );
+}
+
+export function evaluateWorkbookSheet(
+  workbook: Pick<WorkbookState, "sheets">,
+  sheetId: string,
+  workbookVersion: number,
+): SheetEvaluationSnapshot {
+  return (
+    evaluateWorkbook(workbook, workbookVersion).get(sheetId) ??
+    createMissingSheetSnapshot(sheetId, workbookVersion)
+  );
+}
+
+export function evaluateWorkbook(
+  workbook: Pick<WorkbookState, "sheets">,
+  workbookVersion: number,
+): Map<string, SheetEvaluationSnapshot> {
+  const sheetById = new Map(workbook.sheets.map((sheet) => [sheet.id, sheet]));
+  const sheetIdByName = new Map(
+    workbook.sheets.map((sheet) => [getSheetNameKey(sheet.name), sheet.id]),
+  );
+  const snapshots = new Map<string, SheetEvaluationSnapshot>(
+    workbook.sheets.map((sheet) => [
+      sheet.id,
+      {
+        sheetId: sheet.id,
+        workbookVersion,
+        cells: new Map<CellKey, CellEvaluation>(),
+        dependents: new Map<CellKey, Set<CellKey>>(),
+        precedents: new Map<CellKey, Set<CellKey>>(),
+      },
+    ]),
+  );
   const evaluationStack: CellKey[] = [];
   const cycleCellKeys = new Set<CellKey>();
   const formulaCellStack: CellAddress[] = [];
 
-  function getInput(rowIndex: number, columnIndex: number): string {
-    return sheet.cells[rowIndex]?.[columnIndex] ?? "";
+  function getInput(sheetId: string, rowIndex: number, columnIndex: number): string {
+    const sheet = sheetById.get(sheetId);
+
+    return sheet?.cells[rowIndex]?.[columnIndex] ?? "";
   }
 
-  function recordDependencies(cellKey: CellKey, dependencies: readonly CellKey[]) {
+  function recordDependencies(
+    snapshot: SheetEvaluationSnapshot,
+    cellKey: CellKey,
+    dependencies: readonly CellKey[],
+  ) {
     if (dependencies.length === 0) {
       return;
     }
 
     const precedentSet = new Set(dependencies);
 
-    precedents.set(cellKey, precedentSet);
+    snapshot.precedents.set(cellKey, precedentSet);
 
     for (const dependencyKey of precedentSet) {
-      const dependentSet = dependents.get(dependencyKey) ?? new Set<CellKey>();
+      const dependencySnapshot = snapshots.get(getCellKeySheetId(dependencyKey));
+
+      if (!dependencySnapshot) {
+        continue;
+      }
+
+      const dependentSet = dependencySnapshot.dependents.get(dependencyKey) ?? new Set<CellKey>();
 
       dependentSet.add(cellKey);
-      dependents.set(dependencyKey, dependentSet);
+      dependencySnapshot.dependents.set(dependencyKey, dependentSet);
     }
   }
 
-  function evaluateCell(rowIndex: number, columnIndex: number): CellEvaluation {
-    const cellKey = createCellKey(rowIndex, columnIndex);
-    const cachedEvaluation = cells.get(cellKey);
+  function evaluateCell(address: CellAddress): CellEvaluation {
+    const cellKey = createCellKey(address.sheetId, address.rowIndex, address.columnIndex);
+    const snapshot = getSnapshot(address.sheetId);
+    const cachedEvaluation = snapshot.cells.get(cellKey);
 
     if (cachedEvaluation) {
       return cachedEvaluation;
@@ -628,13 +739,17 @@ export function evaluateSheet(
         cycleCellKeys.add(cycleKey);
       }
 
-      return createErrorEvaluation(getInput(rowIndex, columnIndex), "CYCLE", EMPTY_DEPENDENCIES);
+      return createErrorEvaluation(
+        getInput(address.sheetId, address.rowIndex, address.columnIndex),
+        "CYCLE",
+        EMPTY_DEPENDENCIES,
+      );
     }
 
     evaluationStack.push(cellKey);
 
     try {
-      const input = getInput(rowIndex, columnIndex);
+      const input = getInput(address.sheetId, address.rowIndex, address.columnIndex);
       let evaluation: CellEvaluation;
 
       if (!isFormulaInput(input)) {
@@ -648,11 +763,11 @@ export function evaluateSheet(
           dependencies: EMPTY_DEPENDENCIES,
         };
       } else {
-        evaluation = evaluateFormulaCell(input, cellKey, rowIndex, columnIndex);
+        evaluation = evaluateFormulaCell(input, cellKey, address);
       }
 
-      cells.set(cellKey, evaluation);
-      recordDependencies(cellKey, evaluation.dependencies);
+      snapshot.cells.set(cellKey, evaluation);
+      recordDependencies(snapshot, cellKey, evaluation.dependencies);
       return evaluation;
     } finally {
       evaluationStack.pop();
@@ -662,8 +777,7 @@ export function evaluateSheet(
   function evaluateFormulaCell(
     input: string,
     cellKey: CellKey,
-    rowIndex: number,
-    columnIndex: number,
+    address: CellAddress,
   ): CellEvaluation {
     let ast: FormulaAst;
 
@@ -676,7 +790,7 @@ export function evaluateSheet(
     const dependencies = new Set<CellKey>();
     let value: ScalarFormulaValue;
 
-    formulaCellStack.push({ rowIndex, columnIndex });
+    formulaCellStack.push(address);
 
     try {
       value = scalarizeFormulaValue(evaluateAst(ast, dependencies));
@@ -725,19 +839,16 @@ export function evaluateSheet(
         };
       }
       case "range":
-        return createRangeValue(ast.start, ast.end, dependencies);
-      case "reference":
         return createRangeValue(
-          {
-            rowIndex: ast.rowIndex,
-            columnIndex: ast.columnIndex,
-          },
-          {
-            rowIndex: ast.rowIndex,
-            columnIndex: ast.columnIndex,
-          },
+          resolveFormulaAddress(ast.start),
+          resolveFormulaAddress(ast.end),
           dependencies,
         );
+      case "reference": {
+        const address = resolveFormulaAddress(ast);
+
+        return createRangeValue(address, address, dependencies);
+      }
       case "unary": {
         const numericOperand = coerceToNumber(evaluateAst(ast.operand, dependencies));
 
@@ -839,10 +950,31 @@ export function evaluateSheet(
   }
 
   function createRangeValue(
-    start: CellAddress,
-    end: CellAddress,
+    start: CellAddress | ErrorValue,
+    end: CellAddress | ErrorValue,
     dependencies: Set<CellKey>,
   ): RangeValue | ErrorValue {
+    if (isErrorValue(start)) {
+      return start;
+    }
+
+    if (isErrorValue(end)) {
+      return end;
+    }
+
+    if (start.sheetId !== end.sheetId) {
+      return createErrorValue("REF");
+    }
+
+    const sheet = sheetById.get(start.sheetId);
+
+    if (!sheet) {
+      return createErrorValue("REF");
+    }
+
+    const rowCount = getSheetRowCount(sheet);
+    const columnCount = getSheetColumnCount(sheet);
+
     if (
       start.rowIndex < 0 ||
       start.rowIndex >= rowCount ||
@@ -863,11 +995,14 @@ export function evaluateSheet(
     const cellsInRange = Array.from({ length: endRow - startRow + 1 }, (_, rowOffset) =>
       Array.from({ length: endColumn - startColumn + 1 }, (_, columnOffset) => {
         const cellAddress = {
+          sheetId: start.sheetId,
           rowIndex: startRow + rowOffset,
           columnIndex: startColumn + columnOffset,
         };
 
-        dependencies.add(createCellKey(cellAddress.rowIndex, cellAddress.columnIndex));
+        dependencies.add(
+          createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
+        );
 
         return cellAddress;
       }),
@@ -890,7 +1025,7 @@ export function evaluateSheet(
 
     const referencedCell = value.cells[0][0];
 
-    return evaluateCell(referencedCell.rowIndex, referencedCell.columnIndex).value;
+    return evaluateCell(referencedCell).value;
   }
 
   function coerceToNumber(value: FormulaValue): NumberValue | ErrorValue {
@@ -1209,7 +1344,7 @@ export function evaluateSheet(
 
     for (const row of cellsInRange) {
       for (const cellAddress of row) {
-        const cellValue = evaluateCell(cellAddress.rowIndex, cellAddress.columnIndex).value;
+        const cellValue = evaluateCell(cellAddress).value;
 
         if (cellValue.type === "error") {
           return cellValue;
@@ -2303,10 +2438,7 @@ export function evaluateSheet(
     let bestValue: ScalarFormulaValue | undefined;
 
     for (let index = 0; index < lookupVector.length; index += 1) {
-      const cellValue = evaluateCell(
-        lookupVector[index].rowIndex,
-        lookupVector[index].columnIndex,
-      ).value;
+      const cellValue = evaluateCell(lookupVector[index]).value;
 
       if (cellValue.type === "error") {
         return cellValue;
@@ -2399,17 +2531,14 @@ export function evaluateSheet(
     }
 
     for (let index = 0; index < lookupVector.length; index += 1) {
-      const candidateValue = evaluateCell(
-        lookupVector[index].rowIndex,
-        lookupVector[index].columnIndex,
-      ).value;
+      const candidateValue = evaluateCell(lookupVector[index]).value;
 
       if (candidateValue.type === "error") {
         return candidateValue;
       }
 
       if (compareScalarValues(candidateValue, lookupValue) === 0) {
-        return evaluateCell(returnVector[index].rowIndex, returnVector[index].columnIndex).value;
+        return evaluateCell(returnVector[index]).value;
       }
     }
 
@@ -2459,18 +2588,68 @@ export function evaluateSheet(
     ["XLOOKUP", evaluateXLookup],
   ]);
 
-  for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
-    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
-      evaluateCell(rowIndex, columnIndex);
+  for (const sheet of workbook.sheets) {
+    const rowCount = getSheetRowCount(sheet);
+    const columnCount = getSheetColumnCount(sheet);
+
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
+        evaluateCell({
+          sheetId: sheet.id,
+          rowIndex,
+          columnIndex,
+        });
+      }
     }
   }
 
+  return snapshots;
+
+  function getSnapshot(sheetId: string): SheetEvaluationSnapshot {
+    const snapshot = snapshots.get(sheetId);
+
+    if (!snapshot) {
+      throw new Error(`Sheet "${sheetId}" is missing from the evaluation snapshot.`);
+    }
+
+    return snapshot;
+  }
+
+  function resolveFormulaSheetId(sheetName?: string): string | ErrorValue {
+    if (sheetName === undefined) {
+      const currentCell = getCurrentFormulaCell();
+
+      return isErrorValue(currentCell) ? currentCell : currentCell.sheetId;
+    }
+
+    return sheetIdByName.get(getSheetNameKey(sheetName)) ?? createErrorValue("REF");
+  }
+
+  function resolveFormulaAddress(reference: FormulaReferenceAddress): CellAddress | ErrorValue {
+    const sheetId = resolveFormulaSheetId(reference.sheetName);
+
+    if (isErrorValue(sheetId)) {
+      return sheetId;
+    }
+
+    return {
+      sheetId,
+      rowIndex: reference.rowIndex,
+      columnIndex: reference.columnIndex,
+    };
+  }
+}
+
+function createMissingSheetSnapshot(
+  sheetId: string,
+  workbookVersion: number,
+): SheetEvaluationSnapshot {
   return {
-    sheetId: sheet.id,
+    sheetId,
     workbookVersion,
-    cells,
-    dependents,
-    precedents,
+    cells: new Map<CellKey, CellEvaluation>(),
+    dependents: new Map<CellKey, Set<CellKey>>(),
+    precedents: new Map<CellKey, Set<CellKey>>(),
   };
 }
 
@@ -2502,6 +2681,36 @@ function readStringLiteral(
   }
 
   throw new Error("Formula text literal is missing a closing quote.");
+}
+
+function readQuotedSheetName(
+  expression: string,
+  startIndex: number,
+): { value: string; nextIndex: number } {
+  let value = "";
+  let index = startIndex + 1;
+
+  while (index < expression.length) {
+    const character = expression[index];
+
+    if (character === "'") {
+      if (expression[index + 1] === "'") {
+        value += "'";
+        index += 2;
+        continue;
+      }
+
+      return {
+        value,
+        nextIndex: index + 1,
+      };
+    }
+
+    value += character;
+    index += 1;
+  }
+
+  throw new Error("Formula sheet name is missing a closing quote.");
 }
 
 function createErrorEvaluation(
@@ -2576,6 +2785,17 @@ function getErrorDisplay(errorCode: FormulaErrorCode): string {
 
 function isCellReferenceIdentifier(value: string): boolean {
   return /^[A-Za-z]+[1-9][0-9]*$/.test(value);
+}
+
+function getSheetNameKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function getCellKeySheetId(cellKey: CellKey): string {
+  const columnSeparator = cellKey.lastIndexOf(":");
+  const rowSeparator = cellKey.lastIndexOf(":", columnSeparator - 1);
+
+  return rowSeparator < 0 ? "" : cellKey.slice(0, rowSeparator);
 }
 
 function parseNumericLiteral(input: string): number | undefined {

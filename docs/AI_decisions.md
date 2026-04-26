@@ -43,3 +43,11 @@
 - The GUI insert-chart action passes the current grid cell selection into the chart editor create request. The editor uses that selected range as the default source range and falls back to the sheet used range when no cell range is selected.
 - Common cell styling uses the shared `FormatCellsRequest` contract in `workbook-core.ts` so TCP and MCP clients can apply style patches without rebuilding transaction operations. The default merge mode preserves existing style properties, replace mode overwrites each target cell style, and clear mode removes styles.
 - TCP exposes cell styling convenience through `formatCells`; MCP exposes it as `format_cells`. Both stay thin and expand through shared workbook-core transaction operations.
+
+## 2026-04-26
+
+- Sheet names are unique case-insensitively, which makes sheet-name formula references unambiguous.
+- Formula evaluation is workbook-aware. References may target other sheets with `SheetName!A1` or quoted names such as `'Data Sheet'!A1`; raw formula storage remains unchanged.
+- Formula dependency keys include the sheet id so cross-sheet precedents, dependents, and cycles can be tracked without collisions.
+- Chart ownership and chart source data are separate. A chart remains embedded on `chart.sheetId`, while `chart.spec.source.range.sheetId` may point to another sheet.
+- TCP remains the canonical automation contract and MCP stays a thin typed adapter over it; cross-sheet formula and chart support flows through the existing read/write methods instead of adding transport-specific business logic.

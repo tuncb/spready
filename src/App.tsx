@@ -1988,7 +1988,7 @@ export default function App() {
             onKeyDown={handleFormulaInputKeyDown}
             placeholder={
               selectedCell
-                ? "Type a value or a formula like =A1+B1"
+                ? "Type a value or a formula like =A1+'Sheet 2'!B1"
                 : "Select a cell to inspect or edit"
             }
             value={selectedCell ? formulaInputValue : ""}

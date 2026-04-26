@@ -151,7 +151,7 @@ For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, yo
 
 `formatCells` formats one or more ranges. Its default `merge` mode preserves existing style properties while applying the requested changes; `replace` overwrites each target cell style, and `clear` removes styles.
 
-`createChart` creates a chart from a target sheet range with defaults for source headers, series layout, dimensions, and embedded layout. If `sourceRange` is omitted, the target sheet's used range is used. Use `applyTransaction` with `addChart`, `setChartSpec`, and `setChartLayout` when you need the full persisted chart contract.
+`createChart` creates an embedded chart with defaults for source headers, series layout, dimensions, and embedded layout. If `sourceRange` is omitted, the chart owner sheet's used range is used. Set `sourceRange.sheetId` to chart data from another sheet. Use `applyTransaction` with `addChart`, `setChartSpec`, and `setChartLayout` when you need the full persisted chart contract.
 
 ### CSV import/export examples
 
@@ -310,7 +310,7 @@ The stdio MCP wrapper currently exposes:
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
 
-Display reads evaluate the same-sheet formula engine used by the app UI, including arithmetic, comparisons, text operators, ranges, core math/logical/text functions, and same-sheet lookup functions such as `INDEX`, `MATCH`, and `XLOOKUP`.
+Display reads evaluate the workbook formula engine used by the app UI, including arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, core math/logical/text functions, and lookup functions such as `INDEX`, `MATCH`, and `XLOOKUP`.
 Raw reads continue to preserve the stored input exactly as written.
 
 `import_csv_file` and `export_csv_file` both accept an optional `sheetId`. If omitted, they use

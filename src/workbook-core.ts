@@ -178,6 +178,7 @@ export interface WorkbookSheetChartPreviewsResult {
 }
 
 export interface CreateChartSourceRange {
+  sheetId?: string;
   startRow: number;
   startColumn: number;
   rowCount: number;
@@ -330,6 +331,7 @@ export type WorkbookTransactionOperation =
       chartId?: string;
       layout?: WorkbookChartLayout;
       name?: string;
+      sheetId?: string;
       spec: WorkbookChartSpec;
       type: "addChart";
     }
@@ -853,9 +855,10 @@ export function buildCreateChartOperation(
   operation: Extract<WorkbookTransactionOperation, { type: "addChart" }>;
 } {
   const sheet = getWorkbookSheet(workbook, request.sheetId);
+  const sourceSheet = getWorkbookSheet(workbook, request.sourceRange?.sheetId ?? request.sheetId);
   const chartId =
     normalizeOptionalChartId(request.chartId) ?? createChartId(workbook.nextChartNumber);
-  const range = createChartRangeFromRequest(sheet, request.sourceRange);
+  const range = createChartRangeFromRequest(sourceSheet, request.sourceRange);
   const seriesLayoutBy = request.seriesLayoutBy ?? "column";
   const dimensionCount = seriesLayoutBy === "row" ? range.rowCount : range.columnCount;
   const source: WorkbookChartSource = {
@@ -896,6 +899,7 @@ export function buildCreateChartOperation(
       chartId,
       layout: request.layout,
       name: request.name,
+      sheetId: sheet.id,
       spec,
       type: "addChart",
     },
@@ -1079,13 +1083,6 @@ export function getWorkbookChartValidationIssues(
   const { range } = chart.spec.source;
   const sourceSheet = sheets.find((sheet) => sheet.id === range.sheetId);
   const chartSheet = sheets.find((sheet) => sheet.id === chart.sheetId);
-
-  if (range.sheetId !== chart.sheetId) {
-    issues.push({
-      code: "CROSS_SHEET_SOURCE",
-      message: "Chart sources must stay on the same sheet as the chart in v1 chart support.",
-    });
-  }
 
   if (
     !Number.isInteger(range.startRow) ||
@@ -1375,6 +1372,7 @@ export function applyWorkbookTransaction(
           operation.name?.trim() || `Chart ${nextState.nextChartNumber}`,
           operation.spec,
           operation.layout,
+          operation.sheetId ?? operation.spec.source.range.sheetId,
           nextState,
         );
 
@@ -1753,7 +1751,6 @@ export function applyWorkbookTransaction(
         const currentChart = nextState.charts[chartIndex];
         const nextChartCandidate: WorkbookChart = {
           ...currentChart,
-          sheetId: operation.spec.source.range.sheetId,
           spec: cloneWorkbookChartSpec(operation.spec),
         };
 
@@ -1761,7 +1758,7 @@ export function applyWorkbookTransaction(
 
         const nextChart = clampWorkbookChartLayoutToSheet(
           nextChartCandidate,
-          getSheetById(nextState, operation.spec.source.range.sheetId),
+          getSheetById(nextState, nextChartCandidate.sheetId),
         );
 
         assertWorkbookChartLayoutInBounds(nextChart, nextState, "updated");
@@ -2016,6 +2013,7 @@ function createWorkbookChart(
   name: string,
   spec: WorkbookChartSpec,
   layout: WorkbookChartLayout | undefined,
+  sheetId: string,
   workbook: Pick<WorkbookState, "charts" | "sheets">,
 ): WorkbookChart {
   const nextSpec = cloneWorkbookChartSpec(spec);
@@ -2024,18 +2022,19 @@ function createWorkbookChart(
     id,
     layout: layout
       ? normalizeWorkbookChartLayout(layout)
-      : createDefaultWorkbookChartLayout(nextSpec, workbook),
+      : createDefaultWorkbookChartLayout(nextSpec, sheetId, workbook),
     name,
-    sheetId: nextSpec.source.range.sheetId,
+    sheetId,
     spec: nextSpec,
   };
 }
 
 function createDefaultWorkbookChartLayout(
   spec: WorkbookChartSpec,
+  sheetId: string,
   workbook: Pick<WorkbookState, "charts" | "sheets">,
 ): WorkbookChartLayout {
-  const sheet = getSheetById(workbook, spec.source.range.sheetId);
+  const sheet = getSheetById(workbook, sheetId);
   const columnCount = getSheetColumnCount(sheet);
   const rowCount = getSheetRowCount(sheet);
   const preferredColumn = spec.source.range.startColumn + spec.source.range.columnCount + 1;

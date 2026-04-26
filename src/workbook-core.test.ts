@@ -161,7 +161,7 @@ test("getColumnTitle covers spreadsheet-style alphabet boundaries", () => {
   assert.equal(getColumnTitle(702), "AAA");
 });
 
-test("workbook chart helpers validate same-sheet range contracts and summarize status", () => {
+test("workbook chart helpers validate source range contracts and summarize status", () => {
   const sheets: WorkbookChartSheetReference[] = [
     {
       columnCount: 10,
@@ -213,13 +213,7 @@ test("workbook chart helpers validate same-sheet range contracts and summarize s
   });
   assert.deepEqual(
     getWorkbookChartValidationIssues(invalidChart, sheets).map((issue) => issue.code),
-    [
-      "CROSS_SHEET_SOURCE",
-      "EMPTY_RANGE",
-      "MISSING_SHEET",
-      "EMPTY_VALUE_DIMENSIONS",
-      "INVALID_DIMENSION",
-    ],
+    ["EMPTY_RANGE", "MISSING_SHEET", "EMPTY_VALUE_DIMENSIONS", "INVALID_DIMENSION"],
   );
   assert.equal(getWorkbookChartStatus(invalidChart, sheets), "invalid");
 });
@@ -1146,7 +1140,7 @@ test("applyWorkbookTransaction manages chart lifecycle operations", () => {
   }).state;
 
   assert.equal(afterRenameAndRetarget.charts[0]?.name, "Margin Mix");
-  assert.equal(afterRenameAndRetarget.charts[0]?.sheetId, "sheet-metrics");
+  assert.equal(afterRenameAndRetarget.charts[0]?.sheetId, primarySheetId);
   assert.equal(afterRenameAndRetarget.charts[0]?.spec.family, "pie");
   assert.deepEqual(afterRenameAndRetarget.charts[0]?.layout, {
     height: 300,
@@ -1200,6 +1194,7 @@ test("buildCreateChartOperation creates a valid chart from the used range by def
     chartId: "chart-1",
     layout: undefined,
     name: "Revenue",
+    sheetId: workbook.activeSheetId,
     spec: {
       categoryDimension: 0,
       chartType: "bar",
@@ -1222,6 +1217,51 @@ test("buildCreateChartOperation creates a valid chart from the used range by def
   });
   assert.equal(nextState.charts[0]?.id, "chart-1");
   assert.equal(nextState.charts[0]?.name, "Revenue");
+});
+
+test("buildCreateChartOperation can create chart on one sheet from another sheet source", () => {
+  const initialWorkbook = createWorkbookState();
+  const ownerSheetId = initialWorkbook.activeSheetId;
+  const workbook = applyWorkbookTransaction(initialWorkbook, {
+    operations: [
+      {
+        name: "Data",
+        sheetId: "sheet-data",
+        type: "addSheet",
+      },
+      {
+        sheetId: "sheet-data",
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Quarter", "Revenue"],
+          ["Q1", "120"],
+          ["Q2", "150"],
+        ],
+      },
+    ],
+  }).state;
+
+  const { operation } = buildCreateChartOperation(workbook, {
+    chartType: "line",
+    name: "Remote Revenue",
+    sheetId: ownerSheetId,
+    sourceRange: {
+      columnCount: 2,
+      rowCount: 3,
+      sheetId: "sheet-data",
+      startColumn: 0,
+      startRow: 0,
+    },
+  });
+  const nextState = applyWorkbookTransaction(workbook, {
+    operations: [operation],
+  }).state;
+
+  assert.equal(nextState.charts[0]?.sheetId, ownerSheetId);
+  assert.equal(nextState.charts[0]?.spec.source.range.sheetId, "sheet-data");
+  assert.equal(getWorkbookSummary(nextState).charts[0]?.status, "ok");
 });
 
 test("applyWorkbookTransaction resizes and replaces sheet contents from CSV metadata-aware updates", () => {

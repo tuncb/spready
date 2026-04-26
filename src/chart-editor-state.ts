@@ -46,7 +46,7 @@ export function createChartEditorFormState(
   chart?: WorkbookChart,
 ): ChartEditorFormState {
   if (request.mode === "edit" && chart) {
-    return createChartEditorFormStateFromChart(chart);
+    return createChartEditorFormStateFromChart(chart, summary);
   }
 
   const requestSheetId = getChartEditorSheetId(request, summary, chart);
@@ -75,7 +75,7 @@ export function createChartEditorFormState(
     nameDimension: "0",
     seriesLayoutBy: "column",
     smooth: false,
-    sourceRange: formatChartEditorRange(sourceRange),
+    sourceRange: formatChartEditorRange(sourceRange, summary, requestSheetId),
     sourceHeader: true,
     stacked: false,
     valueDimension: "1",
@@ -83,7 +83,10 @@ export function createChartEditorFormState(
   };
 }
 
-export function createChartEditorFormStateFromChart(chart: WorkbookChart): ChartEditorFormState {
+export function createChartEditorFormStateFromChart(
+  chart: WorkbookChart,
+  summary?: WorkbookSummary,
+): ChartEditorFormState {
   const range = chart.spec.source.range;
 
   return {
@@ -93,7 +96,7 @@ export function createChartEditorFormStateFromChart(chart: WorkbookChart): Chart
     nameDimension: chart.spec.family === "pie" ? `${chart.spec.nameDimension}` : "0",
     seriesLayoutBy: chart.spec.source.seriesLayoutBy,
     smooth: chart.spec.family === "cartesian" ? (chart.spec.smooth ?? false) : false,
-    sourceRange: formatChartEditorRange(range),
+    sourceRange: formatChartEditorRange(range, summary, chart.sheetId),
     sourceHeader: chart.spec.source.sourceHeader,
     stacked: chart.spec.family === "cartesian" ? (chart.spec.stacked ?? false) : false,
     valueDimension: chart.spec.family === "pie" ? `${chart.spec.valueDimension}` : "1",
@@ -105,8 +108,9 @@ export function createChartEditorFormStateFromChart(chart: WorkbookChart): Chart
 export function buildChartEditorSpec(
   sheetId: string,
   state: ChartEditorFormState,
+  summary?: WorkbookSummary,
 ): WorkbookChartSpec {
-  const range = parseChartEditorRange(state.sourceRange, sheetId);
+  const range = parseChartEditorRange(state.sourceRange, sheetId, summary);
   const source = {
     range,
     seriesLayoutBy: state.seriesLayoutBy,
@@ -146,8 +150,9 @@ export function buildChartEditorOperations(
   request: ChartEditorWindowRequest,
   sheetId: string,
   state: ChartEditorFormState,
+  summary?: WorkbookSummary,
 ): WorkbookTransactionOperation[] {
-  const spec = buildChartEditorSpec(sheetId, state);
+  const spec = buildChartEditorSpec(sheetId, state, summary);
   const name = state.name.trim();
 
   if (request.mode === "edit") {
@@ -168,6 +173,7 @@ export function buildChartEditorOperations(
   return [
     {
       name,
+      sheetId,
       spec,
       type: "addChart",
     },
@@ -206,7 +212,7 @@ export function getChartEditorValidationIssues(
         },
         name,
         sheetId,
-        spec: buildChartEditorSpec(sheetId, state),
+        spec: buildChartEditorSpec(sheetId, state, summary),
       },
       summary.sheets.map((entry) => ({
         columnCount: entry.columnCount,
@@ -259,7 +265,11 @@ function parseIntegerListField(value: string): number[] {
 }
 
 export function formatChartEditorRange(
-  range: Pick<WorkbookChartRange, "columnCount" | "rowCount" | "startColumn" | "startRow">,
+  range: Pick<WorkbookChartRange, "columnCount" | "rowCount" | "startColumn" | "startRow"> & {
+    sheetId?: string;
+  },
+  summary?: WorkbookSummary,
+  ownerSheetId?: string,
 ): string {
   if (range.columnCount < 1 || range.rowCount < 1) {
     return "";
@@ -268,12 +278,24 @@ export function formatChartEditorRange(
   const endColumn = range.startColumn + range.columnCount - 1;
   const endRow = range.startRow + range.rowCount;
 
-  return `${getColumnTitle(range.startColumn)}${range.startRow + 1}:${getColumnTitle(
+  const address = `${getColumnTitle(range.startColumn)}${range.startRow + 1}:${getColumnTitle(
     endColumn,
   )}${endRow}`;
+
+  if (!("sheetId" in range) || range.sheetId === undefined || range.sheetId === ownerSheetId) {
+    return address;
+  }
+
+  const sheetName = summary?.sheets.find((sheet) => sheet.id === range.sheetId)?.name;
+
+  return sheetName ? `${formatSheetNameForRange(sheetName)}!${address}` : address;
 }
 
-function parseChartEditorRange(value: string, sheetId: string): WorkbookChartRange {
+function parseChartEditorRange(
+  value: string,
+  sheetId: string,
+  summary?: WorkbookSummary,
+): WorkbookChartRange {
   const normalizedValue = value.trim();
   const parts = normalizedValue.split(":").map((part) => part.trim());
 
@@ -281,8 +303,14 @@ function parseChartEditorRange(value: string, sheetId: string): WorkbookChartRan
     throw new Error(`"${value}" is not a valid cell range.`);
   }
 
-  const start = parseCellReference(parts[0]);
-  const end = parseCellReference(parts[1] ?? parts[0]);
+  const start = parseChartEditorCellReference(parts[0], summary);
+  const end = parseChartEditorCellReference(parts[1] ?? parts[0], summary);
+  const sourceSheetId = start.sheetId ?? end.sheetId ?? sheetId;
+
+  if (start.sheetId && end.sheetId && start.sheetId !== end.sheetId) {
+    throw new Error("Chart source range cannot span multiple sheets.");
+  }
+
   const startRow = Math.min(start.rowIndex, end.rowIndex);
   const startColumn = Math.min(start.columnIndex, end.columnIndex);
   const endRow = Math.max(start.rowIndex, end.rowIndex);
@@ -291,8 +319,77 @@ function parseChartEditorRange(value: string, sheetId: string): WorkbookChartRan
   return {
     columnCount: endColumn - startColumn + 1,
     rowCount: endRow - startRow + 1,
-    sheetId,
+    sheetId: sourceSheetId,
     startColumn,
     startRow,
   };
+}
+
+function parseChartEditorCellReference(
+  value: string,
+  summary?: WorkbookSummary,
+): { columnIndex: number; rowIndex: number; sheetId?: string } {
+  const bangIndex = findSheetReferenceBang(value);
+
+  if (bangIndex < 0) {
+    return parseCellReference(value);
+  }
+
+  const sheetName = parseChartEditorSheetName(value.slice(0, bangIndex).trim());
+  if (!summary) {
+    throw new Error("Sheet-qualified chart ranges require workbook summary data.");
+  }
+
+  const sheet = summary.sheets.find(
+    (entry) => entry.name.trim().toLowerCase() === sheetName.trim().toLowerCase(),
+  );
+
+  if (!sheet) {
+    throw new Error(`Sheet "${sheetName}" was not found.`);
+  }
+
+  return {
+    ...parseCellReference(value.slice(bangIndex + 1).trim()),
+    sheetId: sheet.id,
+  };
+}
+
+function findSheetReferenceBang(value: string): number {
+  let isQuoted = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+
+    if (character === "'") {
+      if (isQuoted && value[index + 1] === "'") {
+        index += 1;
+        continue;
+      }
+
+      isQuoted = !isQuoted;
+      continue;
+    }
+
+    if (character === "!" && !isQuoted) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function parseChartEditorSheetName(value: string): string {
+  if (!value.startsWith("'")) {
+    return value;
+  }
+
+  if (!value.endsWith("'")) {
+    throw new Error("Quoted sheet name is missing a closing quote.");
+  }
+
+  return value.slice(1, -1).replaceAll("''", "'");
+}
+
+function formatSheetNameForRange(sheetName: string): string {
+  return `'${sheetName.replaceAll("'", "''")}'`;
 }

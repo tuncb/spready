@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { evaluateSheet, getCellEvaluation, type CellKey } from "./formula-engine";
+import { evaluateSheet, evaluateWorkbook, getCellEvaluation, type CellKey } from "./formula-engine";
 import { normalizeSheet, type WorkbookSheet } from "./workbook-core";
 
 function createSheet(rows: string[][]): WorkbookSheet {
@@ -19,6 +19,10 @@ function getDisplay(sheet: WorkbookSheet, rowIndex: number, columnIndex: number)
 
 function getDependents(snapshotCellKeys: Iterable<CellKey>) {
   return [...snapshotCellKeys].sort();
+}
+
+function cellKey(rowIndex: number, columnIndex: number, sheetId = "sheet-under-test") {
+  return `${sheetId}:${rowIndex}:${columnIndex}`;
 }
 
 test("evaluateSheet handles arithmetic precedence, parentheses, unary operators, and references", () => {
@@ -54,10 +58,13 @@ test("evaluateSheet records direct precedents and dependents for formula cells",
   const sheet = createSheet([["1", "2", "=A1+B1", "=C1*2"]]);
   const snapshot = evaluateSheet(sheet, 3);
 
-  assert.deepEqual(getCellEvaluation(snapshot, 0, 2).dependencies, ["0:0", "0:1"]);
-  assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, ["0:2"]);
-  assert.deepEqual(getDependents(snapshot.precedents.get("0:2") ?? []), ["0:0", "0:1"]);
-  assert.deepEqual(getDependents(snapshot.dependents.get("0:2") ?? []), ["0:3"]);
+  assert.deepEqual(getCellEvaluation(snapshot, 0, 2).dependencies, [cellKey(0, 0), cellKey(0, 1)]);
+  assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, [cellKey(0, 2)]);
+  assert.deepEqual(getDependents(snapshot.precedents.get(cellKey(0, 2)) ?? []), [
+    cellKey(0, 0),
+    cellKey(0, 1),
+  ]);
+  assert.deepEqual(getDependents(snapshot.dependents.get(cellKey(0, 2)) ?? []), [cellKey(0, 3)]);
 });
 
 test("evaluateSheet supports text, boolean, comparison, exponent, percent, and error literals", () => {
@@ -84,7 +91,53 @@ test("evaluateSheet treats single-cell ranges as scalars and multi-cell ranges a
   assert.equal(getCellEvaluation(snapshot, 0, 3).display, "#VALUE!");
   assert.equal(getCellEvaluation(snapshot, 0, 4).display, "5");
   assert.equal(getCellEvaluation(snapshot, 0, 5).display, "#VALUE!");
-  assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, ["0:0", "0:1"]);
+  assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, [cellKey(0, 0), cellKey(0, 1)]);
+});
+
+test("evaluateWorkbook supports cross-sheet references, ranges, lookups, and cycles", () => {
+  const summarySheet = createSheet([
+    [
+      "=Data!B1+'Data Table'!B1",
+      "=SUM('Data Table'!A1:B1)",
+      '=XLOOKUP("b",Data!A1:A2,Data!B1:B2)',
+      "=Data!C1",
+    ],
+  ]);
+  const dataSheet: WorkbookSheet = {
+    ...createSheet([
+      ["a", "10", "=Summary!D1"],
+      ["b", "20", ""],
+    ]),
+    id: "sheet-data",
+    name: "Data",
+  };
+  const dataTableSheet: WorkbookSheet = {
+    ...createSheet([["1", "2"]]),
+    id: "sheet-data-table",
+    name: "Data Table",
+  };
+  const workbook = {
+    sheets: [
+      {
+        ...summarySheet,
+        id: "sheet-summary",
+        name: "Summary",
+      },
+      dataSheet,
+      dataTableSheet,
+    ],
+  };
+  const snapshots = evaluateWorkbook(workbook, 41);
+  const summarySnapshot = snapshots.get("sheet-summary");
+  const dataSnapshot = snapshots.get("sheet-data");
+
+  assert.ok(summarySnapshot);
+  assert.ok(dataSnapshot);
+  assert.equal(getCellEvaluation(summarySnapshot, 0, 0).display, "12");
+  assert.equal(getCellEvaluation(summarySnapshot, 0, 1).display, "3");
+  assert.equal(getCellEvaluation(summarySnapshot, 0, 2).display, "20");
+  assert.equal(getCellEvaluation(summarySnapshot, 0, 3).display, "#CYCLE!");
+  assert.equal(getCellEvaluation(dataSnapshot, 0, 2).display, "#CYCLE!");
 });
 
 test("evaluateSheet supports core math, logical, and text functions over same-sheet values", () => {

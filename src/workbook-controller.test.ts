@@ -129,6 +129,56 @@ test("WorkbookController exposes expanded formula compatibility through the same
   });
 });
 
+test("WorkbookController evaluates cross-sheet formulas through display reads", () => {
+  const controller = new WorkbookController();
+  const summary = controller.applyTransaction({
+    operations: [
+      {
+        name: "Data",
+        sheetId: "sheet-data",
+        type: "addSheet",
+      },
+      {
+        sheetId: "sheet-data",
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Item", "Value"],
+          ["a", "10"],
+          ["b", "20"],
+        ],
+      },
+    ],
+  }).summary;
+  const outputSheetId = summary.sheets.find((sheet) => sheet.name === "Sheet 1")?.id;
+
+  assert.ok(outputSheetId);
+
+  controller.applyTransaction({
+    operations: [
+      {
+        sheetId: outputSheetId,
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["=SUM(Data!B2:B3)", '=XLOOKUP("b",Data!A2:A3,Data!B2:B3,"nf")']],
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    controller.getSheetDisplayRange({
+      columnCount: 2,
+      rowCount: 1,
+      sheetId: outputSheetId,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [["30", "20"]],
+  );
+});
+
 test("WorkbookController keeps CSV export on raw input strings even when formulas are present", () => {
   const controller = new WorkbookController();
 
@@ -886,6 +936,64 @@ test("WorkbookController creates charts through the simplified chart request con
     },
     valueDimensions: [1, 2],
   });
+});
+
+test("WorkbookController previews charts embedded on one sheet with source data from another sheet", () => {
+  const controller = new WorkbookController();
+  const ownerSheetId = controller.getSummary().activeSheetId;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        name: "Data",
+        sheetId: "sheet-data",
+        type: "addSheet",
+      },
+      {
+        sheetId: "sheet-data",
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Quarter", "Revenue"],
+          ["Q1", "120"],
+          ["Q2", "150"],
+        ],
+      },
+      {
+        sheetId: ownerSheetId,
+        type: "setActiveSheet",
+      },
+    ],
+  });
+  controller.createChart({
+    chartId: "chart-cross-sheet",
+    chartType: "line",
+    name: "Remote Revenue",
+    sheetId: ownerSheetId,
+    sourceRange: {
+      columnCount: 2,
+      rowCount: 3,
+      sheetId: "sheet-data",
+      startColumn: 0,
+      startRow: 0,
+    },
+  });
+
+  const preview = controller.getChartPreview("chart-cross-sheet");
+
+  assert.equal(preview.status, "ok");
+  assert.equal(preview.chart.sheetId, ownerSheetId);
+  assert.equal(preview.chart.spec.source.range.sheetId, "sheet-data");
+  assert.deepEqual(preview.dataset.source, [
+    ["Quarter", "Revenue"],
+    ["Q1", 120],
+    ["Q2", 150],
+  ]);
+  assert.deepEqual(
+    controller.getSheetChartPreviews(ownerSheetId).previews.map((entry) => entry.chart.id),
+    ["chart-cross-sheet"],
+  );
 });
 
 test("WorkbookController applies chart lifecycle transactions through the shared write path", () => {
