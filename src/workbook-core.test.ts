@@ -467,6 +467,114 @@ test("applyWorkbookTransaction manages sheet lifecycle operations", () => {
   );
 });
 
+test("applyWorkbookTransaction enforces case-insensitive unique sheet names", () => {
+  const initialState = createWorkbookState();
+  const withNamedSheet = applyWorkbookTransaction(initialState, {
+    operations: [
+      {
+        name: "Archive",
+        sheetId: "sheet-archive",
+        type: "addSheet",
+      },
+    ],
+  }).state;
+
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(withNamedSheet, {
+        operations: [
+          {
+            name: " archive ",
+            sheetId: "sheet-archive-copy",
+            type: "addSheet",
+          },
+        ],
+      }),
+    /Sheet name "archive" already exists as "Archive"\. Sheet names must be unique case-insensitively\./,
+  );
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(withNamedSheet, {
+        operations: [
+          {
+            name: "ARCHIVE",
+            sheetId: initialState.activeSheetId,
+            type: "renameSheet",
+          },
+        ],
+      }),
+    /Sheet name "ARCHIVE" already exists as "Archive"\. Sheet names must be unique case-insensitively\./,
+  );
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(withNamedSheet, {
+        operations: [
+          {
+            name: " archive ",
+            rows: [["A"]],
+            sheetId: initialState.activeSheetId,
+            type: "replaceSheet",
+          },
+        ],
+      }),
+    /Sheet name "archive" already exists as "Archive"\. Sheet names must be unique case-insensitively\./,
+  );
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(withNamedSheet, {
+        operations: [
+          {
+            name: "   ",
+            type: "renameSheet",
+          },
+        ],
+      }),
+    /Sheet name is required\./,
+  );
+
+  const afterCaseOnlyRename = applyWorkbookTransaction(withNamedSheet, {
+    operations: [
+      {
+        name: "archive",
+        sheetId: "sheet-archive",
+        type: "renameSheet",
+      },
+    ],
+  }).state;
+
+  assert.equal(
+    afterCaseOnlyRename.sheets.find((sheet) => sheet.id === "sheet-archive")?.name,
+    "archive",
+  );
+});
+
+test("automatically named sheets skip case-insensitive sheet name collisions", () => {
+  const initialState = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        name: "sheet 3",
+        sheetId: "sheet-custom-three",
+        type: "addSheet",
+      },
+    ],
+  }).state;
+
+  const nextState = applyWorkbookTransaction(initialState, {
+    operations: [
+      {
+        sheetId: "sheet-auto",
+        type: "addSheet",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(
+    nextState.sheets.map((sheet) => sheet.name),
+    ["Sheet 1", "sheet 3", "Sheet 4"],
+  );
+  assert.equal(nextState.nextSheetNumber, 5);
+});
+
 test("applyWorkbookTransaction expands sheets for setCell and setRange writes", () => {
   const nextState = applyWorkbookTransaction(createWorkbookState(), {
     operations: [

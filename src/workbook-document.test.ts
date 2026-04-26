@@ -208,6 +208,41 @@ test("workbook documents reject invalid workbook references and cell entries", (
           format: WORKBOOK_DOCUMENT_FORMAT,
           formatVersion: WORKBOOK_DOCUMENT_VERSION,
           workbook: {
+            activeSheetId: "sheet-1",
+            charts: [],
+            nextChartNumber: 1,
+            nextSheetNumber: 3,
+            sheets: [
+              {
+                cells: [],
+                columnCount: 2,
+                id: "sheet-1",
+                name: "Sheet 1",
+                rowCount: 2,
+                styles: [],
+              },
+              {
+                cells: [],
+                columnCount: 2,
+                id: "sheet-2",
+                name: "sheet 1",
+                rowCount: 2,
+                styles: [],
+              },
+            ],
+          },
+        }),
+      ),
+    /Sheet name "sheet 1" already exists as "Sheet 1"\. Sheet names must be unique case-insensitively\./,
+  );
+
+  assert.throws(
+    () =>
+      parseWorkbookDocument(
+        JSON.stringify({
+          format: WORKBOOK_DOCUMENT_FORMAT,
+          formatVersion: WORKBOOK_DOCUMENT_VERSION,
+          workbook: {
             activeSheetId: "missing",
             charts: [],
             nextChartNumber: 1,

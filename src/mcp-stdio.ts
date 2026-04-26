@@ -337,7 +337,8 @@ const WORKBOOK_TASK_PROMPT_NAME = "spready_workbook_task";
 const transactionOperations = [
   {
     type: "addSheet",
-    description: "Add a new sheet, optionally naming it, sizing it, and making it active.",
+    description:
+      "Add a new sheet, optionally naming it, sizing it, and making it active. Sheet names must be unique case-insensitively; omitted names are generated without colliding.",
   },
   {
     type: "addChart",
@@ -378,7 +379,7 @@ const transactionOperations = [
   },
   {
     type: "renameSheet",
-    description: "Rename an existing sheet.",
+    description: "Rename an existing sheet. Sheet names must be unique case-insensitively.",
   },
   {
     type: "renameChart",
@@ -386,11 +387,13 @@ const transactionOperations = [
   },
   {
     type: "replaceSheet",
-    description: "Replace an entire sheet from an in-memory 2D string array.",
+    description:
+      "Replace an entire sheet from an in-memory 2D string array, optionally renaming it with the same case-insensitive uniqueness rule.",
   },
   {
     type: "replaceSheetFromCsv",
-    description: "Replace an entire sheet from CSV content.",
+    description:
+      "Replace an entire sheet from CSV content, optionally renaming it with the same case-insensitive uniqueness rule.",
   },
   {
     type: "resizeSheet",
@@ -620,6 +623,7 @@ const guideResource = {
     "Use open_workbook_file and save_workbook_file for full multi-sheet workbook persistence.",
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
+    "Sheet names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook.",
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
     "Use format_cells for common cell styling; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",

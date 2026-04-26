@@ -1,8 +1,9 @@
 import * as z from "zod/v4";
 
 import {
-  createSheet,
+  assertWorkbookSheetNamesAreUnique,
   cloneWorkbookCellStyle,
+  createSheet,
   MIN_CHART_LAYOUT_HEIGHT,
   MIN_CHART_LAYOUT_WIDTH,
   syncSheetIdSequence,
@@ -190,6 +191,8 @@ export function parseWorkbookDocument(content: string): WorkbookState {
   const document = parseWorkbookDocumentJson(parsedJson);
   const chartIds = new Set<string>();
   const sheetIds = new Set<string>();
+
+  assertWorkbookSheetNamesAreUnique({ sheets: document.workbook.sheets });
 
   for (const sheet of document.workbook.sheets) {
     if (sheetIds.has(sheet.id)) {

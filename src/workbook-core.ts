@@ -782,6 +782,36 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
   };
 }
 
+export function normalizeWorkbookSheetName(name: string): string {
+  const normalizedName = name.trim();
+
+  if (normalizedName.length === 0) {
+    throw new Error("Sheet name is required.");
+  }
+
+  return normalizedName;
+}
+
+export function assertWorkbookSheetNamesAreUnique(workbook: {
+  sheets: readonly { name: string }[];
+}): void {
+  const seenNames = new Map<string, string>();
+
+  for (const sheet of workbook.sheets) {
+    const normalizedName = normalizeWorkbookSheetName(sheet.name);
+    const nameKey = getWorkbookSheetNameKey(normalizedName);
+    const existingName = seenNames.get(nameKey);
+
+    if (existingName) {
+      throw new Error(
+        `Sheet name "${normalizedName}" already exists as "${existingName}". Sheet names must be unique case-insensitively.`,
+      );
+    }
+
+    seenNames.set(nameKey, normalizedName);
+  }
+}
+
 export function cloneWorkbookChart(chart: WorkbookChart): WorkbookChart {
   return {
     ...chart,
@@ -1300,7 +1330,14 @@ export function applyWorkbookTransaction(
   for (const operation of request.operations) {
     switch (operation.type) {
       case "addSheet": {
-        const sheetName = operation.name?.trim() || `Sheet ${nextState.nextSheetNumber}`;
+        const nextSheetName =
+          operation.name === undefined
+            ? getNextAvailableWorkbookSheetName(nextState)
+            : {
+                name: assertWorkbookSheetNameAvailable(nextState, operation.name),
+                nextSheetNumber: nextState.nextSheetNumber + 1,
+              };
+        const sheetName = nextSheetName.name;
         const sheetId = operation.sheetId?.trim() || createSheetId();
 
         if (findSheetIndex(nextState, sheetId) >= 0) {
@@ -1315,7 +1352,7 @@ export function applyWorkbookTransaction(
             sheetId,
           ),
         );
-        nextState.nextSheetNumber += 1;
+        nextState.nextSheetNumber = nextSheetName.nextSheetNumber;
 
         if (operation.activate ?? true) {
           nextState.activeSheetId = sheetId;
@@ -1562,9 +1599,9 @@ export function applyWorkbookTransaction(
 
       case "renameSheet": {
         const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
-        const nextName = operation.name.trim();
+        const nextName = assertWorkbookSheetNameAvailable(nextState, operation.name, sheet.id);
 
-        if (nextName.length === 0 || sheet.name === nextName) {
+        if (sheet.name === nextName) {
           break;
         }
 
@@ -1601,6 +1638,10 @@ export function applyWorkbookTransaction(
 
       case "replaceSheet": {
         const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+        const nextName =
+          operation.name === undefined
+            ? undefined
+            : assertWorkbookSheetNameAvailable(nextState, operation.name, sheet.id);
         const nextCells = normalizeSheet(operation.rows);
 
         if (!matricesEqual(sheet.cells, nextCells)) {
@@ -1616,8 +1657,8 @@ export function applyWorkbookTransaction(
           changed = true;
         }
 
-        if (operation.name?.trim() && operation.name.trim() !== sheet.name) {
-          sheet.name = operation.name.trim();
+        if (nextName !== undefined && nextName !== sheet.name) {
+          sheet.name = nextName;
           changed = true;
         }
 
@@ -1631,6 +1672,10 @@ export function applyWorkbookTransaction(
 
       case "replaceSheetFromCsv": {
         const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+        const nextName =
+          operation.name === undefined
+            ? undefined
+            : assertWorkbookSheetNameAvailable(nextState, operation.name, sheet.id);
         const nextCells = parseCsv(operation.content);
 
         if (!matricesEqual(sheet.cells, nextCells)) {
@@ -1646,8 +1691,8 @@ export function applyWorkbookTransaction(
           changed = true;
         }
 
-        if (operation.name?.trim() && operation.name.trim() !== sheet.name) {
-          sheet.name = operation.name.trim();
+        if (nextName !== undefined && nextName !== sheet.name) {
+          sheet.name = nextName;
           changed = true;
         }
 
@@ -2454,6 +2499,52 @@ function createWorkbookSheet(
     id,
     name,
   };
+}
+
+function assertWorkbookSheetNameAvailable(
+  workbook: Pick<WorkbookState, "sheets">,
+  name: string,
+  allowedSheetId?: string,
+): string {
+  const normalizedName = normalizeWorkbookSheetName(name);
+  const nameKey = getWorkbookSheetNameKey(normalizedName);
+  const existingSheet = workbook.sheets.find(
+    (sheet) => sheet.id !== allowedSheetId && getWorkbookSheetNameKey(sheet.name) === nameKey,
+  );
+
+  if (existingSheet) {
+    throw new Error(
+      `Sheet name "${normalizedName}" already exists as "${existingSheet.name}". Sheet names must be unique case-insensitively.`,
+    );
+  }
+
+  return normalizedName;
+}
+
+function getNextAvailableWorkbookSheetName(
+  workbook: Pick<WorkbookState, "nextSheetNumber" | "sheets">,
+): {
+  name: string;
+  nextSheetNumber: number;
+} {
+  for (let sheetNumber = Math.max(1, Math.floor(workbook.nextSheetNumber)); ; sheetNumber += 1) {
+    const name = `Sheet ${sheetNumber}`;
+
+    if (
+      !workbook.sheets.some(
+        (sheet) => getWorkbookSheetNameKey(sheet.name) === getWorkbookSheetNameKey(name),
+      )
+    ) {
+      return {
+        name,
+        nextSheetNumber: sheetNumber + 1,
+      };
+    }
+  }
+}
+
+function getWorkbookSheetNameKey(name: string): string {
+  return name.trim().toLowerCase();
 }
 
 function createSheetId(): string {

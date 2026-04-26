@@ -274,6 +274,8 @@ Supported transaction operations currently include:
 - `replaceSheetFromCsv`
 - `setSheetSourceFile`
 
+Sheet names supplied to `addSheet`, `renameSheet`, `replaceSheet`, and `replaceSheetFromCsv` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. When `addSheet` omits `name`, Spready generates the next non-conflicting `Sheet N` name.
+
 ## MCP surface
 
 The stdio MCP wrapper currently exposes:
