@@ -9,6 +9,7 @@ import * as z from "zod/v4";
 
 import { CONTROL_DISCOVERY_FILE_PATH } from "./control-discovery";
 import { resolveControlTarget, SpreadyControlClient } from "./control-client";
+import { openAppAndWaitForControlTarget, parseMcpStartupOptions } from "./mcp-startup";
 import {
   chartGuideTools,
   registerChartTools,
@@ -481,7 +482,7 @@ const guideResource = {
     },
   ],
   startupRequirement:
-    "The Spready desktop app must already be running before this MCP wrapper can connect.",
+    "The Spready desktop app must already be running before this MCP wrapper can connect, or start the wrapper with --openApp to launch the app and wait for the control server.",
   tools: [
     {
       defaultsToActiveSheet: false,
@@ -768,35 +769,14 @@ function createTextResult<Result extends object>(payload: Result) {
   };
 }
 
-function getArgumentValue(name: string): string | undefined {
-  const index = process.argv.indexOf(name);
-
-  if (index < 0) {
-    return undefined;
-  }
-
-  return process.argv[index + 1];
-}
-
-function parsePort(portValue?: string): number | undefined {
-  if (!portValue) {
-    return undefined;
-  }
-
-  const port = Number.parseInt(portValue, 10);
-
-  if (Number.isNaN(port)) {
-    throw new Error(`Invalid port "${portValue}".`);
-  }
-
-  return port;
-}
-
 async function main() {
-  const target = await resolveControlTarget({
-    host: getArgumentValue("--host"),
-    port: parsePort(getArgumentValue("--port")),
-  });
+  const startupOptions = parseMcpStartupOptions(process.argv.slice(2));
+  const target = startupOptions.openApp
+    ? await openAppAndWaitForControlTarget(startupOptions)
+    : await resolveControlTarget({
+        host: startupOptions.host,
+        port: startupOptions.port,
+      });
   const controlClient = new SpreadyControlClient(target);
 
   try {
@@ -806,7 +786,7 @@ async function main() {
 
     throw new Error(
       `Could not connect to the Spready control server at tcp://${target.host}:${target.port}. ` +
-        `Start the Electron app first or set SPREADY_CONTROL_HOST/SPREADY_CONTROL_PORT. ` +
+        `Start the Electron app first, pass --openApp, or set SPREADY_CONTROL_HOST/SPREADY_CONTROL_PORT. ` +
         `Discovery file: ${CONTROL_DISCOVERY_FILE_PATH}. ${detail}`,
     );
   }
@@ -824,7 +804,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready requires the desktop app to already be running. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use format_cells for common style changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready requires the desktop app to be running; this wrapper can launch it when started with --openApp. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use format_cells for common style changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();

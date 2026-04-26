@@ -119,13 +119,14 @@ async function main() {
   const mcpConfig = {
     mcpServers: {
       spready: {
+        args: ["--openApp"],
         command: mcpCommand,
       },
     },
   };
   const notes = [
-    "1. Start Spready before connecting your harness.",
-    `2. Import or copy the server entry from spready.mcp.json.`,
+    "1. Import or copy the server entry from spready.mcp.json.",
+    "2. The bundled MCP command uses --openApp, so it opens Spready and waits for the TCP control server.",
     `3. If your harness requires absolute command paths, replace ${mcpCommand} with the extracted path to ${mcpExecutableName}.`,
   ].join("\n");
 

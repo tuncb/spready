@@ -31,6 +31,11 @@ npm run mcp:stdio
 ```
 
 The wrapper connects to the running app over the local control server and exposes MCP tools, resources, and prompts over stdio for external harnesses.
+To let the wrapper open the Electron app and wait until its TCP control server is ready, pass `--openApp`:
+
+```sh
+npm run mcp:stdio -- --openApp
+```
 
 Connection discovery order:
 
@@ -39,6 +44,8 @@ Connection discovery order:
 - temp discovery file at `os.tmpdir()/spready-control.json`
 - default `127.0.0.1:45731`
 
+When `--openApp` is used, the wrapper waits for a freshly written discovery file from the launched app. This allows multiple Spready instances to fall back to different local ports without the MCP wrapper attaching to a stale instance.
+
 Example harness config:
 
 ```json
@@ -46,7 +53,7 @@ Example harness config:
   "mcpServers": {
     "spready": {
       "command": "npm",
-      "args": ["run", "mcp:stdio"]
+      "args": ["run", "mcp:stdio", "--", "--openApp"]
     }
   }
 }
