@@ -4,7 +4,7 @@
 
 - Formula-compatibility expansion is being implemented in five sequential tasks, with formatter, tests, lint, and typecheck run between tasks before starting the next one.
 - Absolute references such as `$A$1`, `A$1`, and `$A1` are intentionally out of scope for this round. Formulas using `$` should remain unsupported.
-- Cross-sheet references, defined names, `LET`, reference union/intersection operators, and formula rewriting during structural edits remain out of scope for this round.
+- Cross-sheet references are supported. Defined names, `LET`, absolute references, and formula rewriting during structural edits remain out of scope for this round.
 - Raw non-formula cells continue to store plain strings. During evaluation, only numeric-looking raw strings are inferred as numbers; raw `TRUE` and `FALSE` cell contents remain text unless they come from formula evaluation.
 - The public workbook/controller/TCP/MCP read APIs stay unchanged. Formula compatibility improvements should flow through the existing raw-vs-display read paths instead of introducing new transport methods.
 - Multi-cell ranges are supported as function/operator inputs, but there is no spill or implicit-intersection behavior in this round. A bare multi-cell range used where a scalar is required should evaluate to `#VALUE!`.
@@ -14,6 +14,8 @@
 - The lookup slice implements `XLOOKUP` and `VLOOKUP`; lookup ranges can use same-sheet or cross-sheet references through the shared formula range model.
 - `MATCH` defaults to exact-match mode in this app instead of Excel’s legacy approximate default. Explicit `1` and `-1` modes are still supported for basic approximate matching.
 - Date/time functions use Excel 1900-system serial numbers, including serial 60 compatibility. `TODAY()` and `NOW()` use local time and mark evaluation snapshots volatile so controller, TCP, and MCP display reads recalculate without workbook mutations.
+- Reference intersection uses significant whitespace between reference expressions and returns `#NULL!` when the references do not overlap.
+- Reference union is represented as a multi-area range. Parenthesized unions such as `SUM((A1:A2,C1:C2))` are supported; commas in function argument lists still separate arguments. Aggregate-style functions flatten all union areas and preserve duplicate references, while rectangular/vector-only functions return `#VALUE!` for multi-area ranges.
 
 ## 2026-04-20
 

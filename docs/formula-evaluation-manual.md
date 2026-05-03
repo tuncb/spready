@@ -82,6 +82,8 @@ Supported operators:
 - text concatenation: `&`
 - comparison: `=`, `<>`, `<`, `<=`, `>`, `>=`
 - range construction: `:`
+- reference intersection: a space between reference expressions, for example `B7:D7 C6:C8`
+- parenthesized reference union: `,` inside a parenthesized reference expression, for example `SUM((A1:A2,C1:C2))`
 - parentheses: `(` and `)`
 
 ### Operator Precedence
@@ -102,6 +104,7 @@ Notes:
 - Parentheses override normal precedence.
 - Repeated exponentiation currently evaluates left-to-right.
 - Multi-cell ranges are first-class values inside formulas, but outside functions they only behave like scalars when the range is exactly one cell.
+- Multi-area unions are first-class reference values for aggregate-style functions. Functions that require one rectangular range or vector return `#VALUE!` for multi-area references.
 - A multi-cell range used where a scalar is required returns `#VALUE!`.
 
 ## Value Types And Display Rules
