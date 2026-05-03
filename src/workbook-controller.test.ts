@@ -129,6 +129,46 @@ test("WorkbookController exposes expanded formula compatibility through the same
   });
 });
 
+test("WorkbookController refreshes volatile date and time formulas without workbook changes", () => {
+  let now = new Date(2024, 0, 1, 6, 0, 0, 0);
+  const controller = new WorkbookController({
+    evaluationClock: () => now,
+  });
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["=TODAY()", "=NOW()", "=DATE(2024,1,1)"]],
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    controller.getSheetDisplayRange({
+      columnCount: 3,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [["45292", "45292.25", "45292"]],
+  );
+
+  now = new Date(2024, 0, 2, 12, 0, 0, 0);
+
+  assert.deepEqual(
+    controller.getSheetDisplayRange({
+      columnCount: 3,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [["45293", "45293.5", "45292"]],
+  );
+});
+
 test("WorkbookController evaluates cross-sheet formulas through display reads", () => {
   const controller = new WorkbookController();
   const summary = controller.applyTransaction({

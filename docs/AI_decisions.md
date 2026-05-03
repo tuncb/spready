@@ -13,6 +13,7 @@
 - `IF` and `IFERROR` are evaluated lazily so unused branches do not trigger errors.
 - The lookup slice implements `XLOOKUP` and `VLOOKUP`; lookup ranges can use same-sheet or cross-sheet references through the shared formula range model.
 - `MATCH` defaults to exact-match mode in this app instead of Excel’s legacy approximate default. Explicit `1` and `-1` modes are still supported for basic approximate matching.
+- Date/time functions use Excel 1900-system serial numbers, including serial 60 compatibility. `TODAY()` and `NOW()` use local time and mark evaluation snapshots volatile so controller, TCP, and MCP display reads recalculate without workbook mutations.
 
 ## 2026-04-20
 

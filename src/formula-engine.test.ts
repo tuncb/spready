@@ -325,3 +325,53 @@ test("evaluateSheet supports VLOOKUP with exact default, approximate opt-in, and
     ["Beta", "80", "B", "#N/A", "#VALUE!", "#REF!", "#DIV/0!", "#N/A"],
   );
 });
+
+test("evaluateSheet supports date and time functions as Excel serial numbers", () => {
+  const sheet = createSheet([
+    [
+      "=TODAY()",
+      "=NOW()",
+      "=DATE(2024,1,1)",
+      "=DATE(2024,13,1)",
+      "=DATE(2024,1,0)",
+      "=YEAR(DATE(2024,2,29))",
+      "=MONTH(45351.75)",
+      "=DAY(45351.75)",
+      "=DATE(1900,2,29)",
+      "=YEAR(60)",
+      "=MONTH(60)",
+      "=DAY(60)",
+      "=YEAR(0)",
+      "=DATE(-1,1,1)",
+      "=TODAY(1)",
+    ],
+  ]);
+  const snapshot = evaluateSheet(sheet, 43, {
+    now: new Date(2024, 0, 1, 6, 0, 0, 0),
+  });
+
+  assert.equal(snapshot.hasVolatileFunctions, true);
+  assert.deepEqual(
+    Array.from(
+      { length: 15 },
+      (_, columnIndex) => getCellEvaluation(snapshot, 0, columnIndex).display,
+    ),
+    [
+      "45292",
+      "45292.25",
+      "45292",
+      "45658",
+      "45291",
+      "2024",
+      "2",
+      "29",
+      "60",
+      "1900",
+      "2",
+      "29",
+      "#NUM!",
+      "#NUM!",
+      "#VALUE!",
+    ],
+  );
+});
