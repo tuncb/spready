@@ -1,0 +1,13 @@
+# Keep text files normalized to LF across platforms.
+* text=auto eol=lf
+
+# Do not attempt line-ending conversion for common binary assets.
+*.bmp binary
+*.gif binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.pdf binary
+*.png binary
+*.webp binary
+*.zip binary
