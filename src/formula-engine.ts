@@ -67,9 +67,14 @@ export interface CellEvaluation {
 export interface SheetEvaluationSnapshot {
   sheetId: string;
   workbookVersion: number;
+  hasVolatileFunctions: boolean;
   cells: Map<CellKey, CellEvaluation>;
   dependents: Map<CellKey, Set<CellKey>>;
   precedents: Map<CellKey, Set<CellKey>>;
+}
+
+export interface FormulaEvaluationOptions {
+  now?: Date;
 }
 
 type FormulaToken =
@@ -117,6 +122,11 @@ const BLANK_VALUE: BlankValue = {
 };
 
 const EMPTY_DEPENDENCIES: CellKey[] = [];
+const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
+const EXCEL_1900_EPOCH_UTC = Date.UTC(1899, 11, 31);
+const EXCEL_1900_LEAP_BUG_SERIAL = 60;
+const EXCEL_MIN_SERIAL = 1;
+const EXCEL_MAX_SERIAL = 2958465;
 const NUMBER_LITERAL_PATTERN = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[Ee][+-]?\d+)?$/;
 const ERROR_LITERALS: ReadonlyArray<[string, FormulaErrorCode]> = [
   ["#DIV/0!", "DIV0"],
@@ -645,6 +655,7 @@ export function parseFormula(input: string): FormulaAst {
 export function evaluateSheet(
   sheet: WorkbookSheet,
   workbookVersion: number,
+  options: FormulaEvaluationOptions = {},
 ): SheetEvaluationSnapshot {
   return evaluateWorkbookSheet(
     {
@@ -652,6 +663,7 @@ export function evaluateSheet(
     },
     sheet.id,
     workbookVersion,
+    options,
   );
 }
 
@@ -659,9 +671,10 @@ export function evaluateWorkbookSheet(
   workbook: Pick<WorkbookState, "sheets">,
   sheetId: string,
   workbookVersion: number,
+  options: FormulaEvaluationOptions = {},
 ): SheetEvaluationSnapshot {
   return (
-    evaluateWorkbook(workbook, workbookVersion).get(sheetId) ??
+    evaluateWorkbook(workbook, workbookVersion, options).get(sheetId) ??
     createMissingSheetSnapshot(sheetId, workbookVersion)
   );
 }
@@ -669,6 +682,7 @@ export function evaluateWorkbookSheet(
 export function evaluateWorkbook(
   workbook: Pick<WorkbookState, "sheets">,
   workbookVersion: number,
+  options: FormulaEvaluationOptions = {},
 ): Map<string, SheetEvaluationSnapshot> {
   const sheetById = new Map(workbook.sheets.map((sheet) => [sheet.id, sheet]));
   const sheetIdByName = new Map(
@@ -680,6 +694,7 @@ export function evaluateWorkbook(
       {
         sheetId: sheet.id,
         workbookVersion,
+        hasVolatileFunctions: false,
         cells: new Map<CellKey, CellEvaluation>(),
         dependents: new Map<CellKey, Set<CellKey>>(),
         precedents: new Map<CellKey, Set<CellKey>>(),
@@ -688,7 +703,9 @@ export function evaluateWorkbook(
   );
   const evaluationStack: CellKey[] = [];
   const cycleCellKeys = new Set<CellKey>();
+  const evaluationNow = options.now ? new Date(options.now.getTime()) : new Date();
   const formulaCellStack: CellAddress[] = [];
+  let hasVolatileFunctions = false;
 
   function getInput(sheetId: string, rowIndex: number, columnIndex: number): string {
     const sheet = sheetById.get(sheetId);
@@ -2232,6 +2249,137 @@ export function evaluateWorkbook(
     }
   }
 
+  function evaluateToday(args: FormulaAst[]): FormulaValue {
+    const argumentError = expectArgumentCount(args, 0);
+
+    if (argumentError) {
+      return argumentError;
+    }
+
+    markVolatileFunction();
+
+    const serial = createExcelDateSerial(
+      evaluationNow.getFullYear(),
+      evaluationNow.getMonth() + 1,
+      evaluationNow.getDate(),
+    );
+
+    if (serial === undefined) {
+      return createErrorValue("NUM");
+    }
+
+    return {
+      type: "number",
+      value: serial,
+    };
+  }
+
+  function evaluateNow(args: FormulaAst[]): FormulaValue {
+    const today = evaluateToday(args);
+
+    if (today.type === "error") {
+      return today;
+    }
+
+    if (today.type !== "number") {
+      return createErrorValue("VALUE");
+    }
+
+    const timeFraction =
+      (evaluationNow.getHours() * 60 * 60 * 1000 +
+        evaluationNow.getMinutes() * 60 * 1000 +
+        evaluationNow.getSeconds() * 1000 +
+        evaluationNow.getMilliseconds()) /
+      MILLISECONDS_PER_DAY;
+
+    return {
+      type: "number",
+      value: today.value + timeFraction,
+    };
+  }
+
+  function evaluateDate(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
+    const argumentError = expectArgumentCount(args, 3);
+
+    if (argumentError) {
+      return argumentError;
+    }
+
+    const year = coerceToNumber(evaluateAst(args[0], dependencies));
+
+    if (year.type === "error") {
+      return year;
+    }
+
+    const month = coerceToNumber(evaluateAst(args[1], dependencies));
+
+    if (month.type === "error") {
+      return month;
+    }
+
+    const day = coerceToNumber(evaluateAst(args[2], dependencies));
+
+    if (day.type === "error") {
+      return day;
+    }
+
+    const serial = createExcelDateSerial(
+      Math.trunc(year.value),
+      Math.trunc(month.value),
+      Math.trunc(day.value),
+    );
+
+    if (serial === undefined) {
+      return createErrorValue("NUM");
+    }
+
+    return {
+      type: "number",
+      value: serial,
+    };
+  }
+
+  function evaluateYear(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
+    return evaluateDatePart(args, dependencies, "year");
+  }
+
+  function evaluateMonth(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
+    return evaluateDatePart(args, dependencies, "month");
+  }
+
+  function evaluateDay(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
+    return evaluateDatePart(args, dependencies, "day");
+  }
+
+  function evaluateDatePart(
+    args: FormulaAst[],
+    dependencies: Set<CellKey>,
+    part: "day" | "month" | "year",
+  ): FormulaValue {
+    const argumentError = expectArgumentCount(args, 1);
+
+    if (argumentError) {
+      return argumentError;
+    }
+
+    const value = coerceToNumber(evaluateAst(args[0], dependencies));
+
+    if (value.type === "error") {
+      return value;
+    }
+
+    const dateParts = getExcelDateParts(value.value);
+
+    if (isErrorValue(dateParts)) {
+      return dateParts;
+    }
+
+    return {
+      type: "number",
+      value: dateParts[part],
+    };
+  }
+
   function evaluateChoose(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
     if (args.length < 2) {
       return createErrorValue("VALUE");
@@ -2549,6 +2697,101 @@ export function evaluateWorkbook(
     return createErrorValue("NA");
   }
 
+  function evaluateVLookup(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
+    const argumentError = expectArgumentCount(args, 3, 4);
+
+    if (argumentError) {
+      return argumentError;
+    }
+
+    const lookupValue = getScalarArgument(args[0], dependencies);
+
+    if (lookupValue.type === "error") {
+      return lookupValue;
+    }
+
+    const tableRange = getRangeArgument(args[1], dependencies);
+
+    if (isErrorValue(tableRange)) {
+      return tableRange;
+    }
+
+    if (tableRange.cells.length === 0 || tableRange.cells[0]?.length === 0) {
+      return createErrorValue("REF");
+    }
+
+    const columnValue = coerceToNumber(evaluateAst(args[2], dependencies));
+
+    if (columnValue.type === "error") {
+      return columnValue;
+    }
+
+    const returnColumnIndex = Math.trunc(columnValue.value);
+    const tableWidth = tableRange.cells[0].length;
+
+    if (returnColumnIndex < 1) {
+      return createErrorValue("VALUE");
+    }
+
+    if (returnColumnIndex > tableWidth) {
+      return createErrorValue("REF");
+    }
+
+    const rangeLookup = args[3]
+      ? coerceToBoolean(evaluateAst(args[3], dependencies))
+      : ({ type: "boolean", value: false } satisfies BooleanValue);
+
+    if (rangeLookup.type === "error") {
+      return rangeLookup;
+    }
+
+    let bestRowIndex = -1;
+    let bestValue: ScalarFormulaValue | undefined;
+
+    for (let rowIndex = 0; rowIndex < tableRange.cells.length; rowIndex += 1) {
+      const lookupCell = tableRange.cells[rowIndex]?.[0];
+
+      if (!lookupCell) {
+        return createErrorValue("REF");
+      }
+
+      const candidateValue = evaluateCell(lookupCell).value;
+
+      if (candidateValue.type === "error") {
+        return candidateValue;
+      }
+
+      const comparison = compareScalarValues(candidateValue, lookupValue);
+
+      if (!rangeLookup.value) {
+        if (comparison === 0) {
+          const targetCell = tableRange.cells[rowIndex]?.[returnColumnIndex - 1];
+
+          return targetCell ? evaluateCell(targetCell).value : createErrorValue("REF");
+        }
+
+        continue;
+      }
+
+      if (comparison > 0) {
+        continue;
+      }
+
+      if (!bestValue || compareScalarValues(candidateValue, bestValue) > 0) {
+        bestRowIndex = rowIndex;
+        bestValue = candidateValue;
+      }
+    }
+
+    if (bestRowIndex < 0) {
+      return createErrorValue("NA");
+    }
+
+    const targetCell = tableRange.cells[bestRowIndex]?.[returnColumnIndex - 1];
+
+    return targetCell ? evaluateCell(targetCell).value : createErrorValue("REF");
+  }
+
   const functionRegistry = new Map<string, FormulaFunctionHandler>([
     ["SUM", evaluateSum],
     ["PRODUCT", evaluateProduct],
@@ -2580,12 +2823,19 @@ export function evaluateWorkbook(
     ["CONCAT", evaluateConcat],
     ["TEXTJOIN", evaluateTextJoin],
     ["VALUE", evaluateValue],
+    ["TODAY", evaluateToday],
+    ["NOW", evaluateNow],
+    ["DATE", evaluateDate],
+    ["YEAR", evaluateYear],
+    ["MONTH", evaluateMonth],
+    ["DAY", evaluateDay],
     ["CHOOSE", evaluateChoose],
     ["ROW", evaluateRow],
     ["COLUMN", evaluateColumn],
     ["INDEX", evaluateIndex],
     ["MATCH", evaluateMatch],
     ["XLOOKUP", evaluateXLookup],
+    ["VLOOKUP", evaluateVLookup],
   ]);
 
   for (const sheet of workbook.sheets) {
@@ -2600,6 +2850,12 @@ export function evaluateWorkbook(
           columnIndex,
         });
       }
+    }
+  }
+
+  if (hasVolatileFunctions) {
+    for (const snapshot of snapshots.values()) {
+      snapshot.hasVolatileFunctions = true;
     }
   }
 
@@ -2638,6 +2894,10 @@ export function evaluateWorkbook(
       columnIndex: reference.columnIndex,
     };
   }
+
+  function markVolatileFunction() {
+    hasVolatileFunctions = true;
+  }
 }
 
 function createMissingSheetSnapshot(
@@ -2647,6 +2907,7 @@ function createMissingSheetSnapshot(
   return {
     sheetId,
     workbookVersion,
+    hasVolatileFunctions: false,
     cells: new Map<CellKey, CellEvaluation>(),
     dependents: new Map<CellKey, Set<CellKey>>(),
     precedents: new Map<CellKey, Set<CellKey>>(),
@@ -2758,6 +3019,91 @@ function formatNumericDisplay(value: number): string {
   const normalizedValue = Object.is(value, -0) ? 0 : value;
 
   return String(normalizedValue);
+}
+
+type ExcelDateParts = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+function createExcelDateSerial(year: number, month: number, day: number): number | undefined {
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return undefined;
+  }
+
+  const normalizedYear = year >= 0 && year <= 1899 ? year + 1900 : year;
+
+  if (normalizedYear < 1900 || normalizedYear > 9999) {
+    return undefined;
+  }
+
+  if (normalizedYear === 1900 && month === 2 && day === 29) {
+    return EXCEL_1900_LEAP_BUG_SERIAL;
+  }
+
+  const dateUtc = Date.UTC(normalizedYear, month - 1, day);
+
+  if (!Number.isFinite(dateUtc)) {
+    return undefined;
+  }
+
+  const date = new Date(dateUtc);
+  const resultYear = date.getUTCFullYear();
+
+  if (resultYear < 1900 || resultYear > 9999) {
+    return undefined;
+  }
+
+  const serial = getExcelDateSerialFromUtcDate(date);
+
+  if (serial < 0 || serial > EXCEL_MAX_SERIAL) {
+    return undefined;
+  }
+
+  return serial;
+}
+
+function getExcelDateParts(serial: number): ExcelDateParts | ErrorValue {
+  if (!Number.isFinite(serial)) {
+    return createErrorValue("NUM");
+  }
+
+  const wholeDaySerial = Math.floor(serial);
+
+  if (wholeDaySerial < EXCEL_MIN_SERIAL || wholeDaySerial > EXCEL_MAX_SERIAL) {
+    return createErrorValue("NUM");
+  }
+
+  if (wholeDaySerial === EXCEL_1900_LEAP_BUG_SERIAL) {
+    return {
+      year: 1900,
+      month: 2,
+      day: 29,
+    };
+  }
+
+  const adjustedSerial =
+    wholeDaySerial > EXCEL_1900_LEAP_BUG_SERIAL ? wholeDaySerial - 1 : wholeDaySerial;
+  const date = new Date(EXCEL_1900_EPOCH_UTC + adjustedSerial * MILLISECONDS_PER_DAY);
+  const year = date.getUTCFullYear();
+
+  if (year < 1900 || year > 9999) {
+    return createErrorValue("NUM");
+  }
+
+  return {
+    year,
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function getExcelDateSerialFromUtcDate(date: Date): number {
+  const dateUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const serial = Math.floor((dateUtc - EXCEL_1900_EPOCH_UTC) / MILLISECONDS_PER_DAY);
+
+  return serial >= EXCEL_1900_LEAP_BUG_SERIAL ? serial + 1 : serial;
 }
 
 function getErrorDisplay(errorCode: FormulaErrorCode): string {

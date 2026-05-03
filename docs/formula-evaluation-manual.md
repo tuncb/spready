@@ -228,6 +228,25 @@ Notes:
 - `TEXTJOIN(delimiter, ignoreEmpty, ...)` accepts ranges and scalars.
 - `VALUE` parses numeric text and returns `#VALUE!` for nonnumeric text.
 
+### Date And Time
+
+- `TODAY`
+- `NOW`
+- `DATE`
+- `YEAR`
+- `MONTH`
+- `DAY`
+
+Notes:
+
+- Dates and times are represented as Excel-style 1900-system serial numbers.
+- `TODAY()` returns the current local date as a whole-day serial.
+- `NOW()` returns the current local date and time, with time represented as the fractional part of a day.
+- `DATE(year, month, day)` normalizes month and day overflow, such as `DATE(2024,13,1)` and `DATE(2024,1,0)`.
+- `YEAR`, `MONTH`, and `DAY` use the whole-day part of fractional serials.
+- The 1900 leap-year compatibility serial `60` is treated as `1900-02-29`.
+- Date display formatting is not implemented yet, so date/time results display as serial numbers.
+
 ### Lookup And Reference
 
 - `CHOOSE`
@@ -236,6 +255,7 @@ Notes:
 - `INDEX`
 - `MATCH`
 - `XLOOKUP`
+- `VLOOKUP`
 
 Notes:
 
@@ -246,6 +266,8 @@ Notes:
 - `MATCH` requires a one-dimensional lookup range.
 - `XLOOKUP(lookup, lookupRange, returnRange, notFound?)` performs lookup over one-dimensional ranges of equal length, including ranges on other sheets.
 - `XLOOKUP` currently behaves as exact match lookup.
+- `VLOOKUP(lookup, tableRange, columnIndex, rangeLookup?)` uses the first column of a rectangular table range and returns from a 1-based table column.
+- `VLOOKUP` defaults omitted `rangeLookup` to exact match. Pass `TRUE` for approximate lookup.
 
 ## Aggregate Function Range Behavior
 
@@ -273,7 +295,7 @@ The evaluator can return these display errors:
 | `#VALUE!` | Type mismatch, invalid argument count, invalid scalar/range shape, or failed coercion |
 | `#CYCLE!` | Circular dependency between cells                                                     |
 | `#NAME?`  | Unknown function name or unsupported named reference                                  |
-| `#NUM!`   | Invalid numeric result, such as `SQRT(-1)`                                            |
+| `#NUM!`   | Invalid numeric/date result, such as `SQRT(-1)` or an out-of-range date serial        |
 | `#N/A`    | Lookup miss or explicit `#N/A` literal                                                |
 | `#NULL!`  | Supported as an error literal                                                         |
 
@@ -328,6 +350,9 @@ Also keep these implementation boundaries in mind:
 =MATCH("b",A1:A3)                       -> position in a one-dimensional range
 =INDEX(B1:B3,2)                         -> second value from a column range
 =XLOOKUP("c",A1:A3,B1:B3,"nf")          -> exact match with fallback
+=VLOOKUP("c",A1:B3,2)                   -> exact match against the first table column
+=DATE(2024,1,1)                         -> 45292
+=YEAR(TODAY())                          -> current local year
 ```
 
 ### Raw Versus Display

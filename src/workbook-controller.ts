@@ -71,6 +71,12 @@ import {
 export class WorkbookController extends EventEmitter {
   #state: WorkbookState = createWorkbookState();
   #sheetEvaluationSnapshots = new Map<string, SheetEvaluationSnapshot>();
+  #evaluationClock: () => Date;
+
+  constructor(options: { evaluationClock?: () => Date } = {}) {
+    super();
+    this.#evaluationClock = options.evaluationClock ?? (() => new Date());
+  }
 
   getSummary(): WorkbookSummary {
     return getWorkbookSummary(this.#state);
@@ -432,11 +438,17 @@ export class WorkbookController extends EventEmitter {
     const sheet = getWorkbookSheet(this.#state, sheetId);
     const cachedSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);
 
-    if (cachedSnapshot && cachedSnapshot.workbookVersion === this.#state.version) {
+    if (
+      cachedSnapshot &&
+      cachedSnapshot.workbookVersion === this.#state.version &&
+      !cachedSnapshot.hasVolatileFunctions
+    ) {
       return cachedSnapshot;
     }
 
-    const nextSnapshots = evaluateWorkbook(this.#state, this.#state.version);
+    const nextSnapshots = evaluateWorkbook(this.#state, this.#state.version, {
+      now: this.#evaluationClock(),
+    });
 
     this.#sheetEvaluationSnapshots = nextSnapshots;
     const nextSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);

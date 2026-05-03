@@ -173,15 +173,24 @@ test("SpreadyControlServer exposes expanded formula compatibility over TCP", asy
           startRow: 0,
           type: "setRange",
           values: [
-            ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)"],
-            ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)'],
+            [
+              "a",
+              "10",
+              "=SUM(B1:B2)",
+              "=IFERROR(1/0,99)",
+              '=VLOOKUP("b",A1:B2,2)',
+              "=DATE(2024,1,1)",
+              "=YEAR(F1)",
+              '=MONTH(F1)&"/"&DAY(F1)',
+            ],
+            ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)', ""],
           ],
         },
       ],
     });
 
     const displayRange = await client.getSheetDisplayRange({
-      columnCount: 4,
+      columnCount: 8,
       rowCount: 2,
       startColumn: 0,
       startRow: 0,
@@ -192,8 +201,8 @@ test("SpreadyControlServer exposes expanded formula compatibility over TCP", asy
     });
 
     assert.deepEqual(displayRange.values, [
-      ["a", "10", "30", "99"],
-      ["b", "20", "20", "a, b"],
+      ["a", "10", "30", "99", "20", "45292", "2024", "1/1"],
+      ["b", "20", "20", "a, b", "", "", "", ""],
     ]);
     assert.deepEqual(cellData, {
       columnIndex: 2,

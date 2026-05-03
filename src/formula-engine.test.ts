@@ -284,3 +284,94 @@ test("evaluateSheet supports same-sheet lookup and reference functions", () => {
     ["2", "30", "20", "y", "1", "nf", "200", "3", "3", "3", "6", "3"],
   );
 });
+
+test("evaluateSheet supports VLOOKUP with exact default, approximate opt-in, and lookup errors", () => {
+  const sheet = createSheet([
+    [
+      "ID",
+      "Name",
+      "Score",
+      '=VLOOKUP("b",A2:C4,2)',
+      '=VLOOKUP("B",A2:C4,3,FALSE)',
+      "=VLOOKUP(85,A7:B9,2,TRUE)",
+      '=VLOOKUP("x",A2:C4,2)',
+      '=VLOOKUP("a",A2:C4,0)',
+      '=VLOOKUP("a",A2:C4,4)',
+      '=VLOOKUP("missing",A2:C5,2)',
+      '=VLOOKUP("ret",A6:C6,2)',
+    ],
+    ["a", "Alpha", "90"],
+    ["b", "Beta", "80"],
+    ["c", "Gamma", "70"],
+    ["=1/0", "Error row", ""],
+    ["ret", "=#N/A", ""],
+    ["0", "F", ""],
+    ["60", "D", ""],
+    ["80", "B", ""],
+  ]);
+  const snapshot = evaluateSheet(sheet, 37);
+
+  assert.deepEqual(
+    [
+      getCellEvaluation(snapshot, 0, 3).display,
+      getCellEvaluation(snapshot, 0, 4).display,
+      getCellEvaluation(snapshot, 0, 5).display,
+      getCellEvaluation(snapshot, 0, 6).display,
+      getCellEvaluation(snapshot, 0, 7).display,
+      getCellEvaluation(snapshot, 0, 8).display,
+      getCellEvaluation(snapshot, 0, 9).display,
+      getCellEvaluation(snapshot, 0, 10).display,
+    ],
+    ["Beta", "80", "B", "#N/A", "#VALUE!", "#REF!", "#DIV/0!", "#N/A"],
+  );
+});
+
+test("evaluateSheet supports date and time functions as Excel serial numbers", () => {
+  const sheet = createSheet([
+    [
+      "=TODAY()",
+      "=NOW()",
+      "=DATE(2024,1,1)",
+      "=DATE(2024,13,1)",
+      "=DATE(2024,1,0)",
+      "=YEAR(DATE(2024,2,29))",
+      "=MONTH(45351.75)",
+      "=DAY(45351.75)",
+      "=DATE(1900,2,29)",
+      "=YEAR(60)",
+      "=MONTH(60)",
+      "=DAY(60)",
+      "=YEAR(0)",
+      "=DATE(-1,1,1)",
+      "=TODAY(1)",
+    ],
+  ]);
+  const snapshot = evaluateSheet(sheet, 43, {
+    now: new Date(2024, 0, 1, 6, 0, 0, 0),
+  });
+
+  assert.equal(snapshot.hasVolatileFunctions, true);
+  assert.deepEqual(
+    Array.from(
+      { length: 15 },
+      (_, columnIndex) => getCellEvaluation(snapshot, 0, columnIndex).display,
+    ),
+    [
+      "45292",
+      "45292.25",
+      "45292",
+      "45658",
+      "45291",
+      "2024",
+      "2",
+      "29",
+      "60",
+      "1900",
+      "2",
+      "29",
+      "#NUM!",
+      "#NUM!",
+      "#VALUE!",
+    ],
+  );
+});
