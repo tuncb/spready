@@ -4,7 +4,6 @@
 
 This document summarizes the gaps between `docs/excel_spec.md` and the current Spready formula implementation, with extra investigation notes for the next likely Excel v1 candidates:
 
-- reference union and intersection
 - optional date/time functions
 
 The current implementation keeps workbook truth in the main process. Formula support is implemented as a computed read model in `src/formula-engine.ts`, surfaced through the controller, TCP, and MCP display-read APIs.
@@ -18,7 +17,7 @@ The main missing or incomplete Excel v1 items are:
 - Absolute and mixed references: `$A$1`, `A$1`, and `$A1` are not parsed.
 - Defined names: unknown names currently evaluate to `#NAME?`; there is no workbook or sheet defined-name model.
 - `LET`: local formula names are not implemented.
-- Reference union/intersection: comma-as-union and space-as-intersection are not implemented.
+- Reference union/intersection: space-as-intersection and parenthesized comma-as-union are implemented. Unparenthesized comma-as-union inside function argument lists remains intentionally unsupported because comma is the argument separator there.
 - Date/time functions: `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, and `DAY` are not implemented.
 - Excel worksheet limits: formulas evaluate against current Spready sheet bounds, not Excel's `XFD` and `1048576` maximums.
 - Excel numeric precision and formula length limits: the evaluator does not enforce Excel's 15-digit precision or 8192-character formula-content limit.
@@ -28,43 +27,31 @@ The main missing or incomplete Excel v1 items are:
 
 ### Current State
 
-Colon ranges already work, for example `A1:B5`. They are represented by a rectangular `RangeValue` with a `cells: CellAddress[][]` shape.
+Colon ranges work, for example `A1:B5`. Normal rectangular references are represented by a rectangular `cells: CellAddress[][]` shape, and parenthesized unions add a multi-area `areas` shape.
 
-Whitespace is currently discarded during tokenization. That means `SUM(B7:D7 C6:C8)` loses the only syntax signal for reference intersection before parsing. Commas are tokenized, but they are only consumed as function argument separators.
+Whitespace is preserved as a token so `SUM(B7:D7 C6:C8)` can parse as reference intersection. Commas still separate function arguments at the function-call level; comma-as-union is supported inside parenthesized reference expressions such as `SUM((A1:A2,C1:C2))`.
 
 Relevant implementation points:
 
-- `tokenizeFormula` skips whitespace.
+- `tokenizeFormula` preserves collapsed whitespace tokens.
 - `parseFunctionCall` consumes comma tokens between function arguments.
-- `parseRange` only parses the `:` reference operator.
-- `createRangeValue` builds a single rectangular range.
-- `flattenRangeCells`, aggregate functions, `TEXTJOIN`, and lookup helpers assume one range shape.
+- Reference parsing handles `:`, space intersection, and parenthesized comma union.
+- `createRangeValue` builds one rectangular area; union combines areas into one multi-area range value.
+- Aggregate-style function helpers flatten all areas. Helpers that need one rectangular range reject multi-area ranges with `#VALUE!`.
 
 ### Feasibility
 
-Intersection is medium-high feasibility if kept to rectangular references. The existing `RangeValue` can represent a rectangular intersection result. Empty intersections can naturally map to `#NULL!`, which already exists as an error literal and display value.
+Intersection is implemented for rectangular and multi-area reference values. Empty intersections map to `#NULL!`.
 
-Union is medium feasibility and more invasive. A true Excel union can contain multiple disjoint areas. The current `RangeValue` cannot represent this directly without either:
-
-- changing range values to support multiple areas, or
-- flattening union results eagerly into a list of cells.
-
-Changing the value model is cleaner, but it touches every helper that consumes ranges.
+Union is implemented as a multi-area range for parenthesized reference expressions. Aggregate-style functions preserve duplicate references by area, matching Excel-style union behavior more closely than deduping.
 
 ### Implementation Direction
 
-For intersection:
+Remaining implementation gaps:
 
-- Preserve enough whitespace information in the tokenizer to identify single-space intersection between reference expressions.
-- Add a parser level for reference operators above unary/scalar operators.
-- Evaluate intersection by computing the overlap rectangle between two range/reference values.
-- Return `#NULL!` when the overlap is empty.
-
-For union:
-
-- Introduce a multi-area reference value or extend `RangeValue`.
-- Keep function argument comma behavior distinct from comma-as-union. A practical first implementation can support union only in parenthesized reference expressions, for example `SUM((A1:A2,C1:C2))`, if broad comma ambiguity becomes too risky.
-- Update range consumers to iterate over all areas.
+- Full Excel comma-as-union grammar in every reference context, including ambiguous function-argument positions.
+- Spill or implicit-intersection behavior for multi-cell or multi-area scalar contexts.
+- Multi-area support in rectangular/vector-only functions beyond explicit `#VALUE!` rejection.
 
 ### Corner Cases
 
@@ -72,9 +59,9 @@ For union:
 - `SUM(A1:A2,C1:C2)` currently means two arguments. It should not silently become one union argument unless parenthesized or deliberately specified.
 - Empty intersections should return `#NULL!`.
 - Cross-sheet intersection should probably return `#NULL!`, because ranges on different sheets cannot overlap.
-- Cross-sheet union can be allowed if the value model supports multiple areas with sheet ids.
-- Overlapping union ranges need a policy: count duplicates by area like Excel-style union behavior, or deduplicate cell addresses.
-- Dependencies should reflect the cells actually needed. For intersection, recording the full input ranges before overlap may overstate precedents.
+- Cross-sheet union is allowed because areas carry sheet ids.
+- Overlapping union ranges count duplicates by area.
+- Dependencies for intersections reflect the cells in the resulting overlap.
 
 ## VLOOKUP
 

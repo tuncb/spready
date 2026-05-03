@@ -94,6 +94,61 @@ test("evaluateSheet treats single-cell ranges as scalars and multi-cell ranges a
   assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, [cellKey(0, 0), cellKey(0, 1)]);
 });
 
+test("evaluateSheet supports Excel-style reference intersections", () => {
+  const sheet = createSheet([
+    [
+      "1",
+      "2",
+      "3",
+      "=SUM(A1:C1 B1:D1)",
+      "=B1:C1 A1:D1",
+      "=A1:A2 C1:C2",
+      "=B1:C2 A2:B2",
+      "=A1 + B1",
+    ],
+    ["4", "5", "6", "", "", "", "", ""],
+  ]);
+  const snapshot = evaluateSheet(sheet, 21);
+
+  assert.equal(getCellEvaluation(snapshot, 0, 3).display, "5");
+  assert.equal(getCellEvaluation(snapshot, 0, 4).display, "#VALUE!");
+  assert.equal(getCellEvaluation(snapshot, 0, 5).display, "#NULL!");
+  assert.equal(getCellEvaluation(snapshot, 0, 6).display, "5");
+  assert.equal(getCellEvaluation(snapshot, 0, 7).display, "3");
+  assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, [cellKey(0, 1), cellKey(0, 2)]);
+  assert.deepEqual(getCellEvaluation(snapshot, 0, 5).dependencies, []);
+});
+
+test("evaluateSheet supports Excel-style parenthesized reference unions", () => {
+  const sheet = createSheet([
+    [
+      "1",
+      "2",
+      "3",
+      "=SUM((A1:A2,C1:C2))",
+      "=SUM((A1:A2,A2:A3))",
+      "=(A1,C1)",
+      "=INDEX((A1:A2,C1:C2),1)",
+      "=SUM((A1:A3,C1:C3) A2:C2)",
+    ],
+    ["4", "5", "6", "", "", "", "", ""],
+    ["7", "8", "9", "", "", "", "", ""],
+  ]);
+  const snapshot = evaluateSheet(sheet, 22);
+
+  assert.equal(getCellEvaluation(snapshot, 0, 3).display, "14");
+  assert.equal(getCellEvaluation(snapshot, 0, 4).display, "16");
+  assert.equal(getCellEvaluation(snapshot, 0, 5).display, "#VALUE!");
+  assert.equal(getCellEvaluation(snapshot, 0, 6).display, "#VALUE!");
+  assert.equal(getCellEvaluation(snapshot, 0, 7).display, "10");
+  assert.deepEqual(getCellEvaluation(snapshot, 0, 3).dependencies, [
+    cellKey(0, 0),
+    cellKey(1, 0),
+    cellKey(0, 2),
+    cellKey(1, 2),
+  ]);
+});
+
 test("evaluateWorkbook supports cross-sheet references, ranges, lookups, and cycles", () => {
   const summarySheet = createSheet([
     [

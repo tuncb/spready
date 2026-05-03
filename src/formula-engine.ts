@@ -48,9 +48,12 @@ type TextValue = {
 
 type ScalarFormulaValue = BlankValue | BooleanValue | ErrorValue | NumberValue | TextValue;
 
+type RangeArea = CellAddress[][];
+
 type RangeValue = {
   type: "range";
-  cells: CellAddress[][];
+  areas: RangeArea[];
+  cells: RangeArea;
 };
 
 type FormulaValue = RangeValue | ScalarFormulaValue;
@@ -85,6 +88,7 @@ type FormulaToken =
     }
   | { type: "rightParen" }
   | { type: "sheetName"; value: string }
+  | { type: "space" }
   | { type: "text"; value: string };
 
 type FormulaAst =
@@ -95,6 +99,7 @@ type FormulaAst =
       right: FormulaAst;
     }
   | { type: "function"; name: string; args: FormulaAst[] }
+  | { type: "intersection"; left: FormulaAst; right: FormulaAst }
   | { type: "literal"; value: ScalarFormulaValue }
   | { type: "name"; name: string }
   | {
@@ -103,6 +108,7 @@ type FormulaAst =
     }
   | { type: "range"; start: FormulaReferenceAddress; end: FormulaReferenceAddress }
   | { type: "reference"; sheetName?: string; rowIndex: number; columnIndex: number }
+  | { type: "union"; left: FormulaAst; right: FormulaAst }
   | { type: "unary"; operator: "+" | "-"; operand: FormulaAst };
 
 type FunctionArgumentValue = {
@@ -155,7 +161,11 @@ export function tokenizeFormula(input: string): FormulaToken[] {
     const character = expression[index];
 
     if (/\s/.test(character)) {
-      index += 1;
+      while (index < expression.length && /\s/.test(expression[index])) {
+        index += 1;
+      }
+
+      tokens.push({ type: "space" });
       continue;
     }
 
@@ -301,12 +311,59 @@ export function parseFormula(input: string): FormulaAst {
     throw new Error("Formula cannot be empty.");
   }
 
-  function parseExpression(): FormulaAst {
-    return parseComparison();
+  function skipSpaces() {
+    while (tokens[index]?.type === "space") {
+      index += 1;
+    }
+  }
+
+  function getNonSpaceTokenIndex(startIndex: number): number {
+    let tokenIndex = startIndex;
+
+    while (tokens[tokenIndex]?.type === "space") {
+      tokenIndex += 1;
+    }
+
+    return tokenIndex;
+  }
+
+  function canStartReferenceTerm(token: FormulaToken | undefined): boolean {
+    return (
+      token?.type === "identifier" || token?.type === "leftParen" || token?.type === "sheetName"
+    );
+  }
+
+  function parseExpression(allowUnion = true): FormulaAst {
+    let node = parseComparison();
+
+    if (!allowUnion) {
+      return node;
+    }
+
+    skipSpaces();
+
+    while (tokens[index]?.type === "comma") {
+      index += 1;
+      const right = parseComparison();
+
+      if (!isReferenceExpressionAst(node) || !isReferenceExpressionAst(right)) {
+        throw new Error("Formula union operands must be references.");
+      }
+
+      node = {
+        type: "union",
+        left: node,
+        right,
+      };
+      skipSpaces();
+    }
+
+    return node;
   }
 
   function parseComparison(): FormulaAst {
     let node = parseConcatenation();
+    skipSpaces();
     let token = tokens[index];
 
     while (
@@ -327,6 +384,7 @@ export function parseFormula(input: string): FormulaAst {
         left: node,
         right: parseConcatenation(),
       };
+      skipSpaces();
       token = tokens[index];
     }
 
@@ -335,6 +393,7 @@ export function parseFormula(input: string): FormulaAst {
 
   function parseConcatenation(): FormulaAst {
     let node = parseAdditive();
+    skipSpaces();
     let token = tokens[index];
 
     while (token?.type === "operator" && token.value === "&") {
@@ -345,6 +404,7 @@ export function parseFormula(input: string): FormulaAst {
         left: node,
         right: parseAdditive(),
       };
+      skipSpaces();
       token = tokens[index];
     }
 
@@ -353,6 +413,7 @@ export function parseFormula(input: string): FormulaAst {
 
   function parseAdditive(): FormulaAst {
     let node = parseMultiplicative();
+    skipSpaces();
     let token = tokens[index];
 
     while (token?.type === "operator" && (token.value === "+" || token.value === "-")) {
@@ -365,6 +426,7 @@ export function parseFormula(input: string): FormulaAst {
         left: node,
         right: parseMultiplicative(),
       };
+      skipSpaces();
       token = tokens[index];
     }
 
@@ -373,6 +435,7 @@ export function parseFormula(input: string): FormulaAst {
 
   function parseMultiplicative(): FormulaAst {
     let node = parsePower();
+    skipSpaces();
     let token = tokens[index];
 
     while (token?.type === "operator" && (token.value === "*" || token.value === "/")) {
@@ -385,6 +448,7 @@ export function parseFormula(input: string): FormulaAst {
         left: node,
         right: parsePower(),
       };
+      skipSpaces();
       token = tokens[index];
     }
 
@@ -393,6 +457,7 @@ export function parseFormula(input: string): FormulaAst {
 
   function parsePower(): FormulaAst {
     let node = parsePercent();
+    skipSpaces();
     let token = tokens[index];
 
     while (token?.type === "operator" && token.value === "^") {
@@ -403,6 +468,7 @@ export function parseFormula(input: string): FormulaAst {
         left: node,
         right: parsePercent(),
       };
+      skipSpaces();
       token = tokens[index];
     }
 
@@ -411,6 +477,7 @@ export function parseFormula(input: string): FormulaAst {
 
   function parsePercent(): FormulaAst {
     let node = parseUnary();
+    skipSpaces();
     let token = tokens[index];
 
     while (token?.type === "operator" && token.value === "%") {
@@ -419,6 +486,7 @@ export function parseFormula(input: string): FormulaAst {
         type: "percent",
         operand: node,
       };
+      skipSpaces();
       token = tokens[index];
     }
 
@@ -426,6 +494,7 @@ export function parseFormula(input: string): FormulaAst {
   }
 
   function parseUnary(): FormulaAst {
+    skipSpaces();
     const token = tokens[index];
 
     if (token?.type === "operator" && (token.value === "+" || token.value === "-")) {
@@ -441,8 +510,37 @@ export function parseFormula(input: string): FormulaAst {
   }
 
   function parseRange(): FormulaAst {
+    let node = parseRangeTerm();
+
+    while (tokens[index]?.type === "space") {
+      const rightTokenIndex = getNonSpaceTokenIndex(index);
+
+      if (!canStartReferenceTerm(tokens[rightTokenIndex])) {
+        index = rightTokenIndex;
+        break;
+      }
+
+      index = rightTokenIndex;
+      const right = parseRangeTerm();
+
+      if (!isReferenceExpressionAst(node) || !isReferenceExpressionAst(right)) {
+        throw new Error("Formula intersection operands must be references.");
+      }
+
+      node = {
+        type: "intersection",
+        left: node,
+        right,
+      };
+    }
+
+    return node;
+  }
+
+  function parseRangeTerm(): FormulaAst {
     const node = parsePrimary();
-    const token = tokens[index];
+    const operatorIndex = getNonSpaceTokenIndex(index);
+    const token = tokens[operatorIndex];
 
     if (token?.type !== "operator" || token.value !== ":") {
       return node;
@@ -452,7 +550,7 @@ export function parseFormula(input: string): FormulaAst {
       throw new Error("Formula range start must be a cell reference.");
     }
 
-    index += 1;
+    index = operatorIndex + 1;
 
     const endNode = parsePrimary();
 
@@ -476,6 +574,7 @@ export function parseFormula(input: string): FormulaAst {
   }
 
   function parsePrimary(): FormulaAst {
+    skipSpaces();
     const token = tokens[index];
 
     if (!token) {
@@ -558,7 +657,8 @@ export function parseFormula(input: string): FormulaAst {
 
     if (token.type === "leftParen") {
       index += 1;
-      const expression = parseExpression();
+      const expression = parseExpression(true);
+      skipSpaces();
 
       if (tokens[index]?.type !== "rightParen") {
         throw new Error("Formula is missing a closing parenthesis.");
@@ -579,15 +679,18 @@ export function parseFormula(input: string): FormulaAst {
     index += 1;
 
     const args: FormulaAst[] = [];
+    skipSpaces();
 
     if (tokens[index]?.type !== "rightParen") {
       let shouldContinue = true;
 
       while (shouldContinue) {
-        args.push(parseExpression());
+        args.push(parseExpression(false));
+        skipSpaces();
 
         if (tokens[index]?.type === "comma") {
           index += 1;
+          skipSpaces();
           continue;
         }
 
@@ -634,12 +737,22 @@ export function parseFormula(input: string): FormulaAst {
   }
 
   const ast = parseExpression();
+  skipSpaces();
 
   if (index !== tokens.length) {
     throw new Error("Formula contains unexpected trailing tokens.");
   }
 
   return ast;
+
+  function isReferenceExpressionAst(ast: FormulaAst): boolean {
+    return (
+      ast.type === "intersection" ||
+      ast.type === "range" ||
+      ast.type === "reference" ||
+      ast.type === "union"
+    );
+  }
 }
 
 export function evaluateSheet(
@@ -822,6 +935,8 @@ export function evaluateWorkbook(
     switch (ast.type) {
       case "function":
         return evaluateFunctionCall(ast.name, ast.args, dependencies);
+      case "intersection":
+        return evaluateIntersection(ast, dependencies);
       case "literal":
         return ast.value;
       case "name":
@@ -861,6 +976,8 @@ export function evaluateWorkbook(
           value: ast.operator === "-" ? -numericOperand.value : numericOperand.value,
         };
       }
+      case "union":
+        return evaluateUnion(ast, dependencies);
       case "binary":
         return evaluateBinaryOperation(ast, dependencies);
     }
@@ -949,6 +1066,60 @@ export function evaluateWorkbook(
     }
   }
 
+  function evaluateIntersection(
+    ast: Extract<FormulaAst, { type: "intersection" }>,
+    dependencies: Set<CellKey>,
+  ): RangeValue | ErrorValue {
+    const leftValue = evaluateAst(ast.left, new Set<CellKey>());
+
+    if (isErrorValue(leftValue)) {
+      return leftValue;
+    }
+
+    if (leftValue.type !== "range") {
+      return createErrorValue("VALUE");
+    }
+
+    const rightValue = evaluateAst(ast.right, new Set<CellKey>());
+
+    if (isErrorValue(rightValue)) {
+      return rightValue;
+    }
+
+    if (rightValue.type !== "range") {
+      return createErrorValue("VALUE");
+    }
+
+    return intersectRangeValues(leftValue, rightValue, dependencies);
+  }
+
+  function evaluateUnion(
+    ast: Extract<FormulaAst, { type: "union" }>,
+    dependencies: Set<CellKey>,
+  ): RangeValue | ErrorValue {
+    const leftValue = evaluateAst(ast.left, new Set<CellKey>());
+
+    if (isErrorValue(leftValue)) {
+      return leftValue;
+    }
+
+    if (leftValue.type !== "range") {
+      return createErrorValue("VALUE");
+    }
+
+    const rightValue = evaluateAst(ast.right, new Set<CellKey>());
+
+    if (isErrorValue(rightValue)) {
+      return rightValue;
+    }
+
+    if (rightValue.type !== "range") {
+      return createErrorValue("VALUE");
+    }
+
+    return createUnionRangeValue(leftValue, rightValue, dependencies);
+  }
+
   function createRangeValue(
     start: CellAddress | ErrorValue,
     end: CellAddress | ErrorValue,
@@ -1010,8 +1181,104 @@ export function evaluateWorkbook(
 
     return {
       type: "range",
+      areas: [cellsInRange],
       cells: cellsInRange,
     };
+  }
+
+  function intersectRangeValues(
+    left: RangeValue,
+    right: RangeValue,
+    dependencies: Set<CellKey>,
+  ): RangeValue | ErrorValue {
+    const intersectedAreas: RangeArea[] = [];
+
+    for (const leftArea of left.areas) {
+      for (const rightArea of right.areas) {
+        const rightCellKeys = new Set(
+          rightArea.flatMap((row) =>
+            row.map((cellAddress) =>
+              createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
+            ),
+          ),
+        );
+        const intersectedArea = leftArea
+          .map((row) => {
+            return row.filter((cellAddress) => {
+              return rightCellKeys.has(
+                createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
+              );
+            });
+          })
+          .filter((row) => row.length > 0);
+
+        if (intersectedArea.length > 0) {
+          intersectedAreas.push(intersectedArea);
+        }
+      }
+    }
+
+    if (intersectedAreas.length === 0) {
+      return createErrorValue("NULL");
+    }
+
+    recordRangeDependencies(intersectedAreas, dependencies);
+
+    return {
+      type: "range",
+      areas: intersectedAreas,
+      cells: intersectedAreas[0],
+    };
+  }
+
+  function createUnionRangeValue(
+    left: RangeValue,
+    right: RangeValue,
+    dependencies: Set<CellKey>,
+  ): RangeValue {
+    const areas = [...left.areas, ...right.areas];
+
+    recordRangeDependencies(areas, dependencies);
+
+    return {
+      type: "range",
+      areas,
+      cells: areas[0],
+    };
+  }
+
+  function recordRangeDependencies(areas: readonly RangeArea[], dependencies: Set<CellKey>) {
+    for (const area of areas) {
+      for (const row of area) {
+        for (const cellAddress of row) {
+          dependencies.add(
+            createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
+          );
+        }
+      }
+    }
+  }
+
+  function isMultiAreaRange(value: RangeValue): boolean {
+    return value.areas.length > 1;
+  }
+
+  function getOnlyRangeCell(value: RangeValue): CellAddress | undefined {
+    let onlyCell: CellAddress | undefined;
+
+    for (const area of value.areas) {
+      for (const row of area) {
+        for (const cellAddress of row) {
+          if (onlyCell) {
+            return undefined;
+          }
+
+          onlyCell = cellAddress;
+        }
+      }
+    }
+
+    return onlyCell;
   }
 
   function scalarizeFormulaValue(value: FormulaValue): ScalarFormulaValue {
@@ -1019,11 +1286,11 @@ export function evaluateWorkbook(
       return value;
     }
 
-    if (value.cells.length !== 1 || value.cells[0]?.length !== 1) {
+    const referencedCell = getOnlyRangeCell(value);
+
+    if (!referencedCell) {
       return createErrorValue("VALUE");
     }
-
-    const referencedCell = value.cells[0][0];
 
     return evaluateCell(referencedCell).value;
   }
@@ -1306,7 +1573,7 @@ export function evaluateWorkbook(
       };
     }
 
-    const flattenedValues = flattenRangeCells(value.cells);
+    const flattenedValues = flattenRangeCells(value);
 
     if (isErrorValue(flattenedValues)) {
       return flattenedValues;
@@ -1337,20 +1604,20 @@ export function evaluateWorkbook(
     return argumentValues;
   }
 
-  function flattenRangeCells(
-    cellsInRange: readonly (readonly CellAddress[])[],
-  ): ScalarFormulaValue[] | ErrorValue {
+  function flattenRangeCells(rangeValue: RangeValue): ScalarFormulaValue[] | ErrorValue {
     const flattenedValues: ScalarFormulaValue[] = [];
 
-    for (const row of cellsInRange) {
-      for (const cellAddress of row) {
-        const cellValue = evaluateCell(cellAddress).value;
+    for (const area of rangeValue.areas) {
+      for (const row of area) {
+        for (const cellAddress of row) {
+          const cellValue = evaluateCell(cellAddress).value;
 
-        if (cellValue.type === "error") {
-          return cellValue;
+          if (cellValue.type === "error") {
+            return cellValue;
+          }
+
+          flattenedValues.push(cellValue);
         }
-
-        flattenedValues.push(cellValue);
       }
     }
 
@@ -1371,6 +1638,10 @@ export function evaluateWorkbook(
     const value = evaluateAst(arg, dependencies);
 
     if (value.type !== "range") {
+      return createErrorValue("VALUE");
+    }
+
+    if (isMultiAreaRange(value)) {
       return createErrorValue("VALUE");
     }
 
@@ -2391,6 +2662,7 @@ export function evaluateWorkbook(
 
     return {
       type: "range",
+      areas: [[[targetCell]]],
       cells: [[targetCell]],
     };
   }
