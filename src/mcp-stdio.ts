@@ -8,8 +8,8 @@ import {
 import * as z from "zod/v4";
 
 import { CONTROL_DISCOVERY_FILE_PATH } from "./control-discovery";
-import { resolveControlTarget, SpreadyControlClient } from "./control-client";
-import { openAppAndWaitForControlTarget, parseMcpStartupOptions } from "./mcp-startup";
+import { McpControlConnection } from "./mcp-control-connection";
+import { parseMcpStartupOptions } from "./mcp-startup";
 import {
   chartGuideTools,
   registerChartTools,
@@ -336,6 +336,23 @@ const workbookFileOperationResultSchema = z.object({
   version: z.int().min(0),
 });
 
+const controlTargetSchema = z.object({
+  host: z.string(),
+  port: z.int().min(1).max(65535),
+  source: z.enum(["argv", "default", "discovery", "env"]),
+});
+
+const connectionStatusSchema = z.object({
+  connected: z.boolean(),
+  lastError: z.string().optional(),
+  state: z.enum(["connected", "connecting", "disconnected", "launching"]),
+  target: controlTargetSchema.optional(),
+});
+
+const openSpreadyAppResultSchema = connectionStatusSchema.extend({
+  launched: z.boolean(),
+});
+
 const WORKBOOK_SUMMARY_RESOURCE_URI = "spready://workbook/summary";
 const SERVER_GUIDE_RESOURCE_URI = "spready://guide";
 const WORKBOOK_TASK_PROMPT_NAME = "spready_workbook_task";
@@ -491,8 +508,21 @@ const guideResource = {
     },
   ],
   startupRequirement:
-    "The Spready desktop app must already be running before this MCP wrapper can connect, or start the wrapper with --openApp to launch the app and wait for the control server.",
+    "If the Spready desktop app is not connected, call open_spready_app. Starting the wrapper with --openApp still launches the app immediately.",
   tools: [
+    {
+      defaultsToActiveSheet: false,
+      description: "Return whether this MCP wrapper is connected to a Spready desktop app.",
+      name: "get_spready_connection_status",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description:
+        "Connect to a running Spready desktop app, or launch one and connect to its TCP control server.",
+      name: "open_spready_app",
+      readOnly: false,
+    },
     {
       defaultsToActiveSheet: false,
       description: "Return workbook metadata including active sheet, version, and sheet sizes.",
@@ -652,6 +682,7 @@ const guideResource = {
     `Subscribe to ${WORKBOOK_SUMMARY_RESOURCE_URI} if your client supports live workbook summary updates.`,
   ],
   workflow: [
+    "Call open_spready_app first when the MCP wrapper is not connected to a Spready desktop app.",
     "Create a new workbook with create_new_workbook when the task should start from a blank workbook.",
     "Open an existing workbook with open_workbook_file when the task starts from a .spready document.",
     "Inspect the workbook with get_workbook_summary.",
@@ -679,6 +710,8 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 
 ## Tools
 
+- get_spready_connection_status: Return whether this MCP wrapper is connected to a Spready desktop app.
+- open_spready_app: Connect to a running Spready desktop app, or launch one and connect to its TCP control server.
 - get_workbook_summary: Return workbook metadata including active sheet, version, and sheet sizes.
 - create_new_workbook: Create a new blank workbook and replace the in-app workbook state.
 - open_workbook_file: Open a native Spready workbook file and replace the in-app workbook state.
@@ -781,24 +814,22 @@ function createTextResult<Result extends object>(payload: Result) {
 
 async function main() {
   const startupOptions = parseMcpStartupOptions(process.argv.slice(2));
-  const target = startupOptions.openApp
-    ? await openAppAndWaitForControlTarget(startupOptions)
-    : await resolveControlTarget({
-        host: startupOptions.host,
-        port: startupOptions.port,
-      });
-  const controlClient = new SpreadyControlClient(target);
+  const controlConnection = new McpControlConnection(startupOptions);
 
-  try {
-    await controlClient.connect();
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : "unknown connection error";
+  if (startupOptions.openApp) {
+    await controlConnection.launchAppAndConnect();
+  } else {
+    try {
+      await controlConnection.connectToExisting();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "unknown connection error";
 
-    throw new Error(
-      `Could not connect to the Spready control server at tcp://${target.host}:${target.port}. ` +
-        `Start the Electron app first, pass --openApp, or set SPREADY_CONTROL_HOST/SPREADY_CONTROL_PORT. ` +
-        `Discovery file: ${CONTROL_DISCOVERY_FILE_PATH}. ${detail}`,
-    );
+      console.error(
+        `Spready MCP stdio wrapper started without a control connection. ` +
+          `Call open_spready_app to connect or launch Spready. ` +
+          `Discovery file: ${CONTROL_DISCOVERY_FILE_PATH}. ${detail}`,
+      );
+    }
   }
 
   const server = new McpServer(
@@ -814,13 +845,13 @@ async function main() {
         },
       },
       instructions:
-        "Spready requires the desktop app to be running; this wrapper can launch it when started with --openApp. Start with describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use format_cells for common style changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use format_cells for common style changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
   const knownResourceUris = new Set([SERVER_GUIDE_RESOURCE_URI, WORKBOOK_SUMMARY_RESOURCE_URI]);
 
-  controlClient.on("workbookChanged", async () => {
+  controlConnection.on("workbookChanged", async () => {
     if (!subscribedResourceUris.has(WORKBOOK_SUMMARY_RESOURCE_URI)) {
       return;
     }
@@ -859,7 +890,7 @@ async function main() {
       title: "Workbook Summary",
     },
     async () => {
-      const summary = await controlClient.getWorkbookSummary();
+      const summary = await controlConnection.requireConnectedClient().getWorkbookSummary();
 
       return {
         contents: [
@@ -895,6 +926,41 @@ async function main() {
   );
 
   server.registerTool(
+    "get_spready_connection_status",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description: "Return whether this MCP wrapper is connected to a Spready desktop app.",
+      outputSchema: connectionStatusSchema,
+    },
+    async () => createTextResult(controlConnection.getStatus()),
+  );
+
+  server.registerTool(
+    "open_spready_app",
+    {
+      annotations: {
+        idempotentHint: false,
+        openWorldHint: true,
+        readOnlyHint: false,
+      },
+      description:
+        "Connect to a running Spready desktop app, or launch one and connect to its TCP control server.",
+      outputSchema: openSpreadyAppResultSchema,
+    },
+    async () => {
+      const result = await controlConnection.openAppAndConnect();
+
+      return createTextResult({
+        ...controlConnection.getStatus(),
+        launched: result.launched,
+      });
+    },
+  );
+
+  server.registerTool(
     "get_workbook_summary",
     {
       annotations: {
@@ -904,7 +970,8 @@ async function main() {
       description: "Return workbook metadata including active sheet, version, and sheet sizes.",
       outputSchema: workbookSummarySchema,
     },
-    async () => createTextResult(await controlClient.getWorkbookSummary()),
+    async () =>
+      createTextResult(await controlConnection.requireConnectedClient().getWorkbookSummary()),
   );
 
   server.registerTool(
@@ -927,7 +994,8 @@ async function main() {
       }),
       outputSchema: applyTransactionResultSchema,
     },
-    async (args) => createTextResult(await controlClient.createNewWorkbook(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().createNewWorkbook(args)),
   );
 
   server.registerTool(
@@ -954,7 +1022,8 @@ async function main() {
       }),
       outputSchema: workbookFileOperationResultSchema,
     },
-    async (args) => createTextResult(await controlClient.openWorkbookFile(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().openWorkbookFile(args)),
   );
 
   server.registerTool(
@@ -977,7 +1046,8 @@ async function main() {
       }),
       outputSchema: workbookFileOperationResultSchema,
     },
-    async (args) => createTextResult(await controlClient.saveWorkbookFile(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().saveWorkbookFile(args)),
   );
 
   server.registerTool(
@@ -999,6 +1069,23 @@ async function main() {
         resources: guideResource.resources,
         startupRequirement: guideResource.startupRequirement,
         tools: [
+          {
+            defaultsToActiveSheet: false,
+            description: "Return whether this MCP wrapper is connected to a Spready desktop app.",
+            name: "get_spready_connection_status",
+            readOnly: true,
+            useWhen:
+              "Use this before workbook operations if you are unsure whether Spready is open.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Connect to a running Spready desktop app, or launch one and connect to its TCP control server.",
+            name: "open_spready_app",
+            readOnly: false,
+            useWhen:
+              "Use this when connection status is disconnected or a workbook tool says Spready is not connected.",
+          },
           {
             defaultsToActiveSheet: false,
             description:
@@ -1179,7 +1266,8 @@ async function main() {
       }),
       outputSchema: usedRangeSchema,
     },
-    async ({ sheetId }) => createTextResult(await controlClient.getUsedRange(sheetId)),
+    async ({ sheetId }) =>
+      createTextResult(await controlConnection.requireConnectedClient().getUsedRange(sheetId)),
   );
 
   server.registerTool(
@@ -1202,7 +1290,8 @@ async function main() {
       }),
       outputSchema: cellDataSchema,
     },
-    async (args) => createTextResult(await controlClient.getCellData(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().getCellData(args)),
   );
 
   server.registerTool(
@@ -1227,7 +1316,8 @@ async function main() {
       }),
       outputSchema: sheetDisplayRangeSchema,
     },
-    async (args) => createTextResult(await controlClient.getSheetDisplayRange(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().getSheetDisplayRange(args)),
   );
 
   server.registerTool(
@@ -1251,7 +1341,8 @@ async function main() {
       }),
       outputSchema: sheetStyleRangeSchema,
     },
-    async (args) => createTextResult(await controlClient.getSheetStyleRange(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().getSheetStyleRange(args)),
   );
 
   server.registerTool(
@@ -1295,7 +1386,8 @@ async function main() {
       }),
       outputSchema: applyTransactionResultSchema,
     },
-    async (args) => createTextResult(await controlClient.formatCells(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().formatCells(args)),
   );
 
   server.registerTool(
@@ -1320,10 +1412,18 @@ async function main() {
       }),
       outputSchema: sheetRangeSchema,
     },
-    async (args) => createTextResult(await controlClient.getSheetRange(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().getSheetRange(args)),
   );
 
-  registerChartTools(server, controlClient);
+  registerChartTools(server, {
+    getChart: (chartId) => controlConnection.requireConnectedClient().getChart(chartId),
+    getChartPreview: (chartId) =>
+      controlConnection.requireConnectedClient().getChartPreview(chartId),
+    getSheetChartPreviews: (sheetId) =>
+      controlConnection.requireConnectedClient().getSheetChartPreviews(sheetId),
+    getSheetCharts: (sheetId) => controlConnection.requireConnectedClient().getSheetCharts(sheetId),
+  });
 
   server.registerTool(
     "create_chart",
@@ -1406,7 +1506,8 @@ async function main() {
       }),
       outputSchema: createChartResultSchema,
     },
-    async (args) => createTextResult(await controlClient.createChart(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().createChart(args)),
   );
 
   server.registerTool(
@@ -1436,7 +1537,8 @@ async function main() {
       }),
       outputSchema: copyRangeResultSchema,
     },
-    async (args) => createTextResult(await controlClient.copyRange(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().copyRange(args)),
   );
 
   server.registerTool(
@@ -1468,7 +1570,8 @@ async function main() {
       }),
       outputSchema: cutRangeResultSchema,
     },
-    async (args) => createTextResult(await controlClient.cutRange(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().cutRange(args)),
   );
 
   server.registerTool(
@@ -1492,7 +1595,7 @@ async function main() {
       }),
     },
     async ({ sheetId }) => {
-      const csv = await controlClient.getSheetCsv(sheetId);
+      const csv = await controlConnection.requireConnectedClient().getSheetCsv(sheetId);
 
       return createTextResult({ csv });
     },
@@ -1527,7 +1630,8 @@ async function main() {
       }),
       outputSchema: csvFileOperationResultSchema,
     },
-    async (args) => createTextResult(await controlClient.importCsvFile(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().importCsvFile(args)),
   );
 
   server.registerTool(
@@ -1554,7 +1658,8 @@ async function main() {
       }),
       outputSchema: csvFileOperationResultSchema,
     },
-    async (args) => createTextResult(await controlClient.exportCsvFile(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().exportCsvFile(args)),
   );
 
   server.registerTool(
@@ -1591,7 +1696,8 @@ async function main() {
         }),
       outputSchema: applyTransactionResultSchema,
     },
-    async (args) => createTextResult(await controlClient.pasteRange(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().pasteRange(args)),
   );
 
   server.registerTool(
@@ -1618,7 +1724,8 @@ async function main() {
       }),
       outputSchema: applyTransactionResultSchema,
     },
-    async (args) => createTextResult(await controlClient.clearRange(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().clearRange(args)),
   );
 
   server.registerTool(
@@ -1651,7 +1758,8 @@ async function main() {
       }),
       outputSchema: applyTransactionResultSchema,
     },
-    async (args) => createTextResult(await controlClient.applyTransaction(args)),
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().applyTransaction(args)),
   );
 
   server.registerPrompt(
@@ -1672,6 +1780,7 @@ async function main() {
               text:
                 `Use the Spready MCP server to accomplish this workbook task: ${goal}\n\n` +
                 "Workflow:\n" +
+                "- Call open_spready_app first if get_spready_connection_status reports disconnected.\n" +
                 "- Use create_new_workbook when the task should start from a blank workbook.\n" +
                 "- Use open_workbook_file when the task starts from an existing .spready workbook.\n" +
                 "- Start with get_workbook_summary.\n" +
@@ -1697,9 +1806,15 @@ async function main() {
   const transport = new StdioServerTransport();
 
   await server.connect(transport);
-  console.error(
-    `Spready MCP stdio wrapper connected to tcp://${target.host}:${target.port} via ${target.source}`,
-  );
+  const status = controlConnection.getStatus();
+
+  if (status.connected && status.target) {
+    console.error(
+      `Spready MCP stdio wrapper connected to tcp://${status.target.host}:${status.target.port} via ${status.target.source}`,
+    );
+  } else {
+    console.error("Spready MCP stdio wrapper ready; call open_spready_app to connect.");
+  }
 }
 
 main().catch((error) => {

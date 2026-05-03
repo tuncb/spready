@@ -24,14 +24,15 @@ Workbook summaries report `hasUnsavedChanges` so clients can decide whether to s
 
 ### MCP stdio wrapper
 
-Start the Electron app first, then run:
+Run the wrapper:
 
 ```sh
 npm run mcp:stdio
 ```
 
-The wrapper connects to the running app over the local control server and exposes MCP tools, resources, and prompts over stdio for external harnesses.
-To let the wrapper open the Electron app and wait until its TCP control server is ready, pass `--openApp`:
+The wrapper exposes MCP tools, resources, and prompts over stdio for external harnesses. If Spready is already running, the wrapper connects to its local control server. If Spready is not running, the wrapper stays available and the LLM can call `open_spready_app` to launch the desktop app and connect to its TCP control server.
+
+To launch the Electron app immediately during wrapper startup, pass `--openApp`:
 
 ```sh
 npm run mcp:stdio -- --openApp
@@ -44,7 +45,7 @@ Connection discovery order:
 - temp discovery file at `os.tmpdir()/spready-control.json`
 - default `127.0.0.1:45731`
 
-When `--openApp` is used, the wrapper waits for a freshly written discovery file from the launched app. This allows multiple Spready instances to fall back to different local ports without the MCP wrapper attaching to a stale instance.
+When `open_spready_app` or `--openApp` launches the app, the wrapper waits for a freshly written discovery file from the launched app. This allows multiple Spready instances to fall back to different local ports without the MCP wrapper attaching to a stale instance.
 
 Example harness config:
 
@@ -53,7 +54,7 @@ Example harness config:
   "mcpServers": {
     "spready": {
       "command": "npm",
-      "args": ["run", "mcp:stdio", "--", "--openApp"]
+      "args": ["run", "mcp:stdio"]
     }
   }
 }
@@ -282,6 +283,8 @@ The stdio MCP wrapper currently exposes:
 
 ### Tools
 
+- `get_spready_connection_status`
+- `open_spready_app`
 - `describe_capabilities`
 - `get_workbook_summary`
 - `create_new_workbook`
