@@ -2549,6 +2549,101 @@ export function evaluateWorkbook(
     return createErrorValue("NA");
   }
 
+  function evaluateVLookup(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
+    const argumentError = expectArgumentCount(args, 3, 4);
+
+    if (argumentError) {
+      return argumentError;
+    }
+
+    const lookupValue = getScalarArgument(args[0], dependencies);
+
+    if (lookupValue.type === "error") {
+      return lookupValue;
+    }
+
+    const tableRange = getRangeArgument(args[1], dependencies);
+
+    if (isErrorValue(tableRange)) {
+      return tableRange;
+    }
+
+    if (tableRange.cells.length === 0 || tableRange.cells[0]?.length === 0) {
+      return createErrorValue("REF");
+    }
+
+    const columnValue = coerceToNumber(evaluateAst(args[2], dependencies));
+
+    if (columnValue.type === "error") {
+      return columnValue;
+    }
+
+    const returnColumnIndex = Math.trunc(columnValue.value);
+    const tableWidth = tableRange.cells[0].length;
+
+    if (returnColumnIndex < 1) {
+      return createErrorValue("VALUE");
+    }
+
+    if (returnColumnIndex > tableWidth) {
+      return createErrorValue("REF");
+    }
+
+    const rangeLookup = args[3]
+      ? coerceToBoolean(evaluateAst(args[3], dependencies))
+      : ({ type: "boolean", value: false } satisfies BooleanValue);
+
+    if (rangeLookup.type === "error") {
+      return rangeLookup;
+    }
+
+    let bestRowIndex = -1;
+    let bestValue: ScalarFormulaValue | undefined;
+
+    for (let rowIndex = 0; rowIndex < tableRange.cells.length; rowIndex += 1) {
+      const lookupCell = tableRange.cells[rowIndex]?.[0];
+
+      if (!lookupCell) {
+        return createErrorValue("REF");
+      }
+
+      const candidateValue = evaluateCell(lookupCell).value;
+
+      if (candidateValue.type === "error") {
+        return candidateValue;
+      }
+
+      const comparison = compareScalarValues(candidateValue, lookupValue);
+
+      if (!rangeLookup.value) {
+        if (comparison === 0) {
+          const targetCell = tableRange.cells[rowIndex]?.[returnColumnIndex - 1];
+
+          return targetCell ? evaluateCell(targetCell).value : createErrorValue("REF");
+        }
+
+        continue;
+      }
+
+      if (comparison > 0) {
+        continue;
+      }
+
+      if (!bestValue || compareScalarValues(candidateValue, bestValue) > 0) {
+        bestRowIndex = rowIndex;
+        bestValue = candidateValue;
+      }
+    }
+
+    if (bestRowIndex < 0) {
+      return createErrorValue("NA");
+    }
+
+    const targetCell = tableRange.cells[bestRowIndex]?.[returnColumnIndex - 1];
+
+    return targetCell ? evaluateCell(targetCell).value : createErrorValue("REF");
+  }
+
   const functionRegistry = new Map<string, FormulaFunctionHandler>([
     ["SUM", evaluateSum],
     ["PRODUCT", evaluateProduct],
@@ -2586,6 +2681,7 @@ export function evaluateWorkbook(
     ["INDEX", evaluateIndex],
     ["MATCH", evaluateMatch],
     ["XLOOKUP", evaluateXLookup],
+    ["VLOOKUP", evaluateVLookup],
   ]);
 
   for (const sheet of workbook.sheets) {

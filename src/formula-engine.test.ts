@@ -284,3 +284,44 @@ test("evaluateSheet supports same-sheet lookup and reference functions", () => {
     ["2", "30", "20", "y", "1", "nf", "200", "3", "3", "3", "6", "3"],
   );
 });
+
+test("evaluateSheet supports VLOOKUP with exact default, approximate opt-in, and lookup errors", () => {
+  const sheet = createSheet([
+    [
+      "ID",
+      "Name",
+      "Score",
+      '=VLOOKUP("b",A2:C4,2)',
+      '=VLOOKUP("B",A2:C4,3,FALSE)',
+      "=VLOOKUP(85,A7:B9,2,TRUE)",
+      '=VLOOKUP("x",A2:C4,2)',
+      '=VLOOKUP("a",A2:C4,0)',
+      '=VLOOKUP("a",A2:C4,4)',
+      '=VLOOKUP("missing",A2:C5,2)',
+      '=VLOOKUP("ret",A6:C6,2)',
+    ],
+    ["a", "Alpha", "90"],
+    ["b", "Beta", "80"],
+    ["c", "Gamma", "70"],
+    ["=1/0", "Error row", ""],
+    ["ret", "=#N/A", ""],
+    ["0", "F", ""],
+    ["60", "D", ""],
+    ["80", "B", ""],
+  ]);
+  const snapshot = evaluateSheet(sheet, 37);
+
+  assert.deepEqual(
+    [
+      getCellEvaluation(snapshot, 0, 3).display,
+      getCellEvaluation(snapshot, 0, 4).display,
+      getCellEvaluation(snapshot, 0, 5).display,
+      getCellEvaluation(snapshot, 0, 6).display,
+      getCellEvaluation(snapshot, 0, 7).display,
+      getCellEvaluation(snapshot, 0, 8).display,
+      getCellEvaluation(snapshot, 0, 9).display,
+      getCellEvaluation(snapshot, 0, 10).display,
+    ],
+    ["Beta", "80", "B", "#N/A", "#VALUE!", "#REF!", "#DIV/0!", "#N/A"],
+  );
+});

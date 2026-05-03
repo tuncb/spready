@@ -236,6 +236,7 @@ Notes:
 - `INDEX`
 - `MATCH`
 - `XLOOKUP`
+- `VLOOKUP`
 
 Notes:
 
@@ -246,6 +247,8 @@ Notes:
 - `MATCH` requires a one-dimensional lookup range.
 - `XLOOKUP(lookup, lookupRange, returnRange, notFound?)` performs lookup over one-dimensional ranges of equal length, including ranges on other sheets.
 - `XLOOKUP` currently behaves as exact match lookup.
+- `VLOOKUP(lookup, tableRange, columnIndex, rangeLookup?)` uses the first column of a rectangular table range and returns from a 1-based table column.
+- `VLOOKUP` defaults omitted `rangeLookup` to exact match. Pass `TRUE` for approximate lookup.
 
 ## Aggregate Function Range Behavior
 
@@ -328,6 +331,7 @@ Also keep these implementation boundaries in mind:
 =MATCH("b",A1:A3)                       -> position in a one-dimensional range
 =INDEX(B1:B3,2)                         -> second value from a column range
 =XLOOKUP("c",A1:A3,B1:B3,"nf")          -> exact match with fallback
+=VLOOKUP("c",A1:B3,2)                   -> exact match against the first table column
 ```
 
 ### Raw Versus Display

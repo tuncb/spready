@@ -86,21 +86,21 @@ test("WorkbookController exposes expanded formula compatibility through the same
         startRow: 0,
         type: "setRange",
         values: [
-          ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)"],
-          ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)'],
+          ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)", '=VLOOKUP("b",A1:B2,2)'],
+          ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)', ""],
         ],
       },
     ],
   });
 
   const rawRange = controller.getSheetRange({
-    columnCount: 4,
+    columnCount: 5,
     rowCount: 2,
     startColumn: 0,
     startRow: 0,
   });
   const displayRange = controller.getSheetDisplayRange({
-    columnCount: 4,
+    columnCount: 5,
     rowCount: 2,
     startColumn: 0,
     startRow: 0,
@@ -111,12 +111,12 @@ test("WorkbookController exposes expanded formula compatibility through the same
   });
 
   assert.deepEqual(rawRange.values, [
-    ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)"],
-    ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)'],
+    ["a", "10", "=SUM(B1:B2)", "=IFERROR(1/0,99)", '=VLOOKUP("b",A1:B2,2)'],
+    ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)', ""],
   ]);
   assert.deepEqual(displayRange.values, [
-    ["a", "10", "30", "99"],
-    ["b", "20", "20", "a, b"],
+    ["a", "10", "30", "99", "20"],
+    ["b", "20", "20", "a, b", ""],
   ]);
   assert.deepEqual(lookupCell, {
     columnIndex: 2,
@@ -162,20 +162,26 @@ test("WorkbookController evaluates cross-sheet formulas through display reads", 
         startColumn: 0,
         startRow: 0,
         type: "setRange",
-        values: [["=SUM(Data!B2:B3)", '=XLOOKUP("b",Data!A2:A3,Data!B2:B3,"nf")']],
+        values: [
+          [
+            "=SUM(Data!B2:B3)",
+            '=XLOOKUP("b",Data!A2:A3,Data!B2:B3,"nf")',
+            '=VLOOKUP("b",Data!A2:B3,2)',
+          ],
+        ],
       },
     ],
   });
 
   assert.deepEqual(
     controller.getSheetDisplayRange({
-      columnCount: 2,
+      columnCount: 3,
       rowCount: 1,
       sheetId: outputSheetId,
       startColumn: 0,
       startRow: 0,
     }).values,
-    [["30", "20"]],
+    [["30", "20", "20"]],
   );
 });
 
