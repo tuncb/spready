@@ -60,6 +60,11 @@ startupTimer.log(
   `pid=${process.pid} port=${Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort} logFile=${STARTUP_TIMING_LOG_FILE_PATH}`,
 );
 
+type StartupTimingMessage = {
+  detail?: unknown;
+  event?: unknown;
+};
+
 type SaveCsvFileArgs = {
   content: string;
   defaultPath?: string;
@@ -77,6 +82,35 @@ type SaveWorkbookFileAsArgs = {
 };
 
 type UnsavedChangesResolution = "cancel" | "discard" | "none" | "save";
+
+function formatStartupTimingMessageDetail(
+  browserWindow: BrowserWindow | null,
+  detail: string | undefined,
+) {
+  const windowDetail = browserWindow ? `windowId=${browserWindow.id}` : "windowId=unknown";
+
+  return detail ? `${windowDetail} ${detail}` : windowDetail;
+}
+
+function getStartupTimingMessageEvent(message: StartupTimingMessage): string | null {
+  if (typeof message.event !== "string") {
+    return null;
+  }
+
+  if (!/^[a-z0-9-]+$/u.test(message.event)) {
+    return null;
+  }
+
+  return message.event;
+}
+
+function getStartupTimingMessageDetail(message: StartupTimingMessage): string | undefined {
+  if (typeof message.detail !== "string") {
+    return undefined;
+  }
+
+  return message.detail.slice(0, 200);
+}
 
 function readSpreadyClipboardPayload(): SpreadyClipboardPayload | undefined {
   const buffer = clipboard.readBuffer(SPREADY_CLIPBOARD_FORMAT);
@@ -621,20 +655,34 @@ const createWindow = () => {
       sandbox: true,
     },
   });
+  startupTimer.log("main-window-created", `windowId=${mainWindow.id}`);
   mainWindow.setTitle(formatWorkbookWindowTitle(workbookController.getSummary(), APP_DISPLAY_NAME));
 
-  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-    startupTimer.log("main-window-load-url-start", MAIN_WINDOW_VITE_DEV_SERVER_URL);
-    mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-  } else {
-    const rendererPath = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+  let didLogMainFrameFinishLoad = false;
 
-    startupTimer.log("main-window-load-file-start", rendererPath);
-    mainWindow.loadFile(rendererPath);
-  }
+  mainWindow.webContents.once("did-start-loading", () => {
+    startupTimer.log("main-window-did-start-loading", `windowId=${mainWindow.id}`);
+  });
+
+  mainWindow.webContents.once("dom-ready", () => {
+    startupTimer.log("main-window-dom-ready", `windowId=${mainWindow.id}`);
+  });
+
+  mainWindow.webContents.on("did-frame-finish-load", (_event, isMainFrame) => {
+    if (!isMainFrame || didLogMainFrameFinishLoad) {
+      return;
+    }
+
+    didLogMainFrameFinishLoad = true;
+    startupTimer.log("main-window-main-frame-finish-load", `windowId=${mainWindow.id}`);
+  });
 
   mainWindow.webContents.once("did-finish-load", () => {
-    startupTimer.log("main-window-did-finish-load");
+    startupTimer.log("main-window-did-finish-load", `windowId=${mainWindow.id}`);
+  });
+
+  mainWindow.webContents.once("did-stop-loading", () => {
+    startupTimer.log("main-window-did-stop-loading", `windowId=${mainWindow.id}`);
   });
 
   mainWindow.webContents.once("did-fail-load", (_event, errorCode, errorDescription) => {
@@ -644,10 +692,49 @@ const createWindow = () => {
     );
   });
 
+  mainWindow.webContents.once("preload-error", (_event, preloadPath, error) => {
+    startupTimer.log(
+      "main-window-preload-error",
+      `windowId=${mainWindow.id} preloadPath=${preloadPath} error=${error.message}`,
+    );
+  });
+
+  if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    startupTimer.log("main-window-load-url-start", MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    void mainWindow
+      .loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL)
+      .then(() => {
+        startupTimer.log("main-window-load-url-done", MAIN_WINDOW_VITE_DEV_SERVER_URL);
+      })
+      .catch((error: unknown) => {
+        startupTimer.log(
+          "main-window-load-url-failed",
+          error instanceof Error ? error.message : "unknown error",
+        );
+      });
+    startupTimer.log("main-window-load-url-dispatched", MAIN_WINDOW_VITE_DEV_SERVER_URL);
+  } else {
+    const rendererPath = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+
+    startupTimer.log("main-window-load-file-start", rendererPath);
+    void mainWindow
+      .loadFile(rendererPath)
+      .then(() => {
+        startupTimer.log("main-window-load-file-done", rendererPath);
+      })
+      .catch((error: unknown) => {
+        startupTimer.log(
+          "main-window-load-file-failed",
+          error instanceof Error ? error.message : "unknown error",
+        );
+      });
+    startupTimer.log("main-window-load-file-dispatched", rendererPath);
+  }
+
   mainWindow.once("ready-to-show", () => {
-    startupTimer.log("main-window-ready-to-show");
+    startupTimer.log("main-window-ready-to-show", `windowId=${mainWindow.id}`);
     mainWindow.show();
-    startupTimer.log("main-window-show-called");
+    startupTimer.log("main-window-show-called", `windowId=${mainWindow.id}`);
   });
 
   mainWindow.on("close", (event) => {
@@ -681,6 +768,23 @@ const createWindow = () => {
 
   return mainWindow;
 };
+
+ipcMain.on("startup:timing", (event, message: StartupTimingMessage) => {
+  const startupEvent = getStartupTimingMessageEvent(message);
+
+  if (!startupEvent) {
+    startupTimer.log("renderer-startup-timing-invalid");
+    return;
+  }
+
+  startupTimer.log(
+    `renderer-${startupEvent}`,
+    formatStartupTimingMessageDetail(
+      BrowserWindow.fromWebContents(event.sender),
+      getStartupTimingMessageDetail(message),
+    ),
+  );
+});
 
 ipcMain.handle("dialog:open-csv-file", async (event) => {
   try {

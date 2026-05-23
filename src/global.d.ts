@@ -71,6 +71,7 @@ declare global {
       getSheetStyleRange: (request: SheetRangeRequest) => Promise<SheetStyleRangeResult>;
       getUsedRange: (sheetId?: string) => Promise<UsedRangeResult>;
       getWorkbookSummary: () => Promise<WorkbookSummary>;
+      logStartupTiming: (event: string, detail?: string) => void;
       name: string;
       readClipboard: () => Promise<ClipboardReadResult>;
       onMenuAction: (listener: (action: AppMenuAction) => void) => () => void;

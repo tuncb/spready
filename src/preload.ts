@@ -64,6 +64,88 @@ type SaveWorkbookFileAsResult =
       canceled: false;
     } & WorkbookFileOperationResult);
 
+function getStartupTimingDetail(detail?: string) {
+  const rendererMs = `rendererMs=${Math.round(performance.now())}`;
+
+  return detail ? `${rendererMs} ${detail}` : rendererMs;
+}
+
+function logStartupTiming(event: string, detail?: string) {
+  ipcRenderer.send("startup:timing", {
+    detail: getStartupTimingDetail(detail),
+    event,
+  });
+}
+
+logStartupTiming("preload-start");
+
+const MAX_STARTUP_RESOURCE_TIMING_LOGS = 24;
+let startupResourceTimingLogCount = 0;
+
+function getResourceTimingDetail(entry: PerformanceResourceTiming) {
+  const name = entry.name.length > 120 ? `...${entry.name.slice(-117)}` : entry.name;
+
+  return [
+    `name=${name}`,
+    `initiatorType=${entry.initiatorType || "unknown"}`,
+    `durationMs=${Math.round(entry.duration)}`,
+    `transferSize=${entry.transferSize}`,
+    `encodedBodySize=${entry.encodedBodySize}`,
+  ].join(" ");
+}
+
+function logStartupResourceTiming(entry: PerformanceEntry) {
+  if (
+    startupResourceTimingLogCount >= MAX_STARTUP_RESOURCE_TIMING_LOGS ||
+    entry.entryType !== "resource"
+  ) {
+    return;
+  }
+
+  startupResourceTimingLogCount += 1;
+  logStartupTiming("resource-timing", getResourceTimingDetail(entry as PerformanceResourceTiming));
+}
+
+function logDocumentStartupTiming(event: string) {
+  logStartupTiming(event, `readyState=${document.readyState}`);
+}
+
+logDocumentStartupTiming("preload-document-state");
+
+document.addEventListener("readystatechange", () => {
+  logDocumentStartupTiming("document-readystatechange");
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  logDocumentStartupTiming("document-content-loaded");
+});
+
+window.addEventListener("load", () => {
+  logDocumentStartupTiming("window-load");
+});
+
+if (typeof PerformanceObserver !== "undefined") {
+  try {
+    const resourceObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        logStartupResourceTiming(entry);
+      }
+    });
+
+    resourceObserver.observe({
+      buffered: true,
+      type: "resource",
+    });
+
+    window.addEventListener("load", () => {
+      resourceObserver.disconnect();
+      logStartupTiming("resource-timing-observer-done", `count=${startupResourceTimingLogCount}`);
+    });
+  } catch {
+    logStartupTiming("resource-timing-observer-unavailable");
+  }
+}
+
 contextBridge.exposeInMainWorld("appShell", {
   applyTransaction: (request: ApplyTransactionRequest) =>
     ipcRenderer.invoke("workbook:apply-transaction", request) as Promise<ApplyTransactionResult>,
@@ -102,6 +184,7 @@ contextBridge.exposeInMainWorld("appShell", {
       sheetId,
     }) as Promise<UsedRangeResult>,
   getWorkbookSummary: () => ipcRenderer.invoke("workbook:get-summary") as Promise<WorkbookSummary>,
+  logStartupTiming,
   name: "Spready",
   readClipboard: () => ipcRenderer.invoke("clipboard:read") as Promise<ClipboardReadResult>,
   onMenuAction: (listener: (action: AppMenuAction) => void) => {
@@ -149,3 +232,5 @@ contextBridge.exposeInMainWorld("appShell", {
       defaultPath,
     }) as Promise<SaveWorkbookFileAsResult>,
 });
+
+logStartupTiming("preload-bridge-exposed");

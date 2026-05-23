@@ -54,6 +54,14 @@ const DEFAULT_WORKBOOK_FILE_NAME = "Workbook.spready";
 const VISIBLE_COLUMN_PADDING = 4;
 const VISIBLE_ROW_PADDING = 24;
 
+let didLogAppRenderStart = false;
+let didLogInitialChartPreviewsDone = false;
+let didLogInitialChartPreviewsStart = false;
+let didLogInitialRangeDone = false;
+let didLogInitialRangeStart = false;
+let didLogInitialWorkbookSummaryDone = false;
+let didLogInitialWorkbookSummaryStart = false;
+
 const GRID_THEME: Partial<Theme> = {
   accentColor: "#2563eb",
   accentFg: "#ffffff",
@@ -555,6 +563,11 @@ function getDefaultWorkbookFilePath(summary: WorkbookSummary | null): string {
 }
 
 export default function App() {
+  if (!didLogAppRenderStart) {
+    didLogAppRenderStart = true;
+    window.appShell.logStartupTiming("app-render-start");
+  }
+
   const [cellFormatSession, setCellFormatSession] = useState<CellFormatSession | null>(null);
   const [chartEditorSession, setChartEditorSession] = useState<ChartEditorSession | null>(null);
   const [formulaInputValue, setFormulaInputValue] = useState("");
@@ -664,6 +677,14 @@ export default function App() {
       pendingRangeRequestIdRef.current = requestId;
 
       try {
+        if (!didLogInitialRangeStart) {
+          didLogInitialRangeStart = true;
+          window.appShell.logStartupTiming(
+            "initial-range-request-start",
+            `sheetId=${request.sheetId} startColumn=${request.startColumn} startRow=${request.startRow} columnCount=${request.columnCount} rowCount=${request.rowCount}`,
+          );
+        }
+
         const [rawRange, displayRange, styleRange] = await Promise.all([
           window.appShell.getSheetRange(request),
           window.appShell.getSheetDisplayRange(request),
@@ -678,7 +699,23 @@ export default function App() {
         displayRangeCacheRef.current = displayRange;
         styleRangeCacheRef.current = styleRange;
         setViewNonce((current) => current + 1);
+
+        if (!didLogInitialRangeDone) {
+          didLogInitialRangeDone = true;
+          window.appShell.logStartupTiming(
+            "initial-range-request-done",
+            `sheetId=${request.sheetId} columnCount=${request.columnCount} rowCount=${request.rowCount}`,
+          );
+        }
       } catch (error) {
+        if (!didLogInitialRangeDone) {
+          didLogInitialRangeDone = true;
+          window.appShell.logStartupTiming(
+            "initial-range-request-failed",
+            error instanceof Error ? error.message : "unknown error",
+          );
+        }
+
         pushErrorToast(error);
       }
     },
@@ -1694,6 +1731,11 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
+    if (!didLogInitialWorkbookSummaryStart) {
+      didLogInitialWorkbookSummaryStart = true;
+      window.appShell.logStartupTiming("initial-workbook-summary-request-start");
+    }
+
     void window.appShell
       .getWorkbookSummary()
       .then((summary) => {
@@ -1702,10 +1744,26 @@ export default function App() {
         }
 
         setSheetSummary(summary);
+
+        if (!didLogInitialWorkbookSummaryDone) {
+          didLogInitialWorkbookSummaryDone = true;
+          window.appShell.logStartupTiming(
+            "initial-workbook-summary-request-done",
+            `version=${summary.version} sheets=${summary.sheets.length} charts=${summary.charts.length}`,
+          );
+        }
       })
       .catch((error) => {
         if (!isMounted) {
           return;
+        }
+
+        if (!didLogInitialWorkbookSummaryDone) {
+          didLogInitialWorkbookSummaryDone = true;
+          window.appShell.logStartupTiming(
+            "initial-workbook-summary-request-failed",
+            error instanceof Error ? error.message : "unknown error",
+          );
         }
 
         pushErrorToast(error);
@@ -1790,6 +1848,11 @@ export default function App() {
     pendingSheetChartPreviewsRequestIdRef.current = requestId;
     setIsSheetChartPreviewsLoading(true);
 
+    if (!didLogInitialChartPreviewsStart) {
+      didLogInitialChartPreviewsStart = true;
+      window.appShell.logStartupTiming("initial-chart-previews-request-start", activeSheet.id);
+    }
+
     void window.appShell
       .getSheetChartPreviews(activeSheet.id)
       .then((result) => {
@@ -1801,6 +1864,14 @@ export default function App() {
         setSelectedChartId((current) =>
           result.previews.some((preview) => preview.chart.id === current) ? current : null,
         );
+
+        if (!didLogInitialChartPreviewsDone) {
+          didLogInitialChartPreviewsDone = true;
+          window.appShell.logStartupTiming(
+            "initial-chart-previews-request-done",
+            `sheetId=${activeSheet.id} charts=${result.previews.length}`,
+          );
+        }
       })
       .catch((error) => {
         if (pendingSheetChartPreviewsRequestIdRef.current !== requestId) {
@@ -1809,6 +1880,15 @@ export default function App() {
 
         setSheetChartPreviews(null);
         setSelectedChartId(null);
+
+        if (!didLogInitialChartPreviewsDone) {
+          didLogInitialChartPreviewsDone = true;
+          window.appShell.logStartupTiming(
+            "initial-chart-previews-request-failed",
+            error instanceof Error ? error.message : "unknown error",
+          );
+        }
+
         pushErrorToast(error);
       })
       .finally(() => {
