@@ -8,6 +8,7 @@ import type {
   CellDataRequest,
   CellDataResult,
   ClearRangeRequest,
+  ControlAppStatus,
   ControlServerInfo,
   CopyRangeRequest,
   CopyRangeResult,
@@ -238,6 +239,10 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<WorkbookSummary>("getWorkbookSummary");
   }
 
+  async getAppStatus() {
+    return this.call<ControlAppStatus>("getAppStatus");
+  }
+
   async importCsvFile(request: ImportCsvFileRequest) {
     return this.call<CsvFileOperationResult>("importCsvFile", request);
   }
@@ -252,6 +257,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async saveWorkbookFile(request: SaveWorkbookFileRequest) {
     return this.call<WorkbookFileOperationResult>("saveWorkbookFile", request);
+  }
+
+  async showApp() {
+    return this.call<ControlAppStatus>("showApp");
   }
 
   async call<Result>(method: string, params?: unknown): Promise<Result> {

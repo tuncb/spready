@@ -28,6 +28,7 @@ import { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
   CellDataRequest,
+  ControlAppStatus,
   CutRangeRequest,
   SheetRangeRequest,
   WorkbookFileOperationResult,
@@ -43,11 +44,6 @@ const workbookController = new WorkbookController();
 const configuredControlPort = Number.parseInt(
   process.env.SPREADY_CONTROL_PORT ?? `${DEFAULT_CONTROL_PORT}`,
   10,
-);
-const controlServer = new SpreadyControlServer(
-  workbookController,
-  DEFAULT_CONTROL_HOST,
-  Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
 );
 let isChartDialogOpen = false;
 
@@ -97,6 +93,48 @@ function getTargetWindow(browserWindow?: BrowserWindow | null): BrowserWindow | 
     null
   );
 }
+
+function getControlAppStatus(): ControlAppStatus {
+  const windows = BrowserWindow.getAllWindows();
+  const visibleWindows = windows.filter((window) => window.isVisible() && !window.isMinimized());
+  const readyVisibleWindows = visibleWindows.filter((window) => !window.webContents.isLoading());
+  const focusedWindows = windows.filter((window) => window.isFocused());
+
+  return {
+    focusedWindowCount: focusedWindows.length,
+    frontendVisible: readyVisibleWindows.length > 0,
+    visibleWindowCount: visibleWindows.length,
+    windowCount: windows.length,
+  };
+}
+
+function showAppWindow() {
+  const targetWindow = BrowserWindow.getAllWindows()[0] ?? createWindow();
+
+  if (targetWindow.isMinimized()) {
+    targetWindow.restore();
+  }
+
+  if (!targetWindow.isVisible() && !targetWindow.webContents.isLoading()) {
+    targetWindow.show();
+  }
+
+  if (targetWindow.isVisible()) {
+    targetWindow.focus();
+  }
+
+  return getControlAppStatus();
+}
+
+const controlServer = new SpreadyControlServer(
+  workbookController,
+  DEFAULT_CONTROL_HOST,
+  Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
+  {
+    getAppStatus: getControlAppStatus,
+    showApp: showAppWindow,
+  },
+);
 
 function sendMenuAction(action: AppMenuAction, browserWindow?: BrowserWindow | null) {
   if (isChartDialogOpen) {

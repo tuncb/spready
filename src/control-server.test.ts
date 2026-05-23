@@ -117,8 +117,10 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
       columnIndex: 2,
       rowIndex: 0,
     });
+    const appStatus = await client.getAppStatus();
 
     assert.ok(methods.includes("getCellData"));
+    assert.ok(methods.includes("getAppStatus"));
     assert.ok(methods.includes("getSheetDisplayRange"));
     assert.ok(methods.includes("copyRange"));
     assert.ok(methods.includes("cutRange"));
@@ -126,6 +128,13 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.ok(methods.includes("clearRange"));
     assert.ok(methods.includes("getSheetStyleRange"));
     assert.ok(methods.includes("formatCells"));
+    assert.ok(methods.includes("showApp"));
+    assert.deepEqual(appStatus, {
+      focusedWindowCount: 0,
+      frontendVisible: false,
+      visibleWindowCount: 0,
+      windowCount: 0,
+    });
     assert.equal(rawCopy.text, "4\t5\t=A1+B1");
     assert.equal(displayCopy.text, "4\t5\t9");
     assert.equal(cutResult.text, "4\t5\t9");

@@ -36,7 +36,7 @@ Show wrapper options:
 npm run mcp:stdio -- -- --help
 ```
 
-The wrapper exposes MCP tools, resources, and prompts over stdio for external harnesses. If Spready is already running, the wrapper connects to its local control server. If Spready is not running, the wrapper stays available and the LLM can call `open_spready_app` to launch the desktop app and connect to its TCP control server.
+The wrapper exposes MCP tools, resources, and prompts over stdio for external harnesses. If Spready is already running, the wrapper connects to its local control server. If Spready is not running, the wrapper stays available and the LLM can call `open_spready_app` to launch the desktop app, show its frontend window, and connect to its TCP control server.
 
 To launch the Electron app immediately during wrapper startup, pass `--openApp`:
 
@@ -51,7 +51,7 @@ Connection discovery order:
 - temp discovery file at `os.tmpdir()/spready-control.json`
 - default `127.0.0.1:45731`
 
-When `open_spready_app` or `--openApp` launches the app, the wrapper waits for a freshly written discovery file from the launched app. This allows multiple Spready instances to fall back to different local ports without the MCP wrapper attaching to a stale instance.
+When `open_spready_app` or `--openApp` launches the app, the wrapper waits for a freshly written discovery file from the launched app, then verifies that TCP reports a visible frontend window. This allows multiple Spready instances to fall back to different local ports without the MCP wrapper attaching to a stale instance.
 
 Example harness config:
 
@@ -126,6 +126,7 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 
 - `ping`
 - `listMethods`
+- `getAppStatus`
 - `getControlInfo`
 - `getWorkbookSummary`
 - `getCellData`
@@ -147,9 +148,13 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `createNewWorkbook`
 - `openWorkbookFile`
 - `saveWorkbookFile`
+- `showApp`
 - `importCsvFile`
 - `exportCsvFile`
 - `applyTransaction`
+
+`getAppStatus` reports whether the Electron frontend has a visible window. `showApp` asks the
+desktop app to create, restore, show, and focus a window, then returns the latest app status.
 
 For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, you can pass
 `sheetId` explicitly. If you omit `sheetId`, the active sheet is used.
@@ -318,6 +323,7 @@ The stdio MCP wrapper currently exposes:
 `format_cells` applies common cell styling without requiring callers to build transaction operations. Merge mode preserves omitted style properties.
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
+`open_spready_app` now returns success only after TCP reports that an Electron frontend window is visible.
 
 Display reads evaluate the workbook formula engine used by the app UI, including arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, reference intersection, parenthesized reference union, core math/logical/text functions, date/time functions such as `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, and `DAY`, and lookup functions such as `INDEX`, `MATCH`, `XLOOKUP`, and `VLOOKUP`.
 Raw reads continue to preserve the stored input exactly as written.

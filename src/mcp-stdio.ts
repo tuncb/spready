@@ -347,7 +347,15 @@ const controlTargetSchema = z.object({
   source: z.enum(["argv", "default", "discovery", "env"]),
 });
 
+const controlAppStatusSchema = z.object({
+  focusedWindowCount: z.int().min(0),
+  frontendVisible: z.boolean(),
+  visibleWindowCount: z.int().min(0),
+  windowCount: z.int().min(0),
+});
+
 const connectionStatusSchema = z.object({
+  appStatus: controlAppStatusSchema.optional(),
   connected: z.boolean(),
   lastError: z.string().optional(),
   state: z.enum(["connected", "connecting", "disconnected", "launching"]),
@@ -524,7 +532,7 @@ const guideResource = {
     {
       defaultsToActiveSheet: false,
       description:
-        "Connect to a running Spready desktop app, or launch one and connect to its TCP control server.",
+        "Connect to a running Spready desktop app, or launch one, show the frontend window, and connect to its TCP control server.",
       name: "open_spready_app",
       readOnly: false,
     },
@@ -716,7 +724,7 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 ## Tools
 
 - get_spready_connection_status: Return whether this MCP wrapper is connected to a Spready desktop app.
-- open_spready_app: Connect to a running Spready desktop app, or launch one and connect to its TCP control server.
+- open_spready_app: Connect to a running Spready desktop app, or launch one, show the frontend window, and connect to its TCP control server.
 - get_workbook_summary: Return workbook metadata including active sheet, version, and sheet sizes.
 - create_new_workbook: Create a new blank workbook and replace the in-app workbook state.
 - open_workbook_file: Open a native Spready workbook file and replace the in-app workbook state.
@@ -956,7 +964,7 @@ async function main() {
         readOnlyHint: false,
       },
       description:
-        "Connect to a running Spready desktop app, or launch one and connect to its TCP control server.",
+        "Connect to a running Spready desktop app, or launch one, show the frontend window, and connect to its TCP control server.",
       outputSchema: openSpreadyAppResultSchema,
     },
     async () => {
@@ -1089,7 +1097,7 @@ async function main() {
           {
             defaultsToActiveSheet: false,
             description:
-              "Connect to a running Spready desktop app, or launch one and connect to its TCP control server.",
+              "Connect to a running Spready desktop app, or launch one, show the frontend window, and connect to its TCP control server.",
             name: "open_spready_app",
             readOnly: false,
             useWhen:

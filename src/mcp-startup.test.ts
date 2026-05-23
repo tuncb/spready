@@ -103,6 +103,30 @@ test("resolveSpreadyAppLaunchCommand uses an explicit app path and forwards requ
   }
 });
 
+test("resolveSpreadyAppLaunchCommand uses cmd.exe for Windows npm dev launches", async () => {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-mcp-startup-"));
+
+  await fs.writeFile(
+    path.join(tempDirectory, "package.json"),
+    JSON.stringify({ name: "spready" }),
+    "utf8",
+  );
+
+  try {
+    const command = await resolveSpreadyAppLaunchCommand({
+      cwd: tempDirectory,
+      env: {},
+      platform: "win32",
+    });
+
+    assert.equal(command.command, process.env.ComSpec ?? "cmd.exe");
+    assert.deepEqual(command.args, ["/d", "/s", "/c", "npm.cmd run start"]);
+    assert.equal(command.cwd, tempDirectory);
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
+});
+
 test("waitForControlTarget resolves once the TCP control server accepts connections", async () => {
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);

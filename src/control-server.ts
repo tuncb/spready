@@ -4,6 +4,7 @@ import type { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
   ClearRangeRequest,
+  ControlAppStatus,
   ControlServerInfo,
   CopyRangeRequest,
   CreateChartRequest,
@@ -44,17 +45,38 @@ type ControlEvent = {
 
 const CONTROL_PROTOCOL = "spready-control-v1";
 
+type SpreadyControlServerOptions = {
+  getAppStatus?: () => ControlAppStatus;
+  showApp?: () => ControlAppStatus | Promise<ControlAppStatus | void> | void;
+};
+
+const DEFAULT_APP_STATUS: ControlAppStatus = {
+  focusedWindowCount: 0,
+  frontendVisible: false,
+  visibleWindowCount: 0,
+  windowCount: 0,
+};
+
 export class SpreadyControlServer {
   #clients = new Set<Socket>();
   #controller: WorkbookController;
+  #getAppStatus: () => ControlAppStatus;
   #host: string;
   #port: number;
   #server?: net.Server;
+  #showApp?: () => ControlAppStatus | Promise<ControlAppStatus | void> | void;
 
-  constructor(controller: WorkbookController, host: string, port: number) {
+  constructor(
+    controller: WorkbookController,
+    host: string,
+    port: number,
+    options: SpreadyControlServerOptions = {},
+  ) {
     this.#controller = controller;
+    this.#getAppStatus = options.getAppStatus ?? (() => DEFAULT_APP_STATUS);
     this.#host = host;
     this.#port = port;
+    this.#showApp = options.showApp;
   }
 
   getInfo(): ControlServerInfo {
@@ -256,6 +278,8 @@ export class SpreadyControlServer {
         return this.#controller.getChartPreview((params as { chartId: string }).chartId);
       case "getControlInfo":
         return this.getInfo();
+      case "getAppStatus":
+        return this.#getAppStatus();
       case "getSheetCsv":
         return this.#controller.getSheetCsv((params as { sheetId?: string } | undefined)?.sheetId);
       case "getSheetCharts":
@@ -284,6 +308,11 @@ export class SpreadyControlServer {
         return this.#controller.pasteRange(params as PasteRangeRequest);
       case "saveWorkbookFile":
         return this.#controller.saveWorkbookFile(params as SaveWorkbookFileRequest);
+      case "showApp": {
+        await this.#showApp?.();
+
+        return this.#getAppStatus();
+      }
       case "listMethods":
         return [
           "applyTransaction",
@@ -297,6 +326,7 @@ export class SpreadyControlServer {
           "getCellData",
           "getChart",
           "getChartPreview",
+          "getAppStatus",
           "getControlInfo",
           "getSheetCsv",
           "getSheetCharts",
@@ -312,6 +342,7 @@ export class SpreadyControlServer {
           "pasteRange",
           "ping",
           "saveWorkbookFile",
+          "showApp",
         ];
       case "ping":
         return {

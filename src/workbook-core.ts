@@ -12,6 +12,13 @@ export interface ControlServerInfo {
   protocol: "jsonl";
 }
 
+export interface ControlAppStatus {
+  focusedWindowCount: number;
+  frontendVisible: boolean;
+  visibleWindowCount: number;
+  windowCount: number;
+}
+
 export interface WorkbookSheet {
   id: string;
   name: string;

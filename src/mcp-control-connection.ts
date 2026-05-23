@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { openAppAndWaitForControlTarget, type McpStartupOptions } from "./mcp-startup";
 import { resolveControlTarget, SpreadyControlClient, type ControlTarget } from "./control-client";
 import { formatControlConnectionError } from "./mcp-control-errors";
-import type { WorkbookSummary } from "./workbook-core";
+import type { ControlAppStatus, WorkbookSummary } from "./workbook-core";
 
 type ConnectionState = "connected" | "connecting" | "disconnected" | "launching";
 
@@ -13,6 +13,7 @@ type ConnectionResult = {
 };
 
 type ConnectionStatus = {
+  appStatus?: ControlAppStatus;
   connected: boolean;
   lastError?: string;
   state: ConnectionState;
@@ -29,7 +30,14 @@ type ControlConnectionDependencies = {
   resolveControlTarget?: typeof resolveControlTarget;
 };
 
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export class McpControlConnection extends EventEmitter {
+  #appStatus?: ControlAppStatus;
   #client?: SpreadyControlClient;
   #createClient: (target: ControlTarget) => SpreadyControlClient;
   #lastError?: string;
@@ -58,6 +66,10 @@ export class McpControlConnection extends EventEmitter {
 
     if (this.#lastError) {
       status.lastError = this.#lastError;
+    }
+
+    if (this.#appStatus) {
+      status.appStatus = this.#appStatus;
     }
 
     if (this.#target) {
@@ -102,23 +114,32 @@ export class McpControlConnection extends EventEmitter {
 
   async openAppAndConnect(): Promise<ConnectionResult> {
     if (this.#client && this.#target && this.#state === "connected") {
+      await this.#showConnectedApp();
+
       return {
         launched: false,
         target: this.#target,
       };
     }
 
+    let existingResult: ConnectionResult;
+
     try {
-      return await this.connectToExisting();
+      existingResult = await this.connectToExisting();
     } catch {
       // Fall through to launching a fresh app. The launch failure, if any, becomes public.
+      return this.launchAppAndConnect();
     }
 
-    return this.launchAppAndConnect();
+    await this.#showConnectedApp();
+
+    return existingResult;
   }
 
   async launchAppAndConnect(): Promise<ConnectionResult> {
     if (this.#client && this.#target && this.#state === "connected") {
+      await this.#showConnectedApp();
+
       return {
         launched: false,
         target: this.#target,
@@ -129,6 +150,7 @@ export class McpControlConnection extends EventEmitter {
       const target = await this.#openAppAndWaitForControlTarget(this.#startupOptions);
 
       await this.#connectClient(target);
+      await this.#showConnectedApp();
 
       return {
         launched: true,
@@ -169,9 +191,62 @@ export class McpControlConnection extends EventEmitter {
         return;
       }
 
+      this.#appStatus = undefined;
       this.#client = undefined;
       this.#state = "disconnected";
     });
+  }
+
+  async #showConnectedApp() {
+    const client = this.requireConnectedClient();
+    const deadline = Date.now() + this.#startupOptions.openAppTimeoutMs;
+    let lastError: unknown;
+
+    try {
+      this.#appStatus = await client.showApp();
+    } catch (error) {
+      lastError = error;
+    }
+
+    while (Date.now() <= deadline) {
+      if (this.#appStatus?.frontendVisible) {
+        return;
+      }
+
+      try {
+        this.#appStatus = await client.getAppStatus();
+      } catch (error) {
+        lastError = error;
+      }
+
+      if (this.#appStatus?.frontendVisible) {
+        return;
+      }
+
+      await sleep(200);
+    }
+
+    const detail =
+      lastError instanceof Error
+        ? ` Last app status error: ${lastError.message}`
+        : this.#appStatus
+          ? ` Last app status: ${JSON.stringify(this.#appStatus)}`
+          : "";
+
+    const error = new Error(
+      `Spready connected over TCP, but no visible frontend window was reported within ${this.#startupOptions.openAppTimeoutMs}ms.${detail}`,
+    );
+
+    this.#lastError = error.message;
+    this.#appStatus = undefined;
+
+    if (this.#client === client) {
+      this.#client = undefined;
+      this.#state = "disconnected";
+      await client.close().catch(() => undefined);
+    }
+
+    throw error;
   }
 
   #formatError(error: unknown) {
@@ -196,6 +271,7 @@ export class McpControlConnection extends EventEmitter {
         return result;
       })
       .catch((error: unknown) => {
+        this.#appStatus = undefined;
         this.#client = undefined;
         this.#state = "disconnected";
         this.#lastError = this.#formatError(error);

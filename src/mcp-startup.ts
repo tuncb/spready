@@ -234,8 +234,18 @@ async function pathExists(filePath: string) {
   }
 }
 
-function getNpmCommand(platform = process.platform) {
-  return platform === "win32" ? "npm.cmd" : "npm";
+function getNpmStartLaunchCommand(platform = process.platform) {
+  if (platform === "win32") {
+    return {
+      args: ["/d", "/s", "/c", "npm.cmd run start"],
+      command: process.env.ComSpec ?? "cmd.exe",
+    };
+  }
+
+  return {
+    args: ["run", "start"],
+    command: "npm",
+  };
 }
 
 async function isSpreadyRepository(cwd: string) {
@@ -306,9 +316,11 @@ export async function resolveSpreadyAppLaunchCommand(
   }
 
   if (await isSpreadyRepository(cwd)) {
+    const npmStart = getNpmStartLaunchCommand(platform);
+
     return {
-      args: ["run", "start"],
-      command: getNpmCommand(platform),
+      args: npmStart.args,
+      command: npmStart.command,
       cwd,
       env,
     };
