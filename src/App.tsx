@@ -12,6 +12,8 @@ import DataEditor, {
 import {
   type ChangeEvent,
   type KeyboardEvent,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -25,7 +27,6 @@ import { CellFormatDialog } from "./CellFormatDialog";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
 import { RenameSheetDialog } from "./RenameSheetDialog";
-import { WorkbookChartOverlay } from "./WorkbookChartOverlay";
 import {
   getColumnTitle,
   isFormulaInput,
@@ -45,6 +46,12 @@ import {
 } from "./workbook-core";
 import { ToastViewport } from "./ToastViewport";
 import { enqueueToast, removeToast, type ToastNotification } from "./toast-state";
+
+const LazyWorkbookChartOverlay = lazy(() =>
+  import("./WorkbookChartOverlay").then((module) => ({
+    default: module.WorkbookChartOverlay,
+  })),
+);
 
 const DEFAULT_COLUMN_WIDTH = 140;
 const DEFAULT_CELL_FONT_SIZE = 13;
@@ -637,6 +644,7 @@ export default function App() {
     () => (activeSheet ? getCurrentSelectionRange(gridSelection, activeSheet.id) : null),
     [activeSheet, gridSelection],
   );
+  const shouldRenderChartOverlay = (sheetChartPreviews?.previews.length ?? 0) > 0;
   const dismissToast = useCallback((toastId: string) => {
     setToasts((current) => removeToast(current, toastId));
   }, []);
@@ -2121,17 +2129,21 @@ export default function App() {
             theme={GRID_THEME}
             width="100%"
           />
-          <WorkbookChartOverlay
-            gridRef={gridRef}
-            isLoading={isSheetChartPreviewsLoading}
-            onCommitChartLayout={commitChartLayout}
-            onEditChart={openEditChartEditor}
-            onSelectChart={setSelectedChartId}
-            previews={sheetChartPreviews?.previews ?? []}
-            selectedChartId={selectedChartId}
-            surfaceRef={sheetSurfaceRef}
-            viewportNonce={gridViewportNonce}
-          />
+          {shouldRenderChartOverlay ? (
+            <Suspense fallback={null}>
+              <LazyWorkbookChartOverlay
+                gridRef={gridRef}
+                isLoading={isSheetChartPreviewsLoading}
+                onCommitChartLayout={commitChartLayout}
+                onEditChart={openEditChartEditor}
+                onSelectChart={setSelectedChartId}
+                previews={sheetChartPreviews?.previews ?? []}
+                selectedChartId={selectedChartId}
+                surfaceRef={sheetSurfaceRef}
+                viewportNonce={gridViewportNonce}
+              />
+            </Suspense>
+          ) : null}
         </section>
       </div>
 
