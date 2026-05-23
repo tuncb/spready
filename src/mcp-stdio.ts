@@ -9,7 +9,7 @@ import * as z from "zod/v4";
 
 import { CONTROL_DISCOVERY_FILE_PATH } from "./control-discovery";
 import { McpControlConnection } from "./mcp-control-connection";
-import { parseMcpStartupOptions } from "./mcp-startup";
+import { getMcpStdioHelpText, parseMcpStartupOptions } from "./mcp-startup";
 import {
   chartGuideTools,
   registerChartTools,
@@ -814,6 +814,12 @@ function createTextResult<Result extends object>(payload: Result) {
 
 async function main() {
   const startupOptions = parseMcpStartupOptions(process.argv.slice(2));
+
+  if (startupOptions.help) {
+    console.log(getMcpStdioHelpText(process.argv[1] ?? "spready-mcp"));
+    return;
+  }
+
   const controlConnection = new McpControlConnection(startupOptions);
 
   if (startupOptions.openApp) {

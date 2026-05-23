@@ -11,6 +11,7 @@ const DEFAULT_POLL_INTERVAL_MS = 200;
 
 export interface McpStartupOptions {
   appPath?: string;
+  help?: boolean;
   host?: string;
   openApp: boolean;
   openAppTimeoutMs: number;
@@ -107,12 +108,18 @@ function parsePort(portValue: string) {
 
 export function parseMcpStartupOptions(argv: string[]): McpStartupOptions {
   const options: McpStartupOptions = {
+    help: false,
     openApp: false,
     openAppTimeoutMs: DEFAULT_OPEN_APP_TIMEOUT_MS,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
+
+    if (token === "-h") {
+      options.help = true;
+      continue;
+    }
 
     if (!token.startsWith("--")) {
       continue;
@@ -121,6 +128,13 @@ export function parseMcpStartupOptions(argv: string[]): McpStartupOptions {
     const name = getArgumentName(token);
 
     switch (name) {
+      case "help":
+        if (getInlineArgumentValue(token) !== undefined) {
+          throw new Error(`--${name} does not accept a value.`);
+        }
+
+        options.help = true;
+        break;
       case "app-path":
       case "appPath": {
         const parsed = readArgumentValue(argv, index, token);
@@ -167,6 +181,27 @@ export function parseMcpStartupOptions(argv: string[]): McpStartupOptions {
   }
 
   return options;
+}
+
+export function getMcpStdioHelpText(commandName = "spready-mcp") {
+  return [
+    "Spready MCP stdio wrapper",
+    "",
+    `Usage: ${commandName} [options]`,
+    "",
+    "Options:",
+    "  -h, --help                      Show this help message.",
+    "      --openApp, --open-app       Launch Spready during wrapper startup.",
+    "      --appPath, --app-path PATH  Path to the Spready app executable or .app bundle.",
+    "      --host HOST                 TCP control server host to connect to or launch with.",
+    "      --port PORT                 TCP control server port to connect to or launch with.",
+    "      --openAppTimeoutMs MS       Milliseconds to wait for a launched app control server.",
+    "      --open-app-timeout-ms MS    Dashed alias for --openAppTimeoutMs.",
+    "",
+    "The wrapper speaks MCP over stdio. Without --openApp, it connects to an existing",
+    "Spready control server when one is available; otherwise clients can call the",
+    "open_spready_app MCP tool after startup.",
+  ].join("\n");
 }
 
 export function getPackagedAppExecutablePath(appPath: string, platform = process.platform) {

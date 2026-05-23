@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  getMcpStdioHelpText,
   getPackagedAppExecutablePath,
   parseMcpStartupOptions,
   resolveSpreadyAppLaunchCommand,
@@ -26,6 +27,7 @@ test("parseMcpStartupOptions reads open app and control connection flags", () =>
     ]),
     {
       appPath: "C:\\Spready\\Spready.exe",
+      help: false,
       host: "127.0.0.1",
       openApp: true,
       openAppTimeoutMs: 5000,
@@ -37,9 +39,33 @@ test("parseMcpStartupOptions reads open app and control connection flags", () =>
 test("parseMcpStartupOptions accepts dashed aliases", () => {
   assert.deepEqual(parseMcpStartupOptions(["--open-app", "--app-path=/tmp/Spready"]), {
     appPath: "/tmp/Spready",
+    help: false,
     openApp: true,
     openAppTimeoutMs: 20000,
   });
+});
+
+test("parseMcpStartupOptions recognizes help flags", () => {
+  assert.deepEqual(parseMcpStartupOptions(["--help"]), {
+    help: true,
+    openApp: false,
+    openAppTimeoutMs: 20000,
+  });
+  assert.deepEqual(parseMcpStartupOptions(["-h"]), {
+    help: true,
+    openApp: false,
+    openAppTimeoutMs: 20000,
+  });
+});
+
+test("getMcpStdioHelpText documents startup options", () => {
+  const helpText = getMcpStdioHelpText("spready-mcp");
+
+  assert.match(helpText, /Usage: spready-mcp \[options\]/);
+  assert.match(helpText, /--help/);
+  assert.match(helpText, /--openApp/);
+  assert.match(helpText, /--appPath/);
+  assert.match(helpText, /--open-app-timeout-ms/);
 });
 
 test("getPackagedAppExecutablePath resolves macOS app bundle executables", () => {

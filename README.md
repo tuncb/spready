@@ -30,6 +30,12 @@ Run the wrapper:
 npm run mcp:stdio
 ```
 
+Show wrapper options:
+
+```sh
+npm run mcp:stdio -- -- --help
+```
+
 The wrapper exposes MCP tools, resources, and prompts over stdio for external harnesses. If Spready is already running, the wrapper connects to its local control server. If Spready is not running, the wrapper stays available and the LLM can call `open_spready_app` to launch the desktop app and connect to its TCP control server.
 
 To launch the Electron app immediately during wrapper startup, pass `--openApp`:
