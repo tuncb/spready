@@ -47,6 +47,7 @@ const configuredControlPort = Number.parseInt(
   10,
 );
 let isChartDialogOpen = false;
+let isAppShowRequested = false;
 
 if (started) {
   app.quit();
@@ -149,27 +150,51 @@ function getControlAppStatus(): ControlAppStatus {
   };
 }
 
-function showAppWindow() {
-  startupTimer.log("show-app-window-start");
-  const targetWindow = BrowserWindow.getAllWindows()[0] ?? createWindow();
+function formatControlAppStatus(status: ControlAppStatus) {
+  return `frontendVisible=${status.frontendVisible} windowCount=${status.windowCount} visibleWindowCount=${status.visibleWindowCount} focusedWindowCount=${status.focusedWindowCount}`;
+}
+
+function flushPendingAppShowRequest(targetWindow: BrowserWindow, reason: string) {
+  if (!isAppShowRequested || targetWindow.isDestroyed()) {
+    return;
+  }
 
   if (targetWindow.isMinimized()) {
     targetWindow.restore();
   }
 
-  if (!targetWindow.isVisible() && !targetWindow.webContents.isLoading()) {
+  if (targetWindow.webContents.isLoading()) {
+    startupTimer.log(
+      "show-app-window-deferred",
+      `windowId=${targetWindow.id} reason=${reason} loading=true visible=${targetWindow.isVisible()}`,
+    );
+    return;
+  }
+
+  if (!targetWindow.isVisible()) {
     targetWindow.show();
+    startupTimer.log("show-app-window-show-called", `windowId=${targetWindow.id} reason=${reason}`);
   }
 
   if (targetWindow.isVisible()) {
     targetWindow.focus();
+    isAppShowRequested = false;
+    startupTimer.log(
+      "show-app-window-request-satisfied",
+      `windowId=${targetWindow.id} reason=${reason}`,
+    );
   }
+}
+
+function showAppWindow() {
+  startupTimer.log("show-app-window-start");
+  const targetWindow = BrowserWindow.getAllWindows()[0] ?? createWindow();
+  isAppShowRequested = true;
+
+  flushPendingAppShowRequest(targetWindow, "show-app");
 
   const status = getControlAppStatus();
-  startupTimer.log(
-    "show-app-window-done",
-    `frontendVisible=${status.frontendVisible} windowCount=${status.windowCount} visibleWindowCount=${status.visibleWindowCount} focusedWindowCount=${status.focusedWindowCount}`,
-  );
+  startupTimer.log("show-app-window-done", formatControlAppStatus(status));
 
   return status;
 }
@@ -679,10 +704,12 @@ const createWindow = () => {
 
   mainWindow.webContents.once("did-finish-load", () => {
     startupTimer.log("main-window-did-finish-load", `windowId=${mainWindow.id}`);
+    flushPendingAppShowRequest(mainWindow, "did-finish-load");
   });
 
   mainWindow.webContents.once("did-stop-loading", () => {
     startupTimer.log("main-window-did-stop-loading", `windowId=${mainWindow.id}`);
+    flushPendingAppShowRequest(mainWindow, "did-stop-loading");
   });
 
   mainWindow.webContents.once("did-fail-load", (_event, errorCode, errorDescription) => {
@@ -733,8 +760,15 @@ const createWindow = () => {
 
   mainWindow.once("ready-to-show", () => {
     startupTimer.log("main-window-ready-to-show", `windowId=${mainWindow.id}`);
-    mainWindow.show();
-    startupTimer.log("main-window-show-called", `windowId=${mainWindow.id}`);
+    if (isAppShowRequested) {
+      flushPendingAppShowRequest(mainWindow, "ready-to-show");
+      return;
+    }
+
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+      startupTimer.log("main-window-show-called", `windowId=${mainWindow.id}`);
+    }
   });
 
   mainWindow.on("close", (event) => {
