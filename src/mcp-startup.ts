@@ -5,6 +5,7 @@ import path from "node:path";
 import { readDiscoveredControlInfo } from "./control-discovery";
 import { resolveControlTarget, SpreadyControlClient, type ControlTarget } from "./control-client";
 import { formatControlConnectionError } from "./mcp-control-errors";
+import type { StartupTimingLogger } from "./startup-timing";
 
 const APP_DISPLAY_NAME = "Spready";
 const DEFAULT_OPEN_APP_TIMEOUT_MS = 20000;
@@ -39,6 +40,7 @@ type ResolveAppLaunchOptions = {
 type WaitForControlTargetOptions = {
   host?: string;
   launchedAfter?: Date;
+  logger?: StartupTimingLogger;
   pollIntervalMs?: number;
   port?: number;
   preferFreshDiscovery?: boolean;
@@ -400,24 +402,65 @@ function sleep(ms: number) {
   });
 }
 
+function formatControlTarget(target: ControlTarget) {
+  return `tcp://${target.host}:${target.port} source=${target.source}`;
+}
+
+function formatLaunchCommand(command: AppLaunchCommand) {
+  const cwd = command.cwd ? ` cwd=${command.cwd}` : "";
+  const args = command.args.length > 0 ? ` args=${JSON.stringify(command.args)}` : "";
+
+  return `command=${command.command}${args}${cwd}`;
+}
+
 export async function waitForControlTarget(
   options: WaitForControlTargetOptions,
 ): Promise<ControlTarget> {
   const deadline = Date.now() + options.timeoutMs;
+  let attempts = 0;
   let lastError: unknown;
   let lastTarget: ControlTarget | null = null;
+  let nextProgressLogAt = Date.now() + 1000;
+
+  options.logger?.log(
+    "wait-control-target-start",
+    `timeoutMs=${options.timeoutMs} preferFreshDiscovery=${options.preferFreshDiscovery === true}`,
+  );
 
   while (Date.now() <= deadline) {
+    attempts += 1;
     const target = await resolveStartupTarget(options);
 
     if (target) {
+      const targetChanged =
+        !lastTarget || lastTarget.host !== target.host || lastTarget.port !== target.port;
+
       lastTarget = target;
+      if (targetChanged) {
+        options.logger?.log("wait-control-target-candidate", formatControlTarget(target));
+      }
+
       try {
         await connectAndClose(target);
+        options.logger?.log(
+          "wait-control-target-connected",
+          `${formatControlTarget(target)} attempts=${attempts}`,
+        );
         return target;
       } catch (error) {
         lastError = error;
       }
+    }
+
+    if (Date.now() >= nextProgressLogAt) {
+      const lastErrorDetail = lastError instanceof Error ? ` lastError=${lastError.message}` : "";
+      const lastTargetDetail = lastTarget ? ` lastTarget=${formatControlTarget(lastTarget)}` : "";
+
+      options.logger?.log(
+        "wait-control-target-polling",
+        `attempts=${attempts}${lastTargetDetail}${lastErrorDetail}`,
+      );
+      nextProgressLogAt += 1000;
     }
 
     await sleep(options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
@@ -428,18 +471,28 @@ export async function waitForControlTarget(
       ? ` ${formatControlConnectionError(lastTarget, lastError)}`
       : "";
 
+  options.logger?.log("wait-control-target-timeout", `attempts=${attempts}${detail}`);
+
   throw new Error(`Timed out waiting for the Spready control server.${detail}`);
 }
 
-export async function openAppAndWaitForControlTarget(options: McpStartupOptions) {
+export async function openAppAndWaitForControlTarget(
+  options: McpStartupOptions,
+  logger?: StartupTimingLogger,
+) {
+  logger?.log("resolve-launch-command-start");
   const command = await resolveSpreadyAppLaunchCommand(options);
+  logger?.log("resolve-launch-command-done", formatLaunchCommand(command));
   const launchedAfter = new Date();
 
+  logger?.log("launch-app-start");
   await launchSpreadyApp(command);
+  logger?.log("launch-app-spawned");
 
   return waitForControlTarget({
     host: options.host,
     launchedAfter,
+    logger,
     port: options.port,
     preferFreshDiscovery: true,
     timeoutMs: options.openAppTimeoutMs,

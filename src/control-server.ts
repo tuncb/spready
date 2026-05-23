@@ -1,5 +1,6 @@
 import net, { type Socket } from "node:net";
 
+import type { StartupTimingLogger } from "./startup-timing";
 import type { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
@@ -48,6 +49,7 @@ const CONTROL_PROTOCOL = "spready-control-v1";
 type SpreadyControlServerOptions = {
   getAppStatus?: () => ControlAppStatus;
   showApp?: () => ControlAppStatus | Promise<ControlAppStatus | void> | void;
+  startupTimer?: StartupTimingLogger;
 };
 
 const DEFAULT_APP_STATUS: ControlAppStatus = {
@@ -57,6 +59,12 @@ const DEFAULT_APP_STATUS: ControlAppStatus = {
   windowCount: 0,
 };
 
+function shouldLogControlRequest(method: string, durationMs: number) {
+  return (
+    ["getAppStatus", "getControlInfo", "ping", "showApp"].includes(method) || durationMs >= 1000
+  );
+}
+
 export class SpreadyControlServer {
   #clients = new Set<Socket>();
   #controller: WorkbookController;
@@ -65,6 +73,7 @@ export class SpreadyControlServer {
   #port: number;
   #server?: net.Server;
   #showApp?: () => ControlAppStatus | Promise<ControlAppStatus | void> | void;
+  #startupTimer?: StartupTimingLogger;
 
   constructor(
     controller: WorkbookController,
@@ -77,6 +86,7 @@ export class SpreadyControlServer {
     this.#host = host;
     this.#port = port;
     this.#showApp = options.showApp;
+    this.#startupTimer = options.startupTimer;
   }
 
   getInfo(): ControlServerInfo {
@@ -93,15 +103,20 @@ export class SpreadyControlServer {
 
   async start() {
     try {
+      this.#logStartup("tcp-listen-start", `host=${this.#host} port=${this.#port}`);
       await this.#listen(this.#port);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") {
         throw error;
       }
 
+      this.#logStartup("tcp-listen-port-in-use", `host=${this.#host} port=${this.#port}`);
+      this.#logStartup("tcp-listen-start", `host=${this.#host} port=0`);
       await this.#listen(0);
     }
 
+    const info = this.getInfo();
+    this.#logStartup("tcp-listen-done", `tcp://${info.host}:${info.port}`);
     this.#controller.on("changed", this.#handleWorkbookChanged);
   }
 
@@ -133,6 +148,7 @@ export class SpreadyControlServer {
   #handleConnection = (socket: Socket) => {
     this.#clients.add(socket);
     socket.setEncoding("utf8");
+    this.#logStartup("tcp-client-connected", `clients=${this.#clients.size}`);
 
     let buffer = "";
 
@@ -164,15 +180,18 @@ export class SpreadyControlServer {
 
     socket.on("close", () => {
       this.#clients.delete(socket);
+      this.#logStartup("tcp-client-closed", `clients=${this.#clients.size}`);
     });
 
     socket.on("error", () => {
       this.#clients.delete(socket);
+      this.#logStartup("tcp-client-error", `clients=${this.#clients.size}`);
     });
   };
 
   async #handleLine(socket: Socket, line: string) {
     let request: ControlRequest;
+    const requestStartedAt = Date.now();
 
     try {
       request = JSON.parse(line) as ControlRequest;
@@ -196,6 +215,11 @@ export class SpreadyControlServer {
 
     try {
       const result = await this.#dispatchRequest(request.method, request.params);
+      const durationMs = Date.now() - requestStartedAt;
+
+      if (shouldLogControlRequest(request.method, durationMs)) {
+        this.#logStartup("tcp-request-done", `method=${request.method} durationMs=${durationMs}`);
+      }
 
       this.#writeMessage(socket, {
         id: request.id ?? null,
@@ -203,6 +227,17 @@ export class SpreadyControlServer {
         result,
       } satisfies ControlSuccessResponse);
     } catch (error) {
+      const durationMs = Date.now() - requestStartedAt;
+
+      if (shouldLogControlRequest(request.method, durationMs)) {
+        this.#logStartup(
+          "tcp-request-failed",
+          `method=${request.method} durationMs=${durationMs} error=${
+            error instanceof Error ? error.message : "Request failed."
+          }`,
+        );
+      }
+
       this.#writeMessage(socket, {
         error: error instanceof Error ? error.message : "Request failed.",
         id: request.id ?? null,
@@ -247,6 +282,10 @@ export class SpreadyControlServer {
       payload: summary,
     });
   };
+
+  #logStartup(event: string, detail?: string) {
+    this.#startupTimer?.log(event, detail);
+  }
 
   async #dispatchRequest(method: string, params: unknown) {
     switch (method) {

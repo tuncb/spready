@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { openAppAndWaitForControlTarget, type McpStartupOptions } from "./mcp-startup";
 import { resolveControlTarget, SpreadyControlClient, type ControlTarget } from "./control-client";
 import { formatControlConnectionError } from "./mcp-control-errors";
+import type { StartupTimingLogger } from "./startup-timing";
 import type { ControlAppStatus, WorkbookSummary } from "./workbook-core";
 
 type ConnectionState = "connected" | "connecting" | "disconnected" | "launching";
@@ -28,6 +29,7 @@ type ControlConnectionDependencies = {
   createClient?: (target: ControlTarget) => SpreadyControlClient;
   openAppAndWaitForControlTarget?: typeof openAppAndWaitForControlTarget;
   resolveControlTarget?: typeof resolveControlTarget;
+  startupTimer?: StartupTimingLogger;
 };
 
 function sleep(ms: number) {
@@ -46,6 +48,7 @@ export class McpControlConnection extends EventEmitter {
   #resolveControlTarget: typeof resolveControlTarget;
   #startupOptions: McpStartupOptions;
   #state: ConnectionState = "disconnected";
+  #startupTimer?: StartupTimingLogger;
   #target?: ControlTarget;
 
   constructor(startupOptions: McpStartupOptions, dependencies: ControlConnectionDependencies = {}) {
@@ -56,6 +59,7 @@ export class McpControlConnection extends EventEmitter {
     this.#openAppAndWaitForControlTarget =
       dependencies.openAppAndWaitForControlTarget ?? openAppAndWaitForControlTarget;
     this.#resolveControlTarget = dependencies.resolveControlTarget ?? resolveControlTarget;
+    this.#startupTimer = dependencies.startupTimer;
   }
 
   getStatus(): ConnectionStatus {
@@ -98,11 +102,13 @@ export class McpControlConnection extends EventEmitter {
     }
 
     return this.#runExclusive("connecting", async () => {
+      this.#logStartup("connect-existing-resolve-target-start");
       const target = await this.#resolveControlTarget({
         host: this.#startupOptions.host,
         port: this.#startupOptions.port,
       });
 
+      this.#logStartup("connect-existing-resolve-target-done", this.#formatTarget(target));
       await this.#connectClient(target);
 
       return {
@@ -125,12 +131,15 @@ export class McpControlConnection extends EventEmitter {
     let existingResult: ConnectionResult;
 
     try {
+      this.#logStartup("open-app-connect-existing-start");
       existingResult = await this.connectToExisting();
     } catch {
       // Fall through to launching a fresh app. The launch failure, if any, becomes public.
+      this.#logStartup("open-app-connect-existing-failed");
       return this.launchAppAndConnect();
     }
 
+    this.#logStartup("open-app-connect-existing-done", this.#formatTarget(existingResult.target));
     await this.#showConnectedApp();
 
     return existingResult;
@@ -147,7 +156,11 @@ export class McpControlConnection extends EventEmitter {
     }
 
     return this.#runExclusive("launching", async () => {
-      const target = await this.#openAppAndWaitForControlTarget(this.#startupOptions);
+      this.#logStartup("launch-app-and-connect-start");
+      const target = await this.#openAppAndWaitForControlTarget(
+        this.#startupOptions,
+        this.#startupTimer,
+      );
 
       await this.#connectClient(target);
       await this.#showConnectedApp();
@@ -170,8 +183,11 @@ export class McpControlConnection extends EventEmitter {
     const client = this.#createClient(target);
 
     try {
+      this.#logStartup("tcp-connect-start", this.#formatTarget(target));
       await client.connect();
+      this.#logStartup("tcp-connect-done", this.#formatTarget(target));
     } catch (error) {
+      this.#logStartup("tcp-connect-failed", this.#formatError(error));
       throw new Error(formatControlConnectionError(target, error));
     }
 
@@ -201,15 +217,20 @@ export class McpControlConnection extends EventEmitter {
     const client = this.requireConnectedClient();
     const deadline = Date.now() + this.#startupOptions.openAppTimeoutMs;
     let lastError: unknown;
+    let nextProgressLogAt = Date.now() + 1000;
 
     try {
+      this.#logStartup("show-app-request-start");
       this.#appStatus = await client.showApp();
+      this.#logStartup("show-app-request-done", this.#formatAppStatus(this.#appStatus));
     } catch (error) {
       lastError = error;
+      this.#logStartup("show-app-request-failed", this.#formatError(error));
     }
 
     while (Date.now() <= deadline) {
       if (this.#appStatus?.frontendVisible) {
+        this.#logStartup("frontend-visible", this.#formatAppStatus(this.#appStatus));
         return;
       }
 
@@ -220,7 +241,18 @@ export class McpControlConnection extends EventEmitter {
       }
 
       if (this.#appStatus?.frontendVisible) {
+        this.#logStartup("frontend-visible", this.#formatAppStatus(this.#appStatus));
         return;
+      }
+
+      if (Date.now() >= nextProgressLogAt) {
+        const lastErrorDetail = lastError instanceof Error ? ` lastError=${lastError.message}` : "";
+
+        this.#logStartup(
+          "frontend-waiting",
+          `${this.#formatAppStatus(this.#appStatus)}${lastErrorDetail}`,
+        );
+        nextProgressLogAt += 1000;
       }
 
       await sleep(200);
@@ -239,6 +271,7 @@ export class McpControlConnection extends EventEmitter {
 
     this.#lastError = error.message;
     this.#appStatus = undefined;
+    this.#logStartup("frontend-visible-timeout", error.message);
 
     if (this.#client === client) {
       this.#client = undefined;
@@ -251,6 +284,22 @@ export class McpControlConnection extends EventEmitter {
 
   #formatError(error: unknown) {
     return error instanceof Error ? error.message : "unknown connection error";
+  }
+
+  #formatAppStatus(status?: ControlAppStatus) {
+    if (!status) {
+      return "status=unknown";
+    }
+
+    return `frontendVisible=${status.frontendVisible} windowCount=${status.windowCount} visibleWindowCount=${status.visibleWindowCount} focusedWindowCount=${status.focusedWindowCount}`;
+  }
+
+  #formatTarget(target: ControlTarget) {
+    return `tcp://${target.host}:${target.port} source=${target.source}`;
+  }
+
+  #logStartup(event: string, detail?: string) {
+    this.#startupTimer?.log(event, detail);
   }
 
   async #runExclusive(

@@ -15,6 +15,7 @@ import {
   formatReadyStartupLog,
 } from "./mcp-stdio-log";
 import { getMcpStdioHelpText, parseMcpStartupOptions } from "./mcp-startup";
+import { createStartupLogSink, STARTUP_TIMING_LOG_FILE_PATH, StartupTimer } from "./startup-timing";
 import {
   chartGuideTools,
   registerChartTools,
@@ -833,7 +834,13 @@ async function main() {
     return;
   }
 
-  const controlConnection = new McpControlConnection(startupOptions);
+  const startupTimer = new StartupTimer("spready-mcp", createStartupLogSink(console.error));
+  startupTimer.log(
+    "wrapper-start",
+    `pid=${process.pid} openApp=${startupOptions.openApp} host=${startupOptions.host ?? "default"} port=${startupOptions.port ?? "default"} timeoutMs=${startupOptions.openAppTimeoutMs} logFile=${STARTUP_TIMING_LOG_FILE_PATH}`,
+  );
+
+  const controlConnection = new McpControlConnection(startupOptions, { startupTimer });
   let wroteStartupWarning = false;
 
   if (startupOptions.openApp) {
@@ -1823,6 +1830,7 @@ async function main() {
   const transport = new StdioServerTransport();
 
   await server.connect(transport);
+  startupTimer.log("mcp-stdio-connected");
   const status = controlConnection.getStatus();
 
   if (status.connected && status.target) {

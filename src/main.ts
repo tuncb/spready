@@ -23,6 +23,7 @@ import {
 } from "./clipboard";
 import { SpreadyControlServer } from "./control-server";
 import { clearDiscoveredControlInfo, writeDiscoveredControlInfo } from "./control-discovery";
+import { createStartupLogSink, STARTUP_TIMING_LOG_FILE_PATH, StartupTimer } from "./startup-timing";
 import { formatWorkbookWindowTitle } from "./window-title";
 import { WorkbookController } from "./workbook-controller";
 import type {
@@ -52,6 +53,12 @@ if (started) {
 }
 
 app.setName(APP_DISPLAY_NAME);
+
+const startupTimer = new StartupTimer("spready-main", createStartupLogSink(console.log));
+startupTimer.log(
+  "process-start",
+  `pid=${process.pid} port=${Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort} logFile=${STARTUP_TIMING_LOG_FILE_PATH}`,
+);
 
 type SaveCsvFileArgs = {
   content: string;
@@ -109,6 +116,7 @@ function getControlAppStatus(): ControlAppStatus {
 }
 
 function showAppWindow() {
+  startupTimer.log("show-app-window-start");
   const targetWindow = BrowserWindow.getAllWindows()[0] ?? createWindow();
 
   if (targetWindow.isMinimized()) {
@@ -123,7 +131,13 @@ function showAppWindow() {
     targetWindow.focus();
   }
 
-  return getControlAppStatus();
+  const status = getControlAppStatus();
+  startupTimer.log(
+    "show-app-window-done",
+    `frontendVisible=${status.frontendVisible} windowCount=${status.windowCount} visibleWindowCount=${status.visibleWindowCount} focusedWindowCount=${status.focusedWindowCount}`,
+  );
+
+  return status;
 }
 
 const controlServer = new SpreadyControlServer(
@@ -133,6 +147,7 @@ const controlServer = new SpreadyControlServer(
   {
     getAppStatus: getControlAppStatus,
     showApp: showAppWindow,
+    startupTimer,
   },
 );
 
@@ -589,6 +604,7 @@ function buildAppMenu() {
 }
 
 const createWindow = () => {
+  startupTimer.log("create-window-start");
   let isClosePromptPending = false;
   let isCloseAuthorized = false;
   const mainWindow = new BrowserWindow({
@@ -608,13 +624,30 @@ const createWindow = () => {
   mainWindow.setTitle(formatWorkbookWindowTitle(workbookController.getSummary(), APP_DISPLAY_NAME));
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+    startupTimer.log("main-window-load-url-start", MAIN_WINDOW_VITE_DEV_SERVER_URL);
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+    const rendererPath = path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`);
+
+    startupTimer.log("main-window-load-file-start", rendererPath);
+    mainWindow.loadFile(rendererPath);
   }
 
+  mainWindow.webContents.once("did-finish-load", () => {
+    startupTimer.log("main-window-did-finish-load");
+  });
+
+  mainWindow.webContents.once("did-fail-load", (_event, errorCode, errorDescription) => {
+    startupTimer.log(
+      "main-window-did-fail-load",
+      `errorCode=${errorCode} errorDescription=${errorDescription}`,
+    );
+  });
+
   mainWindow.once("ready-to-show", () => {
+    startupTimer.log("main-window-ready-to-show");
     mainWindow.show();
+    startupTimer.log("main-window-show-called");
   });
 
   mainWindow.on("close", (event) => {
@@ -643,6 +676,8 @@ const createWindow = () => {
         isClosePromptPending = false;
       });
   });
+
+  startupTimer.log("create-window-done");
 
   return mainWindow;
 };
@@ -882,16 +917,33 @@ workbookController.on("changed", () => {
 });
 
 app.whenReady().then(() => {
+  startupTimer.log("app-when-ready");
+  startupTimer.log("control-server-start-requested");
   void controlServer
     .start()
     .then(() => {
       const controlInfo = controlServer.getInfo();
-      void writeDiscoveredControlInfo(APP_DISPLAY_NAME, controlInfo);
+      startupTimer.log("control-server-started", `tcp://${controlInfo.host}:${controlInfo.port}`);
+      startupTimer.log("control-discovery-write-start");
+      void writeDiscoveredControlInfo(APP_DISPLAY_NAME, controlInfo)
+        .then(() => {
+          startupTimer.log("control-discovery-write-done");
+        })
+        .catch((error) => {
+          startupTimer.log(
+            "control-discovery-write-failed",
+            error instanceof Error ? error.message : "unknown error",
+          );
+        });
       console.log(
         `${APP_DISPLAY_NAME} control server listening on tcp://${controlInfo.host}:${controlInfo.port}`,
       );
     })
     .catch((error) => {
+      startupTimer.log(
+        "control-server-start-failed",
+        error instanceof Error ? error.message : "unknown error",
+      );
       console.error(
         `${APP_DISPLAY_NAME} control server failed to start: ${
           error instanceof Error ? error.message : "unknown error"
@@ -901,6 +953,7 @@ app.whenReady().then(() => {
 
   createWindow();
   buildAppMenu();
+  startupTimer.log("initial-window-and-menu-created");
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
