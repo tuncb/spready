@@ -9,6 +9,11 @@ import * as z from "zod/v4";
 
 import { CONTROL_DISCOVERY_FILE_PATH } from "./control-discovery";
 import { McpControlConnection } from "./mcp-control-connection";
+import {
+  formatConnectedStartupLog,
+  formatDisconnectedStartupLog,
+  formatReadyStartupLog,
+} from "./mcp-stdio-log";
 import { getMcpStdioHelpText, parseMcpStartupOptions } from "./mcp-startup";
 import {
   chartGuideTools,
@@ -821,6 +826,7 @@ async function main() {
   }
 
   const controlConnection = new McpControlConnection(startupOptions);
+  let wroteStartupWarning = false;
 
   if (startupOptions.openApp) {
     await controlConnection.launchAppAndConnect();
@@ -830,11 +836,8 @@ async function main() {
     } catch (error) {
       const detail = error instanceof Error ? error.message : "unknown connection error";
 
-      console.error(
-        `Spready MCP stdio wrapper started without a control connection. ` +
-          `Call open_spready_app to connect or launch Spready. ` +
-          `Discovery file: ${CONTROL_DISCOVERY_FILE_PATH}. ${detail}`,
-      );
+      console.error(formatDisconnectedStartupLog(CONTROL_DISCOVERY_FILE_PATH, detail));
+      wroteStartupWarning = true;
     }
   }
 
@@ -1815,11 +1818,9 @@ async function main() {
   const status = controlConnection.getStatus();
 
   if (status.connected && status.target) {
-    console.error(
-      `Spready MCP stdio wrapper connected to tcp://${status.target.host}:${status.target.port} via ${status.target.source}`,
-    );
+    console.error(formatConnectedStartupLog(status.target));
   } else {
-    console.error("Spready MCP stdio wrapper ready; call open_spready_app to connect.");
+    console.error(`${wroteStartupWarning ? "\n" : ""}${formatReadyStartupLog()}`);
   }
 }
 
