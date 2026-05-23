@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 
 import { openAppAndWaitForControlTarget, type McpStartupOptions } from "./mcp-startup";
 import { resolveControlTarget, SpreadyControlClient, type ControlTarget } from "./control-client";
+import { formatControlConnectionError } from "./mcp-control-errors";
 import type { WorkbookSummary } from "./workbook-core";
 
 type ConnectionState = "connected" | "connecting" | "disconnected" | "launching";
@@ -146,7 +147,11 @@ export class McpControlConnection extends EventEmitter {
   async #connectClient(target: ControlTarget) {
     const client = this.#createClient(target);
 
-    await client.connect();
+    try {
+      await client.connect();
+    } catch (error) {
+      throw new Error(formatControlConnectionError(target, error));
+    }
 
     this.#client = client;
     this.#target = target;

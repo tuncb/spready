@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { readDiscoveredControlInfo } from "./control-discovery";
 import { resolveControlTarget, SpreadyControlClient, type ControlTarget } from "./control-client";
+import { formatControlConnectionError } from "./mcp-control-errors";
 
 const APP_DISPLAY_NAME = "Spready";
 const DEFAULT_OPEN_APP_TIMEOUT_MS = 20000;
@@ -392,11 +393,13 @@ export async function waitForControlTarget(
 ): Promise<ControlTarget> {
   const deadline = Date.now() + options.timeoutMs;
   let lastError: unknown;
+  let lastTarget: ControlTarget | null = null;
 
   while (Date.now() <= deadline) {
     const target = await resolveStartupTarget(options);
 
     if (target) {
+      lastTarget = target;
       try {
         await connectAndClose(target);
         return target;
@@ -408,7 +411,10 @@ export async function waitForControlTarget(
     await sleep(options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS);
   }
 
-  const detail = lastError instanceof Error ? ` Last connection error: ${lastError.message}` : "";
+  const detail =
+    lastError instanceof Error && lastTarget
+      ? ` ${formatControlConnectionError(lastTarget, lastError)}`
+      : "";
 
   throw new Error(`Timed out waiting for the Spready control server.${detail}`);
 }

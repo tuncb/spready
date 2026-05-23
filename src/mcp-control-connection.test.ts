@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { McpControlConnection } from "./mcp-control-connection";
+import type { SpreadyControlClient } from "./control-client";
 import { SpreadyControlServer } from "./control-server";
 import { WorkbookController } from "./workbook-controller";
 
@@ -53,6 +54,38 @@ test("McpControlConnection connects to an existing TCP control server", async ()
   } finally {
     await server.stop();
   }
+});
+
+test("McpControlConnection reports refused TCP connections as actionable status", async () => {
+  const connection = new McpControlConnection(
+    {
+      host: "127.0.0.1",
+      openApp: false,
+      openAppTimeoutMs: 1000,
+      port: 45731,
+    },
+    {
+      createClient: () =>
+        ({
+          connect: async () => {
+            throw Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:45731"), {
+              code: "ECONNREFUSED",
+            });
+          },
+        }) as unknown as SpreadyControlClient,
+    },
+  );
+
+  await assert.rejects(
+    () => connection.connectToExisting(),
+    /Open Spready at this address through MCP or manually/,
+  );
+  assert.deepEqual(connection.getStatus(), {
+    connected: false,
+    lastError:
+      "Could not connect to the Spready TCP control server at tcp://127.0.0.1:45731. Open Spready at this address through MCP or manually.",
+    state: "disconnected",
+  });
 });
 
 test("McpControlConnection openAppAndConnect reuses an existing server before launching", async () => {
