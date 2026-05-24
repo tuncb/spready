@@ -1236,6 +1236,126 @@ test("WorkbookController rejects stale applyTransaction requests with expectedVe
   );
 });
 
+test("WorkbookController preserves undo branches and redoes the latest child by default", () => {
+  const controller = new WorkbookController();
+  const rootNodeId = controller.getUndoTree().currentNodeId;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "one",
+      },
+    ],
+  });
+  const firstNodeId = controller.getUndoTree().currentNodeId;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "two",
+      },
+    ],
+  });
+  const originalRedoNodeId = controller.getUndoTree().currentNodeId;
+
+  const undoResult = controller.undo();
+
+  assert.equal(undoResult.version, 3);
+  assert.equal(controller.getSheetRange(cellRange()).values[0][0], "one");
+
+  controller.applyTransaction({
+    operations: [
+      {
+        columnIndex: 1,
+        rowIndex: 0,
+        type: "setCell",
+        value: "branch",
+      },
+    ],
+  });
+  const branchNodeId = controller.getUndoTree().currentNodeId;
+
+  controller.undo();
+
+  const branchedTree = controller.getUndoTree();
+  const firstNode = branchedTree.nodes.find((node) => node.id === firstNodeId);
+
+  assert.deepEqual(firstNode?.childIds, [originalRedoNodeId, branchNodeId]);
+
+  controller.redo();
+  assert.deepEqual(controller.getSheetRange(twoCellRange()).values, [["one", "branch"]]);
+
+  controller.undo();
+  controller.redo({ nodeId: originalRedoNodeId });
+  assert.deepEqual(controller.getSheetRange(twoCellRange()).values, [["two", ""]]);
+
+  controller.checkoutUndoNode({ nodeId: rootNodeId });
+  assert.deepEqual(controller.getSheetRange(twoCellRange()).values, [["", ""]]);
+});
+
+test("WorkbookController keeps dry-runs and no-op transactions out of undo history", () => {
+  const controller = new WorkbookController();
+  const initialTree = controller.getUndoTree();
+
+  controller.applyTransaction({
+    dryRun: true,
+    operations: [
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "draft",
+      },
+    ],
+  });
+  controller.applyTransaction({
+    operations: [],
+  });
+
+  assert.deepEqual(controller.getUndoTree(), initialTree);
+  assert.throws(() => controller.undo(), /No undo history is available/);
+});
+
+test("WorkbookController undo and redo update saved dirty state by history node", async () => {
+  const controller = new WorkbookController();
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "spready-history-"));
+  const filePath = path.join(tempDir, "saved.spready");
+
+  try {
+    controller.applyTransaction({
+      operations: [
+        {
+          columnIndex: 0,
+          rowIndex: 0,
+          type: "setCell",
+          value: "saved",
+        },
+      ],
+    });
+
+    await controller.saveWorkbookFile({ filePath });
+
+    assert.equal(controller.getSummary().hasUnsavedChanges, false);
+    assert.equal(controller.getUndoTree().savedNodeId, controller.getUndoTree().currentNodeId);
+
+    controller.undo();
+
+    assert.equal(controller.getSummary().hasUnsavedChanges, true);
+
+    controller.redo();
+
+    assert.equal(controller.getSummary().hasUnsavedChanges, false);
+  } finally {
+    await fs.rm(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("WorkbookController saves and opens native workbook files", async () => {
   const controller = new WorkbookController();
 
@@ -1377,3 +1497,21 @@ test("WorkbookController creates a new workbook and guards unsaved replacement",
     "",
   );
 });
+
+function cellRange() {
+  return {
+    columnCount: 1,
+    rowCount: 1,
+    startColumn: 0,
+    startRow: 0,
+  };
+}
+
+function twoCellRange() {
+  return {
+    columnCount: 2,
+    rowCount: 1,
+    startColumn: 0,
+    startRow: 0,
+  };
+}

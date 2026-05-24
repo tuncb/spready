@@ -53,8 +53,13 @@ import {
   type SheetRangeResult,
   type UsedRangeResult,
   type WorkbookFileOperationResult,
+  type WorkbookHistoryCheckoutRequest,
+  type WorkbookHistoryRequest,
+  type WorkbookHistoryResult,
+  type WorkbookRedoRequest,
   type WorkbookState,
   type WorkbookSummary,
+  type WorkbookUndoTree,
 } from "./workbook-core";
 import {
   evaluateWorkbook,
@@ -68,18 +73,74 @@ import {
   WORKBOOK_DOCUMENT_EXTENSION,
 } from "./workbook-document";
 
+interface WorkbookHistoryNode {
+  childIds: string[];
+  id: string;
+  parentId?: string;
+  state: WorkbookState;
+}
+
 export class WorkbookController extends EventEmitter {
   #state: WorkbookState = createWorkbookState();
   #sheetEvaluationSnapshots = new Map<string, SheetEvaluationSnapshot>();
   #evaluationClock: () => Date;
+  #historyNodes = new Map<string, WorkbookHistoryNode>();
+  #currentHistoryNodeId = "";
+  #rootHistoryNodeId = "";
+  #savedHistoryNodeId: string | undefined;
+  #nextHistoryNodeNumber = 1;
 
   constructor(options: { evaluationClock?: () => Date } = {}) {
     super();
     this.#evaluationClock = options.evaluationClock ?? (() => new Date());
+    this.#resetHistory(this.#state, true);
   }
 
   getSummary(): WorkbookSummary {
     return getWorkbookSummary(this.#state);
+  }
+
+  getUndoTree(): WorkbookUndoTree {
+    return this.#buildUndoTree();
+  }
+
+  undo(request: WorkbookHistoryRequest = {}): WorkbookHistoryResult {
+    this.#assertExpectedVersion(request.expectedVersion);
+
+    const currentNode = this.#getCurrentHistoryNode();
+
+    if (!currentNode.parentId) {
+      throw new Error("No undo history is available.");
+    }
+
+    return this.#restoreHistoryNode(currentNode.parentId);
+  }
+
+  redo(request: WorkbookRedoRequest = {}): WorkbookHistoryResult {
+    this.#assertExpectedVersion(request.expectedVersion);
+
+    const currentNode = this.#getCurrentHistoryNode();
+    const targetNodeId = request.nodeId ?? currentNode.childIds[currentNode.childIds.length - 1];
+
+    if (!targetNodeId) {
+      throw new Error("No redo history is available.");
+    }
+
+    if (!currentNode.childIds.includes(targetNodeId)) {
+      throw new Error(`History node "${targetNodeId}" is not a redo child of the current node.`);
+    }
+
+    return this.#restoreHistoryNode(targetNodeId);
+  }
+
+  checkoutUndoNode(request: WorkbookHistoryCheckoutRequest): WorkbookHistoryResult {
+    this.#assertExpectedVersion(request.expectedVersion);
+
+    if (!this.#historyNodes.has(request.nodeId)) {
+      throw new Error(`History node "${request.nodeId}" was not found.`);
+    }
+
+    return this.#restoreHistoryNode(request.nodeId);
   }
 
   getSheetCharts(sheetId?: string): WorkbookSheetChartsResult {
@@ -310,6 +371,7 @@ export class WorkbookController extends EventEmitter {
     const nextState = createWorkbookState();
 
     nextState.version = this.#state.version + 1;
+    this.#resetHistory(nextState, true);
     this.#commitState(nextState);
 
     const summary = getWorkbookSummary(this.#state);
@@ -322,11 +384,7 @@ export class WorkbookController extends EventEmitter {
   }
 
   applyTransaction(request: ApplyTransactionRequest): ApplyTransactionResult {
-    if (request.expectedVersion !== undefined && request.expectedVersion !== this.#state.version) {
-      throw new Error(
-        `Expected workbook version ${request.expectedVersion}, but current version is ${this.#state.version}.`,
-      );
-    }
+    this.#assertExpectedVersion(request.expectedVersion);
 
     const execution = applyWorkbookTransaction(this.#state, request);
     const nextState =
@@ -339,6 +397,7 @@ export class WorkbookController extends EventEmitter {
     const nextSummary = getWorkbookSummary(nextState);
 
     if (execution.changed && !request.dryRun) {
+      this.#recordHistoryNode(nextState);
       this.#commitState(nextState);
     }
 
@@ -386,6 +445,7 @@ export class WorkbookController extends EventEmitter {
     nextState.hasUnsavedChanges = false;
     nextState.version = this.#state.version + 1;
 
+    this.#resetHistory(nextState, true);
     this.#commitState(nextState);
 
     const summary = getWorkbookSummary(this.#state);
@@ -403,7 +463,7 @@ export class WorkbookController extends EventEmitter {
 
     await fs.writeFile(filePath, serializeWorkbookDocument(this.#state), "utf8");
 
-    const result = this.#updateDocumentFilePath(filePath);
+    const result = this.#markCurrentHistoryNodeSaved(filePath);
 
     return {
       changed: result.changed,
@@ -474,28 +534,165 @@ export class WorkbookController extends EventEmitter {
     this.emit("changed", getWorkbookSummary(this.#state));
   }
 
-  #updateDocumentFilePath(filePath: string): {
+  #assertExpectedVersion(expectedVersion: number | undefined) {
+    if (expectedVersion !== undefined && expectedVersion !== this.#state.version) {
+      throw new Error(
+        `Expected workbook version ${expectedVersion}, but current version is ${this.#state.version}.`,
+      );
+    }
+  }
+
+  #buildUndoTree(): WorkbookUndoTree {
+    const currentNode = this.#getCurrentHistoryNode();
+
+    return {
+      canRedo: currentNode.childIds.length > 0,
+      canUndo: currentNode.parentId !== undefined,
+      currentNodeId: this.#currentHistoryNodeId,
+      nodes: [...this.#historyNodes.values()].map((node) => ({
+        childIds: [...node.childIds],
+        id: node.id,
+        isCurrent: node.id === this.#currentHistoryNodeId,
+        isSaved: node.id === this.#savedHistoryNodeId,
+        parentId: node.parentId,
+        summary: this.#getHistoryNodeSummary(node),
+      })),
+      rootNodeId: this.#rootHistoryNodeId,
+      savedNodeId: this.#savedHistoryNodeId,
+    };
+  }
+
+  #getHistoryNodeSummary(node: WorkbookHistoryNode): WorkbookSummary {
+    return getWorkbookSummary({
+      ...node.state,
+      documentFilePath: this.#state.documentFilePath,
+      hasUnsavedChanges: node.id !== this.#savedHistoryNodeId,
+    });
+  }
+
+  #getCurrentHistoryNode(): WorkbookHistoryNode {
+    const node = this.#historyNodes.get(this.#currentHistoryNodeId);
+
+    if (!node) {
+      throw new Error("Workbook history is not initialized.");
+    }
+
+    return node;
+  }
+
+  #recordHistoryNode(state: WorkbookState) {
+    const currentNode = this.#getCurrentHistoryNode();
+    const nodeId = this.#createHistoryNodeId();
+    const node: WorkbookHistoryNode = {
+      childIds: [],
+      id: nodeId,
+      parentId: currentNode.id,
+      state: {
+        ...state,
+        hasUnsavedChanges: true,
+      },
+    };
+
+    currentNode.childIds.push(node.id);
+    this.#historyNodes.set(node.id, node);
+    this.#currentHistoryNodeId = node.id;
+  }
+
+  #resetHistory(state: WorkbookState, isSaved: boolean) {
+    const nodeId = this.#createHistoryNodeId();
+    const node: WorkbookHistoryNode = {
+      childIds: [],
+      id: nodeId,
+      state: {
+        ...state,
+        hasUnsavedChanges: !isSaved,
+      },
+    };
+
+    this.#historyNodes = new Map([[node.id, node]]);
+    this.#rootHistoryNodeId = node.id;
+    this.#currentHistoryNodeId = node.id;
+    this.#savedHistoryNodeId = isSaved ? node.id : undefined;
+    this.#state = node.state;
+  }
+
+  #restoreHistoryNode(nodeId: string): WorkbookHistoryResult {
+    const targetNode = this.#historyNodes.get(nodeId);
+
+    if (!targetNode) {
+      throw new Error(`History node "${nodeId}" was not found.`);
+    }
+
+    if (nodeId === this.#currentHistoryNodeId) {
+      return {
+        changed: false,
+        summary: getWorkbookSummary(this.#state),
+        undoTree: this.#buildUndoTree(),
+        version: this.#state.version,
+      };
+    }
+
+    const nextState: WorkbookState = {
+      ...targetNode.state,
+      documentFilePath: this.#state.documentFilePath,
+      hasUnsavedChanges: nodeId !== this.#savedHistoryNodeId,
+      version: this.#state.version + 1,
+    };
+
+    targetNode.state = nextState;
+    this.#currentHistoryNodeId = nodeId;
+    this.#commitState(nextState);
+
+    const summary = getWorkbookSummary(this.#state);
+
+    return {
+      changed: true,
+      summary,
+      undoTree: this.#buildUndoTree(),
+      version: summary.version,
+    };
+  }
+
+  #markCurrentHistoryNodeSaved(filePath: string): {
     changed: boolean;
     summary: WorkbookSummary;
   } {
-    if (this.#state.documentFilePath === filePath && !this.#state.hasUnsavedChanges) {
+    const currentNode = this.#getCurrentHistoryNode();
+
+    if (
+      this.#state.documentFilePath === filePath &&
+      this.#savedHistoryNodeId === currentNode.id &&
+      !this.#state.hasUnsavedChanges
+    ) {
       return {
         changed: false,
         summary: getWorkbookSummary(this.#state),
       };
     }
 
-    this.#commitState({
+    this.#savedHistoryNodeId = currentNode.id;
+
+    const nextState: WorkbookState = {
       ...this.#state,
       documentFilePath: filePath,
       hasUnsavedChanges: false,
       version: this.#state.version + 1,
-    });
+    };
+
+    currentNode.state = nextState;
+    this.#commitState(nextState);
 
     return {
       changed: true,
       summary: getWorkbookSummary(this.#state),
     };
+  }
+
+  #createHistoryNodeId(): string {
+    const nodeId = `history-${this.#nextHistoryNodeNumber}`;
+
+    this.#nextHistoryNodeNumber += 1;
+    return nodeId;
   }
 }
 

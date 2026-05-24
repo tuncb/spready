@@ -15,9 +15,13 @@ import type {
   SheetStyleRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookHistoryRequest,
+  WorkbookHistoryResult,
+  WorkbookRedoRequest,
   WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
   WorkbookSummary,
+  WorkbookUndoTree,
 } from "./workbook-core";
 
 type OpenCsvFileResult =
@@ -60,6 +64,7 @@ declare global {
     appShell: {
       applyTransaction: (request: ApplyTransactionRequest) => Promise<ApplyTransactionResult>;
       cutRange: (request: CutRangeRequest) => Promise<CutRangeResult>;
+      getUndoTree: () => Promise<WorkbookUndoTree>;
       getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
       getChart: (chartId: string) => Promise<WorkbookChartResult>;
       getChartPreview: (chartId: string) => Promise<WorkbookChartPreview>;
@@ -86,6 +91,8 @@ declare global {
         canDelete: boolean;
         canFormat: boolean;
       }) => Promise<void>;
+      redo: (request?: WorkbookRedoRequest) => Promise<WorkbookHistoryResult>;
+      undo: (request?: WorkbookHistoryRequest) => Promise<WorkbookHistoryResult>;
       writeClipboard: (request: ClipboardWriteRequest) => Promise<void>;
       saveWorkbookFile: (filePath: string) => Promise<WorkbookFileOperationResult>;
       saveWorkbookFileAs: (defaultPath?: string) => Promise<SaveWorkbookFileAsResult>;

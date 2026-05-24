@@ -54,3 +54,10 @@
 - Formula dependency keys include the sheet id so cross-sheet precedents, dependents, and cycles can be tracked without collisions.
 - Chart ownership and chart source data are separate. A chart remains embedded on `chart.sheetId`, while `chart.spec.source.range.sheetId` may point to another sheet.
 - TCP remains the canonical automation contract and MCP stays a thin typed adapter over it; cross-sheet formula and chart support flows through the existing read/write methods instead of adding transport-specific business logic.
+
+## 2026-05-24
+
+- Undo/redo is a controller-owned in-memory state tree rather than inverse transaction generation. This keeps destructive edits, structural edits, style changes, chart changes, and sheet replacement reversible without duplicating workbook rules outside the controller.
+- Undo, redo, and history checkout move the current pointer through the tree and commit a new workbook version so renderer, TCP, and MCP clients continue to observe normal workbookChanged/version behavior.
+- Redo follows the latest child branch by default, while TCP and MCP expose explicit node checkout for branch-aware automation. New writes after undo add a child branch instead of pruning existing redo branches.
+- Save marks the current history node as the saved node without creating an undoable workbook edit. Open workbook and new workbook reset the history tree.

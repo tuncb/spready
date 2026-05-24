@@ -128,6 +128,10 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.ok(methods.includes("clearRange"));
     assert.ok(methods.includes("getSheetStyleRange"));
     assert.ok(methods.includes("formatCells"));
+    assert.ok(methods.includes("getUndoTree"));
+    assert.ok(methods.includes("undo"));
+    assert.ok(methods.includes("redo"));
+    assert.ok(methods.includes("checkoutUndoNode"));
     assert.ok(methods.includes("showApp"));
     assert.deepEqual(appStatus, {
       focusedWindowCount: 0,
@@ -153,6 +157,47 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
       sheetId: displayRange.sheetId,
       sheetName: displayRange.sheetName,
     });
+  } finally {
+    await client.close();
+    await server.stop();
+  }
+});
+
+test("SpreadyControlServer exposes undo tree traversal over TCP", async () => {
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
+
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    await client.applyTransaction({
+      operations: [
+        {
+          columnIndex: 0,
+          rowIndex: 0,
+          type: "setCell",
+          value: "one",
+        },
+      ],
+    });
+
+    const undoResult = await client.undo();
+    const redoResult = await client.redo();
+    const tree = await client.getUndoTree();
+
+    assert.equal(undoResult.summary.sheets.length, 1);
+    assert.equal(undoResult.undoTree.canRedo, true);
+    assert.equal(redoResult.summary.version, 3);
+    assert.equal(tree.currentNodeId, redoResult.undoTree.currentNodeId);
   } finally {
     await client.close();
     await server.stop();

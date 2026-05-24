@@ -483,6 +483,40 @@ export interface ApplyTransactionResult {
   version: number;
 }
 
+export interface WorkbookHistoryRequest {
+  expectedVersion?: number;
+}
+
+export interface WorkbookRedoRequest extends WorkbookHistoryRequest {
+  nodeId?: string;
+}
+
+export interface WorkbookHistoryCheckoutRequest extends WorkbookHistoryRequest {
+  nodeId: string;
+}
+
+export interface WorkbookUndoTreeNode {
+  childIds: string[];
+  id: string;
+  isCurrent: boolean;
+  isSaved: boolean;
+  parentId?: string;
+  summary: WorkbookSummary;
+}
+
+export interface WorkbookUndoTree {
+  canRedo: boolean;
+  canUndo: boolean;
+  currentNodeId: string;
+  nodes: WorkbookUndoTreeNode[];
+  rootNodeId: string;
+  savedNodeId?: string;
+}
+
+export interface WorkbookHistoryResult extends ApplyTransactionResult {
+  undoTree: WorkbookUndoTree;
+}
+
 export interface ImportCsvFileRequest {
   filePath: string;
   name?: string;

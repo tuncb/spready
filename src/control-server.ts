@@ -18,6 +18,9 @@ import type {
   SaveWorkbookFileRequest,
   PasteRangeRequest,
   SheetRangeRequest,
+  WorkbookHistoryCheckoutRequest,
+  WorkbookHistoryRequest,
+  WorkbookRedoRequest,
   WorkbookSummary,
 } from "./workbook-core";
 
@@ -291,6 +294,8 @@ export class SpreadyControlServer {
     switch (method) {
       case "applyTransaction":
         return this.#controller.applyTransaction(params as ApplyTransactionRequest);
+      case "checkoutUndoNode":
+        return this.#controller.checkoutUndoNode(params as WorkbookHistoryCheckoutRequest);
       case "clearRange":
         return this.#controller.clearRange(params as ClearRangeRequest);
       case "copyRange":
@@ -337,6 +342,8 @@ export class SpreadyControlServer {
         return this.#controller.getSheetStyleRange(params as SheetRangeRequest);
       case "getUsedRange":
         return this.#controller.getUsedRange((params as { sheetId?: string } | undefined)?.sheetId);
+      case "getUndoTree":
+        return this.#controller.getUndoTree();
       case "getWorkbookSummary":
         return this.#controller.getSummary();
       case "importCsvFile":
@@ -345,6 +352,8 @@ export class SpreadyControlServer {
         return this.#controller.openWorkbookFile(params as OpenWorkbookFileRequest);
       case "pasteRange":
         return this.#controller.pasteRange(params as PasteRangeRequest);
+      case "redo":
+        return this.#controller.redo((params as WorkbookRedoRequest | undefined) ?? {});
       case "saveWorkbookFile":
         return this.#controller.saveWorkbookFile(params as SaveWorkbookFileRequest);
       case "showApp": {
@@ -352,9 +361,12 @@ export class SpreadyControlServer {
 
         return this.#getAppStatus();
       }
+      case "undo":
+        return this.#controller.undo((params as WorkbookHistoryRequest | undefined) ?? {});
       case "listMethods":
         return [
           "applyTransaction",
+          "checkoutUndoNode",
           "clearRange",
           "copyRange",
           "cutRange",
@@ -373,6 +385,7 @@ export class SpreadyControlServer {
           "getSheetDisplayRange",
           "getSheetRange",
           "getSheetStyleRange",
+          "getUndoTree",
           "getUsedRange",
           "getWorkbookSummary",
           "importCsvFile",
@@ -380,8 +393,10 @@ export class SpreadyControlServer {
           "openWorkbookFile",
           "pasteRange",
           "ping",
+          "redo",
           "saveWorkbookFile",
           "showApp",
+          "undo",
         ];
       case "ping":
         return {

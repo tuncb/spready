@@ -32,6 +32,8 @@ import type {
   ControlAppStatus,
   CutRangeRequest,
   SheetRangeRequest,
+  WorkbookHistoryRequest,
+  WorkbookRedoRequest,
   WorkbookFileOperationResult,
 } from "./workbook-core";
 
@@ -499,6 +501,25 @@ function buildAppMenu() {
       enabled: menuEnabled,
       label: "Edit",
       submenu: [
+        {
+          accelerator: "CmdOrCtrl+Z",
+          label: "Undo",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.undo);
+            });
+          },
+        },
+        {
+          accelerator: "CmdOrCtrl+Shift+Z",
+          label: "Redo",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.redo);
+            });
+          },
+        },
+        { type: "separator" },
         {
           accelerator: "CmdOrCtrl+X",
           label: "Cut",
@@ -998,6 +1019,16 @@ ipcMain.handle("dialog:save-workbook-file-as", async (event, args?: SaveWorkbook
 
 ipcMain.handle("workbook:apply-transaction", (_event, args: ApplyTransactionRequest) =>
   workbookController.applyTransaction(args),
+);
+
+ipcMain.handle("workbook:get-undo-tree", () => workbookController.getUndoTree());
+
+ipcMain.handle("workbook:redo", (_event, args?: WorkbookRedoRequest) =>
+  workbookController.redo(args ?? {}),
+);
+
+ipcMain.handle("workbook:undo", (_event, args?: WorkbookHistoryRequest) =>
+  workbookController.undo(args ?? {}),
 );
 
 ipcMain.handle("workbook:get-cell-data", (_event, args: CellDataRequest) =>

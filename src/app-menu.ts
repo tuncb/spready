@@ -3,6 +3,8 @@ export const APP_MENU_ACTIONS = {
   cutValues: "edit:cut-values",
   copy: "edit:copy",
   copyValues: "edit:copy-values",
+  redo: "edit:redo",
+  undo: "edit:undo",
   addColumn: "sheet:add-column",
   addRow: "sheet:add-row",
   deleteSelection: "edit:delete-selection",

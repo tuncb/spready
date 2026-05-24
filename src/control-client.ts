@@ -32,9 +32,14 @@ import type {
   SheetStyleRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookHistoryCheckoutRequest,
+  WorkbookHistoryRequest,
+  WorkbookHistoryResult,
+  WorkbookRedoRequest,
   WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
   WorkbookSummary,
+  WorkbookUndoTree,
 } from "./workbook-core";
 
 const DEFAULT_CONTROL_HOST = "127.0.0.1";
@@ -167,6 +172,10 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<ApplyTransactionResult>("applyTransaction", request);
   }
 
+  async checkoutUndoNode(request: WorkbookHistoryCheckoutRequest) {
+    return this.call<WorkbookHistoryResult>("checkoutUndoNode", request);
+  }
+
   async createNewWorkbook(request?: CreateNewWorkbookRequest) {
     return this.call<ApplyTransactionResult>("createNewWorkbook", request);
   }
@@ -235,6 +244,10 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<UsedRangeResult>("getUsedRange", { sheetId });
   }
 
+  async getUndoTree() {
+    return this.call<WorkbookUndoTree>("getUndoTree");
+  }
+
   async getWorkbookSummary() {
     return this.call<WorkbookSummary>("getWorkbookSummary");
   }
@@ -255,12 +268,20 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<WorkbookFileOperationResult>("openWorkbookFile", request);
   }
 
+  async redo(request?: WorkbookRedoRequest) {
+    return this.call<WorkbookHistoryResult>("redo", request);
+  }
+
   async saveWorkbookFile(request: SaveWorkbookFileRequest) {
     return this.call<WorkbookFileOperationResult>("saveWorkbookFile", request);
   }
 
   async showApp() {
     return this.call<ControlAppStatus>("showApp");
+  }
+
+  async undo(request?: WorkbookHistoryRequest) {
+    return this.call<WorkbookHistoryResult>("undo", request);
   }
 
   async call<Result>(method: string, params?: unknown): Promise<Result> {

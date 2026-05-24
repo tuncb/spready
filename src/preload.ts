@@ -17,9 +17,13 @@ import type {
   SheetStyleRangeResult,
   UsedRangeResult,
   WorkbookFileOperationResult,
+  WorkbookHistoryRequest,
+  WorkbookHistoryResult,
+  WorkbookRedoRequest,
   WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
   WorkbookSummary,
+  WorkbookUndoTree,
 } from "./workbook-core";
 
 type OpenCsvFileResult =
@@ -149,6 +153,11 @@ if (typeof PerformanceObserver !== "undefined") {
 contextBridge.exposeInMainWorld("appShell", {
   applyTransaction: (request: ApplyTransactionRequest) =>
     ipcRenderer.invoke("workbook:apply-transaction", request) as Promise<ApplyTransactionResult>,
+  getUndoTree: () => ipcRenderer.invoke("workbook:get-undo-tree") as Promise<WorkbookUndoTree>,
+  redo: (request?: WorkbookRedoRequest) =>
+    ipcRenderer.invoke("workbook:redo", request) as Promise<WorkbookHistoryResult>,
+  undo: (request?: WorkbookHistoryRequest) =>
+    ipcRenderer.invoke("workbook:undo", request) as Promise<WorkbookHistoryResult>,
   getCellData: (request: CellDataRequest) =>
     ipcRenderer.invoke("workbook:get-cell-data", request) as Promise<CellDataResult>,
   getChart: (chartId: string) =>

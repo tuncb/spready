@@ -1166,6 +1166,30 @@ export default function App() {
     [handlePaste, replaceFormulaInputSelection, selectedCell],
   );
 
+  const restoreWorkbookHistory = useCallback(
+    async (direction: "redo" | "undo") => {
+      if (document.activeElement === formulaInputRef.current) {
+        document.execCommand(direction);
+        return true;
+      }
+
+      try {
+        const result =
+          direction === "undo" ? await window.appShell.undo() : await window.appShell.redo();
+
+        setSheetSummary(result.summary);
+        setSelectedChartId(null);
+        void loadVisibleRange(lastVisibleRegionRef.current);
+        void refreshSelectedCellData();
+        return true;
+      } catch (error) {
+        pushErrorToast(error);
+        return false;
+      }
+    },
+    [loadVisibleRange, pushErrorToast, refreshSelectedCellData],
+  );
+
   const deleteSelection = useCallback(
     (selection: GridSelection = gridSelection) => {
       const input = formulaInputRef.current;
@@ -1926,6 +1950,12 @@ export default function App() {
           case APP_MENU_ACTIONS.copyValues:
             void copySelection("display");
             return;
+          case APP_MENU_ACTIONS.undo:
+            void restoreWorkbookHistory("undo");
+            return;
+          case APP_MENU_ACTIONS.redo:
+            void restoreWorkbookHistory("redo");
+            return;
           case APP_MENU_ACTIONS.openWorkbook:
             void handleOpenWorkbook();
             return;
@@ -1997,6 +2027,7 @@ export default function App() {
     openCreateChartEditor,
     openRenameSheetDialog,
     pasteSelection,
+    restoreWorkbookHistory,
   ]);
 
   useEffect(() => {
@@ -2027,6 +2058,16 @@ export default function App() {
 
       const normalizedKey = event.key.toLowerCase();
 
+      if (
+        isPrimaryModifier &&
+        !isFormulaInputFocused &&
+        (normalizedKey === "z" || normalizedKey === "y")
+      ) {
+        event.preventDefault();
+        void restoreWorkbookHistory(event.shiftKey || normalizedKey === "y" ? "redo" : "undo");
+        return;
+      }
+
       if (isPrimaryModifier && normalizedKey === "c") {
         event.preventDefault();
         void copySelection(event.shiftKey ? "display" : "raw");
@@ -2056,7 +2097,14 @@ export default function App() {
     return () => {
       window.removeEventListener("keydown", handleWindowKeyDown, true);
     };
-  }, [copySelection, cutSelection, deleteSelection, isModalDialogOpen, pasteSelection]);
+  }, [
+    copySelection,
+    cutSelection,
+    deleteSelection,
+    isModalDialogOpen,
+    pasteSelection,
+    restoreWorkbookHistory,
+  ]);
 
   return (
     <main className="app-shell">

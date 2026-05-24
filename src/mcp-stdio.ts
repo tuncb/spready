@@ -300,6 +300,28 @@ const applyTransactionResultSchema = z.object({
   version: z.int().min(0),
 });
 
+const undoTreeNodeSchema = z.object({
+  childIds: z.array(z.string().min(1)),
+  id: z.string().min(1),
+  isCurrent: z.boolean(),
+  isSaved: z.boolean(),
+  parentId: z.string().min(1).optional(),
+  summary: workbookSummarySchema,
+});
+
+const undoTreeSchema = z.object({
+  canRedo: z.boolean(),
+  canUndo: z.boolean(),
+  currentNodeId: z.string().min(1),
+  nodes: z.array(undoTreeNodeSchema),
+  rootNodeId: z.string().min(1),
+  savedNodeId: z.string().min(1).optional(),
+});
+
+const workbookHistoryResultSchema = applyTransactionResultSchema.extend({
+  undoTree: undoTreeSchema,
+});
+
 const createChartSourceRangeSchema = z.object({
   columnCount: z.int().min(1).describe("Number of source columns."),
   rowCount: z.int().min(1).describe("Number of source rows."),
@@ -545,6 +567,31 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: false,
+      description: "Return the current workbook undo tree, including current and saved nodes.",
+      name: "get_undo_tree",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description: "Move the workbook to the parent undo tree node.",
+      name: "undo",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description:
+        "Move the workbook to the latest redo child, or to a specific redo child node id.",
+      name: "redo",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description: "Move the workbook directly to a specific undo tree node id.",
+      name: "checkout_undo_node",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: false,
       description: "Create a new blank workbook and replace the in-app workbook state.",
       name: "create_new_workbook",
       readOnly: false,
@@ -675,6 +722,7 @@ const guideResource = {
     "Read tools default to the active sheet when sheetId is omitted.",
     "Sheet names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook.",
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
+    "Use get_undo_tree to inspect undo branches; undo moves to the parent node, redo follows the latest child unless nodeId selects a redo child, and checkout_undo_node jumps directly to any known history node.",
     "Use format_cells for common cell styling; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
     "Use create_chart for common chart creation; omit sourceRange to chart the chart owner sheet's used range, set sourceRange.sheetId to chart data from another sheet, and omit dimensions to use the first dimension as labels and remaining dimensions as values.",
@@ -999,6 +1047,99 @@ async function main() {
   );
 
   server.registerTool(
+    "get_undo_tree",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description: "Return the current workbook undo tree, including current and saved nodes.",
+      outputSchema: undoTreeSchema,
+    },
+    async () => createTextResult(await controlConnection.requireConnectedClient().getUndoTree()),
+  );
+
+  server.registerTool(
+    "undo",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description: "Move the workbook to the parent undo tree node.",
+      inputSchema: z.object({
+        expectedVersion: z
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Optional optimistic concurrency precondition. The request fails if the current workbook version does not match this value.",
+          ),
+      }),
+      outputSchema: workbookHistoryResultSchema,
+    },
+    async (args) => createTextResult(await controlConnection.requireConnectedClient().undo(args)),
+  );
+
+  server.registerTool(
+    "redo",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Move the workbook to the latest redo child, or to a specific redo child node id.",
+      inputSchema: z.object({
+        expectedVersion: z
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Optional optimistic concurrency precondition. The request fails if the current workbook version does not match this value.",
+          ),
+        nodeId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional redo child node id to restore instead of the latest child."),
+      }),
+      outputSchema: workbookHistoryResultSchema,
+    },
+    async (args) => createTextResult(await controlConnection.requireConnectedClient().redo(args)),
+  );
+
+  server.registerTool(
+    "checkout_undo_node",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description: "Move the workbook directly to a specific undo tree node id.",
+      inputSchema: z.object({
+        expectedVersion: z
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Optional optimistic concurrency precondition. The request fails if the current workbook version does not match this value.",
+          ),
+        nodeId: z.string().min(1).describe("History node id to restore."),
+      }),
+      outputSchema: workbookHistoryResultSchema,
+    },
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().checkoutUndoNode(args)),
+  );
+
+  server.registerTool(
     "create_new_workbook",
     {
       annotations: {
@@ -1118,6 +1259,40 @@ async function main() {
             readOnly: true,
             useWhen:
               "Always use this first before exploring or editing a workbook, and inspect hasUnsavedChanges before replacing it.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Return the current workbook undo tree, including current and saved nodes.",
+            name: "get_undo_tree",
+            readOnly: true,
+            useWhen:
+              "Use this before branch-aware undo or redo decisions, or before checkout_undo_node.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description: "Move the workbook to the parent undo tree node.",
+            name: "undo",
+            readOnly: false,
+            useWhen:
+              "Use this to reverse the current workbook state while preserving redo branches.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Move the workbook to the latest redo child, or to a specific redo child node id.",
+            name: "redo",
+            readOnly: false,
+            useWhen:
+              "Use this after undo, passing nodeId when multiple redo branches are available.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description: "Move the workbook directly to a specific undo tree node id.",
+            name: "checkout_undo_node",
+            readOnly: false,
+            useWhen:
+              "Use this only after inspecting get_undo_tree and choosing an explicit history node.",
           },
           {
             defaultsToActiveSheet: false,
@@ -1809,6 +1984,7 @@ async function main() {
                 "- Use open_workbook_file when the task starts from an existing .spready workbook.\n" +
                 "- Start with get_workbook_summary.\n" +
                 "- If get_workbook_summary reports hasUnsavedChanges, save first or pass discardUnsavedChanges only if losing local changes is intended.\n" +
+                "- Use get_undo_tree before branch-aware undo or redo decisions.\n" +
                 "- Use zero-based row and column indexes.\n" +
                 "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
