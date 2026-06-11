@@ -12,6 +12,7 @@ import {
   createWorkbookChartSummary,
   createSheet,
   createWorkbookState,
+  DEFAULT_COLUMN_WIDTH,
   getColumnTitle,
   getWorkbookChartDimensionCount,
   getWorkbookChartStatus,
@@ -134,6 +135,7 @@ test("serializeCsv trims to the used range and escapes special characters", () =
       ["", "", ""],
     ],
     cellStyles: {},
+    columnWidths: {},
     id: "sheet-under-test",
     name: "Sheet Under Test",
   };
@@ -834,6 +836,121 @@ test("applyWorkbookTransaction supports structural edits and keeps a minimum 1x1
 
   assert.deepEqual(getActiveSheet(collapsedState).cells, [[""]]);
   assert.deepEqual(getActiveSheet(collapsedState).cellStyles, {});
+});
+
+test("applyWorkbookTransaction persists and shifts sparse column widths", () => {
+  const seededState = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        columnIndex: 1,
+        type: "setColumnWidth",
+        width: 220,
+      },
+      {
+        columnIndex: 3,
+        type: "setColumnWidth",
+        width: 180,
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getActiveSheet(seededState).columnWidths, {
+    "1": 220,
+    "3": 180,
+  });
+  assert.deepEqual(getWorkbookSummary(seededState).sheets[0]?.columnWidths, {
+    "1": 220,
+    "3": 180,
+  });
+
+  const insertedState = applyWorkbookTransaction(seededState, {
+    operations: [
+      {
+        columnIndex: 2,
+        count: 2,
+        type: "insertColumns",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getActiveSheet(insertedState).columnWidths, {
+    "1": 220,
+    "5": 180,
+  });
+
+  const deletedState = applyWorkbookTransaction(insertedState, {
+    operations: [
+      {
+        columnIndex: 1,
+        count: 2,
+        type: "deleteColumns",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getActiveSheet(deletedState).columnWidths, {
+    "3": 180,
+  });
+
+  const clearedState = applyWorkbookTransaction(deletedState, {
+    operations: [
+      {
+        columnIndex: 3,
+        type: "setColumnWidth",
+        width: DEFAULT_COLUMN_WIDTH,
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getActiveSheet(clearedState).columnWidths, {});
+
+  const unchanged = applyWorkbookTransaction(clearedState, {
+    operations: [
+      {
+        columnIndex: 3,
+        type: "setColumnWidth",
+        width: DEFAULT_COLUMN_WIDTH,
+      },
+    ],
+  });
+
+  assert.equal(unchanged.changed, false);
+  assert.equal(unchanged.state, clearedState);
+});
+
+test("applyWorkbookTransaction trims column widths when replacing or resizing sheets", () => {
+  const seededState = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        columnIndex: 2,
+        type: "setColumnWidth",
+        width: 240,
+      },
+    ],
+  }).state;
+
+  const resizedState = applyWorkbookTransaction(seededState, {
+    operations: [
+      {
+        columnCount: 2,
+        rowCount: 10,
+        type: "resizeSheet",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getActiveSheet(resizedState).columnWidths, {});
+
+  const replacedState = applyWorkbookTransaction(seededState, {
+    operations: [
+      {
+        rows: [["A"]],
+        type: "replaceSheet",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getActiveSheet(replacedState).columnWidths, {});
 });
 
 test("applyWorkbookTransaction rewrites persisted chart ranges for structural edits", () => {

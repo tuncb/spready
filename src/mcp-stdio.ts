@@ -33,6 +33,7 @@ const workbookSummarySchema = z.object({
   sheets: z.array(
     z.object({
       columnCount: z.int().min(1),
+      columnWidths: z.record(z.string(), z.number()).optional(),
       id: z.string(),
       name: z.string(),
       rowCount: z.int().min(1),
@@ -248,6 +249,12 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     type: z.literal("setActiveSheet"),
   }),
   z.object({
+    columnIndex: z.int().min(0),
+    sheetId: z.string().min(1).optional(),
+    type: z.literal("setColumnWidth"),
+    width: z.number(),
+  }),
+  z.object({
     chartId: z.string().min(1),
     layout: workbookChartLayoutSchema,
     type: z.literal("setChartLayout"),
@@ -461,6 +468,11 @@ const transactionOperations = [
   {
     type: "setActiveSheet",
     description: "Make a specific sheet active.",
+  },
+  {
+    type: "setColumnWidth",
+    description:
+      "Set one column's persisted pixel width. Setting the default width clears the sparse override.",
   },
   {
     type: "setChartSpec",
@@ -727,7 +739,7 @@ const guideResource = {
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
     "Use create_chart for common chart creation; omit sourceRange to chart the chart owner sheet's used range, set sourceRange.sheetId to chart data from another sheet, and omit dimensions to use the first dimension as labels and remaining dimensions as values.",
     "Use apply_transaction chart operations when you need exact persisted chart specs, renames, layout changes, or deletes; chart previews remain derived read models.",
-    "Evaluated display reads include arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, reference intersection, parenthesized reference union, core worksheet functions, date/time functions such as TODAY, NOW, DATE, YEAR, MONTH, and DAY, and lookup functions such as INDEX, MATCH, XLOOKUP, and VLOOKUP.",
+    "Evaluated display reads include arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, reference intersection, parenthesized reference union, core worksheet functions including LN, date/time functions such as TODAY, NOW, DATE, YEAR, MONTH, and DAY, and lookup functions such as INDEX, MATCH, XLOOKUP, and VLOOKUP.",
     "Current formula exclusions include absolute references with $, defined names, LET, and unparenthesized comma-as-union inside function argument lists.",
     "Use copy_range when you need a tab-delimited clipboard-style payload for one explicit rectangular range.",
     "Use cut_range when you need clipboard payloads plus a clear of the source range in one controller-backed mutation.",

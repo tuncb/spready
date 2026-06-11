@@ -28,8 +28,11 @@ import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
 import { RenameSheetDialog } from "./RenameSheetDialog";
 import {
+  DEFAULT_COLUMN_WIDTH,
   getColumnTitle,
   isFormulaInput,
+  MAX_COLUMN_WIDTH,
+  MIN_COLUMN_WIDTH,
   parseTsv,
   serializeTsv,
   type CellDataResult,
@@ -53,7 +56,6 @@ const LazyWorkbookChartOverlay = lazy(() =>
   })),
 );
 
-const DEFAULT_COLUMN_WIDTH = 140;
 const DEFAULT_CELL_FONT_SIZE = 13;
 const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
 const DEFAULT_VISIBLE_ROW_COUNT = 36;
@@ -155,12 +157,29 @@ function buildRangeRequest(
   };
 }
 
-function createColumns(columnCount: number): GridColumn[] {
+function createColumns(columnCount: number, columnWidths: Record<string, number>): GridColumn[] {
   return Array.from({ length: columnCount }, (_, index) => ({
     id: `column-${index}`,
     title: getColumnTitle(index),
-    width: DEFAULT_COLUMN_WIDTH,
+    width: columnWidths[String(index)] ?? DEFAULT_COLUMN_WIDTH,
   }));
+}
+
+function removeColumnResizeOverride(
+  overrides: Record<string, number>,
+  columnIndex: number,
+  width: number,
+): Record<string, number> {
+  const key = String(columnIndex);
+
+  if (overrides[key] !== width) {
+    return overrides;
+  }
+
+  const nextOverrides = { ...overrides };
+
+  delete nextOverrides[key];
+  return nextOverrides;
 }
 
 function createEmptyGridSelection(): GridSelection {
@@ -577,6 +596,7 @@ export default function App() {
 
   const [cellFormatSession, setCellFormatSession] = useState<CellFormatSession | null>(null);
   const [chartEditorSession, setChartEditorSession] = useState<ChartEditorSession | null>(null);
+  const [columnResizeOverrides, setColumnResizeOverrides] = useState<Record<string, number>>({});
   const [formulaInputValue, setFormulaInputValue] = useState("");
   const [gridSelection, setGridSelection] = useState<GridSelection>(createEmptyGridSelection);
   const [gridViewportNonce, setGridViewportNonce] = useState(0);
@@ -639,7 +659,17 @@ export default function App() {
   }, [activeSheet?.id, sheetChartPreviews, sheetSummary?.charts]);
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
-  const columns = useMemo(() => createColumns(columnCount), [columnCount]);
+  const effectiveColumnWidths = useMemo(
+    () => ({
+      ...(activeSheet?.columnWidths ?? {}),
+      ...columnResizeOverrides,
+    }),
+    [activeSheet?.columnWidths, columnResizeOverrides],
+  );
+  const columns = useMemo(
+    () => createColumns(columnCount, effectiveColumnWidths),
+    [columnCount, effectiveColumnWidths],
+  );
   const currentSelectionRange = useMemo(
     () => (activeSheet ? getCurrentSelectionRange(gridSelection, activeSheet.id) : null),
     [activeSheet, gridSelection],
@@ -666,6 +696,52 @@ export default function App() {
       return result;
     },
     [],
+  );
+
+  const handleColumnResize = useCallback(
+    (_column: GridColumn, newSize: number, columnIndex: number) => {
+      setColumnResizeOverrides((current) => ({
+        ...current,
+        [String(columnIndex)]: Math.round(newSize),
+      }));
+    },
+    [],
+  );
+
+  const handleColumnResizeEnd = useCallback(
+    (_column: GridColumn, newSize: number, columnIndex: number) => {
+      if (!activeSheet) {
+        return;
+      }
+
+      const width = Math.round(newSize);
+
+      setColumnResizeOverrides((current) => ({
+        ...current,
+        [String(columnIndex)]: width,
+      }));
+
+      void applyTransaction([
+        {
+          columnIndex,
+          sheetId: activeSheet.id,
+          type: "setColumnWidth",
+          width,
+        },
+      ])
+        .then(() => {
+          setColumnResizeOverrides((current) =>
+            removeColumnResizeOverride(current, columnIndex, width),
+          );
+        })
+        .catch((error) => {
+          setColumnResizeOverrides((current) =>
+            removeColumnResizeOverride(current, columnIndex, width),
+          );
+          pushErrorToast(error);
+        });
+    },
+    [activeSheet, applyTransaction, pushErrorToast],
   );
 
   const loadVisibleRange = useCallback(
@@ -1830,6 +1906,7 @@ export default function App() {
   }, [isModalDialogOpen, pushErrorToast]);
 
   useEffect(() => {
+    setColumnResizeOverrides({});
     setGridSelection(createEmptyGridSelection());
     setSelectedCellData(null);
     setFormulaInputValue("");
@@ -2150,6 +2227,10 @@ export default function App() {
             gridSelection={gridSelection}
             height="100%"
             onCellEdited={handleCellEdited}
+            maxColumnWidth={MAX_COLUMN_WIDTH}
+            minColumnWidth={MIN_COLUMN_WIDTH}
+            onColumnResize={handleColumnResize}
+            onColumnResizeEnd={handleColumnResizeEnd}
             onDelete={(selection) => {
               deleteSelection(selection);
               return false;

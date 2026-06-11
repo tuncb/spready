@@ -4,8 +4,10 @@ import {
   assertWorkbookSheetNamesAreUnique,
   cloneWorkbookCellStyle,
   createSheet,
+  MAX_COLUMN_WIDTH,
   MIN_CHART_LAYOUT_HEIGHT,
   MIN_CHART_LAYOUT_WIDTH,
+  MIN_COLUMN_WIDTH,
   syncSheetIdSequence,
   type WorkbookCellStyle,
   type WorkbookChart,
@@ -32,6 +34,7 @@ export interface WorkbookDocumentCellStyle {
 export interface WorkbookDocumentSheet {
   cells: WorkbookDocumentCell[];
   columnCount: number;
+  columnWidths?: Record<string, number>;
   id: string;
   metadata?: {
     sourceFilePath?: string;
@@ -85,6 +88,9 @@ const workbookDocumentCellStyleSchema = z.object({
 const workbookDocumentSheetSchema = z.object({
   cells: z.array(workbookDocumentCellSchema),
   columnCount: z.int().min(1),
+  columnWidths: z
+    .record(z.string(), z.number().min(MIN_COLUMN_WIDTH).max(MAX_COLUMN_WIDTH))
+    .optional(),
   id: z.string().min(1),
   metadata: z
     .object({
@@ -285,6 +291,13 @@ function createWorkbookDocumentSheet(sheet: WorkbookSheet): WorkbookDocumentShee
   return {
     cells,
     columnCount: Math.max(1, sheet.cells[0]?.length ?? 0),
+    ...(Object.keys(sheet.columnWidths).length > 0
+      ? {
+          columnWidths: {
+            ...sheet.columnWidths,
+          },
+        }
+      : {}),
     id: sheet.id,
     ...(sheet.sourceFilePath
       ? {
@@ -326,6 +339,7 @@ function parseWorkbookDocumentJson(parsedJson: unknown): WorkbookDocument {
 function restoreWorkbookSheet(sheet: WorkbookDocumentSheet): WorkbookSheet {
   const cells = createSheet(sheet.rowCount, sheet.columnCount);
   const cellStyles: Record<string, WorkbookCellStyle> = {};
+  const columnWidths: Record<string, number> = {};
   const occupiedCellKeys = new Set<string>();
   const styledCellKeys = new Set<string>();
 
@@ -370,9 +384,22 @@ function restoreWorkbookSheet(sheet: WorkbookDocumentSheet): WorkbookSheet {
     cellStyles[cellKey] = cloneWorkbookCellStyle(cellStyle.style);
   }
 
+  for (const [key, width] of Object.entries(sheet.columnWidths ?? {})) {
+    const column = Number(key);
+
+    if (!Number.isInteger(column) || column < 0 || column >= sheet.columnCount) {
+      throw new Error(
+        `Workbook file contains out-of-bounds column width ${key} in sheet "${sheet.id}".`,
+      );
+    }
+
+    columnWidths[key] = Math.round(width);
+  }
+
   return {
     cells,
     cellStyles,
+    columnWidths,
     id: sheet.id,
     name: sheet.name,
     sourceFilePath: sheet.metadata?.sourceFilePath,

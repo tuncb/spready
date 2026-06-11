@@ -94,21 +94,31 @@ test("WorkbookController exposes expanded formula compatibility through the same
             '=VLOOKUP("b",A1:B2,2)',
             "=SUM((B1:B2,B2:B2))",
             "=SUM(B1:B2 B2:C2)",
+            "=1+LN(B1)",
           ],
-          ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)', "", "", ""],
+          [
+            "b",
+            "20",
+            '=XLOOKUP("b",A1:A2,B1:B2,"nf")',
+            '=TEXTJOIN(", ",TRUE,A1:A2)',
+            "",
+            "",
+            "",
+            "",
+          ],
         ],
       },
     ],
   });
 
   const rawRange = controller.getSheetRange({
-    columnCount: 7,
+    columnCount: 8,
     rowCount: 2,
     startColumn: 0,
     startRow: 0,
   });
   const displayRange = controller.getSheetDisplayRange({
-    columnCount: 7,
+    columnCount: 8,
     rowCount: 2,
     startColumn: 0,
     startRow: 0,
@@ -127,12 +137,13 @@ test("WorkbookController exposes expanded formula compatibility through the same
       '=VLOOKUP("b",A1:B2,2)',
       "=SUM((B1:B2,B2:B2))",
       "=SUM(B1:B2 B2:C2)",
+      "=1+LN(B1)",
     ],
-    ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)', "", "", ""],
+    ["b", "20", '=XLOOKUP("b",A1:A2,B1:B2,"nf")', '=TEXTJOIN(", ",TRUE,A1:A2)', "", "", "", ""],
   ]);
   assert.deepEqual(displayRange.values, [
-    ["a", "10", "30", "99", "20", "50", "20"],
-    ["b", "20", "20", "a, b", "", "", ""],
+    ["a", "10", "30", "99", "20", "50", "20", "3.302585092994046"],
+    ["b", "20", "20", "a, b", "", "", "", ""],
   ]);
   assert.deepEqual(lookupCell, {
     columnIndex: 2,

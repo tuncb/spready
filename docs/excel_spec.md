@@ -393,6 +393,7 @@ Microsoft categorizes Excel worksheet functions by purpose, including math/trig,
 | `MOD`     | `MOD(number, divisor)`           | Remainder                      |
 | `POWER`   | `POWER(number, power)`           | Exponentiation                 |
 | `SQRT`    | `SQRT(number)`                   | Square root                    |
+| `LN`      | `LN(number)`                     | Natural logarithm              |
 
 Example:
 
