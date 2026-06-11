@@ -2075,6 +2075,29 @@ export function evaluateWorkbook(
     };
   }
 
+  function evaluateLn(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
+    const argumentError = expectArgumentCount(args, 1);
+
+    if (argumentError) {
+      return argumentError;
+    }
+
+    const value = coerceToNumber(evaluateAst(args[0], dependencies));
+
+    if (value.type === "error") {
+      return value;
+    }
+
+    if (value.value <= 0) {
+      return createErrorValue("NUM");
+    }
+
+    return {
+      type: "number",
+      value: Math.log(value.value),
+    };
+  }
+
   function evaluateTrue(args: FormulaAst[]): FormulaValue {
     const argumentError = expectArgumentCount(args, 0);
 
@@ -3078,6 +3101,7 @@ export function evaluateWorkbook(
     ["MOD", evaluateMod],
     ["POWER", evaluatePower],
     ["SQRT", evaluateSqrt],
+    ["LN", evaluateLn],
     ["TRUE", evaluateTrue],
     ["FALSE", evaluateFalse],
     ["AND", evaluateAnd],

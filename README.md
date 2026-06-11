@@ -325,7 +325,7 @@ The stdio MCP wrapper currently exposes:
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
 `open_spready_app` now returns success only after TCP reports that an Electron frontend window is visible.
 
-Display reads evaluate the workbook formula engine used by the app UI, including arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, reference intersection, parenthesized reference union, core math/logical/text functions, date/time functions such as `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, and `DAY`, and lookup functions such as `INDEX`, `MATCH`, `XLOOKUP`, and `VLOOKUP`.
+Display reads evaluate the workbook formula engine used by the app UI, including arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, reference intersection, parenthesized reference union, core math/logical/text functions such as `LN`, date/time functions such as `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, and `DAY`, and lookup functions such as `INDEX`, `MATCH`, `XLOOKUP`, and `VLOOKUP`.
 Raw reads continue to preserve the stored input exactly as written.
 
 `import_csv_file` and `export_csv_file` both accept an optional `sheetId`. If omitted, they use

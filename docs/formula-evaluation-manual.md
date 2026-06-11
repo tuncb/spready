@@ -190,11 +190,13 @@ Example:
 - `MOD`
 - `POWER`
 - `SQRT`
+- `LN`
 
 Notes:
 
 - `AVERAGE` returns `#DIV/0!` when there are no numeric values.
 - `SQRT` of a negative number returns `#NUM!`.
+- `LN` of zero or a negative number returns `#NUM!`.
 - `POWER` returns `#NUM!` when the JavaScript result is `NaN`.
 
 ### Logical
