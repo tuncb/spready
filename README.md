@@ -265,6 +265,7 @@ Supported transaction operations currently include:
 - `addSheet`
 - `addChart`
 - `setActiveSheet`
+- `setColumnWidth`
 - `setChartLayout`
 - `setChartSpec`
 - `renameSheet`
@@ -287,6 +288,7 @@ Supported transaction operations currently include:
 - `setSheetSourceFile`
 
 Sheet names supplied to `addSheet`, `renameSheet`, `replaceSheet`, and `replaceSheetFromCsv` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. When `addSheet` omits `name`, Spready generates the next non-conflicting `Sheet N` name.
+Column widths are sparse per-sheet pixel overrides. Omitted columns use the default width, and `setColumnWidth` with the default width clears the override.
 
 ## MCP surface
 

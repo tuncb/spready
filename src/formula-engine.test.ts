@@ -8,6 +8,7 @@ function createSheet(rows: string[][]): WorkbookSheet {
   return {
     cells: normalizeSheet(rows),
     cellStyles: {},
+    columnWidths: {},
     id: "sheet-under-test",
     name: "Sheet Under Test",
   };

@@ -33,6 +33,7 @@ const workbookSummarySchema = z.object({
   sheets: z.array(
     z.object({
       columnCount: z.int().min(1),
+      columnWidths: z.record(z.string(), z.number()).optional(),
       id: z.string(),
       name: z.string(),
       rowCount: z.int().min(1),
@@ -248,6 +249,12 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     type: z.literal("setActiveSheet"),
   }),
   z.object({
+    columnIndex: z.int().min(0),
+    sheetId: z.string().min(1).optional(),
+    type: z.literal("setColumnWidth"),
+    width: z.number(),
+  }),
+  z.object({
     chartId: z.string().min(1),
     layout: workbookChartLayoutSchema,
     type: z.literal("setChartLayout"),
@@ -461,6 +468,11 @@ const transactionOperations = [
   {
     type: "setActiveSheet",
     description: "Make a specific sheet active.",
+  },
+  {
+    type: "setColumnWidth",
+    description:
+      "Set one column's persisted pixel width. Setting the default width clears the sparse override.",
   },
   {
     type: "setChartSpec",

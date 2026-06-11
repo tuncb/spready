@@ -26,6 +26,11 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
         type: "setSheetSourceFile",
       },
       {
+        columnIndex: 1,
+        type: "setColumnWidth",
+        width: 220,
+      },
+      {
         columnCount: 2,
         rowCount: 1,
         startColumn: 0,
@@ -68,6 +73,12 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
           horizontalAlign: "right",
         },
         type: "setCellStyle",
+      },
+      {
+        columnIndex: 2,
+        sheetId: "sheet-12",
+        type: "setColumnWidth",
+        width: 180,
       },
     ],
   }).state;
@@ -154,6 +165,7 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
   assert.deepEqual(
     parsed.sheets.map((sheet) => ({
       columnCount: sheet.cells[0]?.length ?? 0,
+      columnWidths: sheet.columnWidths,
       id: sheet.id,
       name: sheet.name,
       rowCount: sheet.cells.length,
@@ -162,6 +174,9 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
     [
       {
         columnCount: 50,
+        columnWidths: {
+          "1": 220,
+        },
         id: workbook.sheets[0].id,
         name: "Sheet 1",
         rowCount: 200,
@@ -169,6 +184,9 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
       },
       {
         columnCount: 3,
+        columnWidths: {
+          "2": 180,
+        },
         id: "sheet-12",
         name: "Budget",
         rowCount: 4,

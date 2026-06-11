@@ -1,6 +1,9 @@
 export const DEFAULT_INITIAL_ROWS = 200;
 export const DEFAULT_INITIAL_COLUMNS = 50;
 export const DEFAULT_SHEET_NAME = "Sheet 1";
+export const DEFAULT_COLUMN_WIDTH = 140;
+export const MIN_COLUMN_WIDTH = 48;
+export const MAX_COLUMN_WIDTH = 640;
 export const DEFAULT_CHART_LAYOUT_WIDTH = 420;
 export const DEFAULT_CHART_LAYOUT_HEIGHT = 260;
 export const MIN_CHART_LAYOUT_WIDTH = 180;
@@ -24,6 +27,7 @@ export interface WorkbookSheet {
   name: string;
   cells: string[][];
   cellStyles: Record<string, WorkbookCellStyle>;
+  columnWidths: Record<string, number>;
   sourceFilePath?: string;
 }
 
@@ -43,6 +47,7 @@ export interface SheetSummary {
   name: string;
   rowCount: number;
   columnCount: number;
+  columnWidths?: Record<string, number>;
   sourceFilePath?: string;
 }
 
@@ -424,6 +429,12 @@ export type WorkbookTransactionOperation =
   | {
       type: "setActiveSheet";
       sheetId: string;
+    }
+  | {
+      type: "setColumnWidth";
+      columnIndex: number;
+      sheetId?: string;
+      width: number;
     }
   | {
       chartId: string;
@@ -816,6 +827,7 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
     hasUnsavedChanges: workbook.hasUnsavedChanges,
     sheets: workbook.sheets.map((sheet) => ({
       columnCount: getSheetColumnCount(sheet),
+      columnWidths: cloneColumnWidths(sheet.columnWidths),
       id: sheet.id,
       name: sheet.name,
       rowCount: getSheetRowCount(sheet),
@@ -1495,6 +1507,11 @@ export function applyWorkbookTransaction(
         }
 
         sheet.cellStyles = deleteColumnStyles(sheet.cellStyles, deleteStart, requestedDeleteCount);
+        sheet.columnWidths = deleteColumnWidths(
+          sheet.columnWidths,
+          deleteStart,
+          requestedDeleteCount,
+        );
 
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForDeletedColumns(
@@ -1598,6 +1615,7 @@ export function applyWorkbookTransaction(
         }
 
         sheet.cellStyles = insertColumnStyles(sheet.cellStyles, insertAt, operation.count);
+        sheet.columnWidths = insertColumnWidths(sheet.columnWidths, insertAt, operation.count);
 
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForInsertedColumns(
@@ -1696,6 +1714,11 @@ export function applyWorkbookTransaction(
           changed = true;
         }
 
+        if (Object.keys(sheet.columnWidths).length > 0) {
+          sheet.columnWidths = {};
+          changed = true;
+        }
+
         if (nextName !== undefined && nextName !== sheet.name) {
           sheet.name = nextName;
           changed = true;
@@ -1730,6 +1753,11 @@ export function applyWorkbookTransaction(
           changed = true;
         }
 
+        if (Object.keys(sheet.columnWidths).length > 0) {
+          sheet.columnWidths = {};
+          changed = true;
+        }
+
         if (nextName !== undefined && nextName !== sheet.name) {
           sheet.name = nextName;
           changed = true;
@@ -1760,6 +1788,7 @@ export function applyWorkbookTransaction(
           targetRowCount,
           targetColumnCount,
         );
+        sheet.columnWidths = filterColumnWidthsInBounds(sheet.columnWidths, targetColumnCount);
         nextState.charts = nextState.charts.map((chart) =>
           clampWorkbookChartLayoutToSheet(chart, sheet),
         );
@@ -1778,6 +1807,18 @@ export function applyWorkbookTransaction(
 
         nextState.activeSheetId = operation.sheetId;
         changed = true;
+        break;
+      }
+
+      case "setColumnWidth": {
+        const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
+
+        assertColumnIndex(operation.columnIndex, getSheetColumnCount(sheet), "Column width index");
+
+        if (setColumnWidth(sheet, operation.columnIndex, operation.width)) {
+          changed = true;
+        }
+
         break;
       }
 
@@ -1992,6 +2033,14 @@ function assertNonNegativeIndex(value: number, label: string) {
   }
 }
 
+function assertColumnIndex(value: number, columnCount: number, label: string) {
+  assertNonNegativeIndex(value, label);
+
+  if (value >= columnCount) {
+    throw new Error(`${label} must be inside the sheet column bounds.`);
+  }
+}
+
 function assertNonNegativeInteger(value: number, label: string) {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative integer.`);
@@ -2007,6 +2056,12 @@ function assertNonNegativeFiniteNumber(value: number, label: string) {
 function assertMinimumFiniteNumber(value: number, minimum: number, label: string) {
   if (!Number.isFinite(value) || value < minimum) {
     throw new Error(`${label} must be at least ${minimum}.`);
+  }
+}
+
+function assertMaximumFiniteNumber(value: number, maximum: number, label: string) {
+  if (!Number.isFinite(value) || value > maximum) {
+    throw new Error(`${label} must be at most ${maximum}.`);
   }
 }
 
@@ -2536,6 +2591,7 @@ function createWorkbookSheet(
   return {
     cells: createSheet(rowCount, columnCount),
     cellStyles: {},
+    columnWidths: {},
     id,
     name,
   };
@@ -2651,6 +2707,7 @@ function getMutableSheet(
     ...currentSheet,
     cells: currentSheet.cells.map((row) => [...row]),
     cellStyles: cloneCellStyles(currentSheet.cellStyles),
+    columnWidths: cloneColumnWidths(currentSheet.columnWidths),
   };
 
   workbook.sheets[sheetIndex] = clonedSheet;
@@ -2814,6 +2871,107 @@ function cloneCellStyles(
 ): Record<string, WorkbookCellStyle> {
   return Object.fromEntries(
     Object.entries(styles).map(([key, style]) => [key, cloneWorkbookCellStyle(style)]),
+  );
+}
+
+function cloneColumnWidths(widths: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(widths)
+      .map(([key, width]) => [key, normalizeColumnWidth(width)] as const)
+      .filter(([, width]) => width !== DEFAULT_COLUMN_WIDTH),
+  );
+}
+
+function normalizeColumnWidth(width: number): number {
+  assertMinimumFiniteNumber(width, MIN_COLUMN_WIDTH, "Column width");
+  assertMaximumFiniteNumber(width, MAX_COLUMN_WIDTH, "Column width");
+
+  return Math.round(width);
+}
+
+function setColumnWidth(sheet: WorkbookSheet, columnIndex: number, width: number): boolean {
+  const nextWidth = normalizeColumnWidth(width);
+  const key = String(columnIndex);
+  const currentWidth = sheet.columnWidths[key] ?? DEFAULT_COLUMN_WIDTH;
+
+  if (currentWidth === nextWidth) {
+    return false;
+  }
+
+  if (nextWidth === DEFAULT_COLUMN_WIDTH) {
+    delete sheet.columnWidths[key];
+    return true;
+  }
+
+  sheet.columnWidths[key] = nextWidth;
+  return true;
+}
+
+function mapColumnWidths(
+  widths: Record<string, number>,
+  mapColumn: (columnIndex: number) => number | null,
+): Record<string, number> {
+  const nextWidths: Record<string, number> = {};
+
+  for (const [key, width] of Object.entries(widths)) {
+    const columnIndex = Number(key);
+
+    if (!Number.isInteger(columnIndex) || columnIndex < 0) {
+      continue;
+    }
+
+    const nextColumnIndex = mapColumn(columnIndex);
+
+    if (nextColumnIndex === null) {
+      continue;
+    }
+
+    const normalizedWidth = normalizeColumnWidth(width);
+
+    if (normalizedWidth !== DEFAULT_COLUMN_WIDTH) {
+      nextWidths[String(nextColumnIndex)] = normalizedWidth;
+    }
+  }
+
+  return nextWidths;
+}
+
+function deleteColumnWidths(
+  widths: Record<string, number>,
+  deleteStart: number,
+  count: number,
+): Record<string, number> {
+  const deleteEnd = deleteStart + count;
+
+  return mapColumnWidths(widths, (columnIndex) => {
+    if (columnIndex < deleteStart) {
+      return columnIndex;
+    }
+
+    if (columnIndex >= deleteEnd) {
+      return columnIndex - count;
+    }
+
+    return null;
+  });
+}
+
+function insertColumnWidths(
+  widths: Record<string, number>,
+  insertAt: number,
+  count: number,
+): Record<string, number> {
+  return mapColumnWidths(widths, (columnIndex) =>
+    columnIndex >= insertAt ? columnIndex + count : columnIndex,
+  );
+}
+
+function filterColumnWidthsInBounds(
+  widths: Record<string, number>,
+  columnCount: number,
+): Record<string, number> {
+  return mapColumnWidths(widths, (columnIndex) =>
+    columnIndex >= columnCount ? null : columnIndex,
   );
 }
 
