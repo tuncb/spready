@@ -36,8 +36,10 @@ import type {
   WorkbookHistoryRequest,
   WorkbookHistoryResult,
   WorkbookRedoRequest,
+  WorkbookTable,
   WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
+  WorkbookSheetTablesResult,
   WorkbookSummary,
   WorkbookUndoTree,
 } from "./workbook-core";
@@ -238,6 +240,14 @@ export class SpreadyControlClient extends EventEmitter {
 
   async getSheetStyleRange(request: SheetRangeRequest) {
     return this.call<SheetStyleRangeResult>("getSheetStyleRange", request);
+  }
+
+  async getSheetTables(sheetId?: string) {
+    return this.call<WorkbookSheetTablesResult>("getSheetTables", { sheetId });
+  }
+
+  async getTable(tableId: string) {
+    return this.call<WorkbookTable>("getTable", { tableId });
   }
 
   async getUsedRange(sheetId?: string) {

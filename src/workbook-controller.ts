@@ -6,13 +6,17 @@ import {
   applyWorkbookTransaction,
   buildCreateChartOperation,
   buildFormatCellsOperations,
+  compareWorkbookTableSortValues,
   cloneWorkbookChart,
+  cloneWorkbookTable,
   createWorkbookState,
   getSheetColumnCount,
   getWorkbookChartById,
+  getWorkbookTableById,
   getWorkbookChartStatus,
   getWorkbookChartValidationIssues,
   getWorkbookSheetCharts,
+  getWorkbookSheetTables,
   getWorkbookSheet,
   getSheetCsv,
   getSheetRange,
@@ -58,7 +62,10 @@ import {
   type WorkbookHistoryResult,
   type WorkbookRedoRequest,
   type WorkbookState,
+  type WorkbookTable,
   type WorkbookSummary,
+  type WorkbookSheetTablesResult,
+  type WorkbookTransactionOperation,
   type WorkbookUndoTree,
 } from "./workbook-core";
 import {
@@ -190,6 +197,14 @@ export class WorkbookController extends EventEmitter {
       sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id) : undefined,
       this.#getChartSheetReferences(),
     );
+  }
+
+  getSheetTables(sheetId?: string): WorkbookSheetTablesResult {
+    return getWorkbookSheetTables(this.#state, sheetId);
+  }
+
+  getTable(tableId: string): WorkbookTable {
+    return cloneWorkbookTable(getWorkbookTableById(this.#state, tableId));
   }
 
   getSheetCsv(sheetId?: string): string {
@@ -386,7 +401,8 @@ export class WorkbookController extends EventEmitter {
   applyTransaction(request: ApplyTransactionRequest): ApplyTransactionResult {
     this.#assertExpectedVersion(request.expectedVersion);
 
-    const execution = applyWorkbookTransaction(this.#state, request);
+    const preparedRequest = this.#prepareTransaction(request);
+    const execution = applyWorkbookTransaction(this.#state, preparedRequest);
     const nextState =
       execution.changed && !request.dryRun
         ? {
@@ -492,6 +508,72 @@ export class WorkbookController extends EventEmitter {
       ...result,
       filePath,
     };
+  }
+
+  #prepareTransaction(request: ApplyTransactionRequest): ApplyTransactionRequest {
+    let operations: WorkbookTransactionOperation[] | undefined;
+
+    request.operations.forEach((operation, index) => {
+      if (
+        operation.type !== "sortTable" ||
+        (operation.valueMode ?? "raw") !== "display" ||
+        operation.bodyRowOrder !== undefined
+      ) {
+        return;
+      }
+
+      operations ??= [...request.operations];
+      operations[index] = {
+        ...operation,
+        bodyRowOrder: this.#getDisplayTableSortBodyRowOrder(operation),
+      };
+    });
+
+    return operations
+      ? {
+          ...request,
+          operations,
+        }
+      : request;
+  }
+
+  #getDisplayTableSortBodyRowOrder(
+    operation: Extract<WorkbookTransactionOperation, { type: "sortTable" }>,
+  ): number[] {
+    const table = getWorkbookTableById(this.#state, operation.tableId);
+    const headerOffset = table.hasHeaderRow ? 1 : 0;
+    const bodyStartRow = table.range.startRow + headerOffset;
+    const bodyRowCount = table.range.rowCount - headerOffset;
+
+    if (bodyRowCount <= 1) {
+      return Array.from(
+        { length: Math.max(0, bodyRowCount) },
+        (_value, index) => bodyStartRow + index,
+      );
+    }
+
+    const snapshot = this.#getEvaluationSnapshot(table.range.sheetId);
+    const rows = Array.from({ length: bodyRowCount }, (_value, index) => ({
+      originalIndex: index,
+      rowIndex: bodyStartRow + index,
+    }));
+
+    return rows
+      .sort((left, right) => {
+        for (const key of operation.keys) {
+          const comparison = compareWorkbookTableSortValues(
+            getCellEvaluation(snapshot, left.rowIndex, key.columnIndex).display,
+            getCellEvaluation(snapshot, right.rowIndex, key.columnIndex).display,
+          );
+
+          if (comparison !== 0) {
+            return key.direction === "ascending" ? comparison : -comparison;
+          }
+        }
+
+        return left.originalIndex - right.originalIndex;
+      })
+      .map((entry) => entry.rowIndex);
   }
 
   #getEvaluationSnapshot(sheetId?: string): SheetEvaluationSnapshot {

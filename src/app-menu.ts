@@ -12,6 +12,7 @@ export const APP_MENU_ACTIONS = {
   exportCsv: "csv:export",
   importCsv: "csv:import",
   insertChart: "insert:chart",
+  insertTable: "insert:table",
   newSheet: "sheet:new-sheet",
   openWorkbook: "workbook:open",
   paste: "edit:paste",
@@ -21,6 +22,8 @@ export const APP_MENU_ACTIONS = {
   clearFormatting: "edit:clear-formatting",
   saveWorkbook: "workbook:save",
   saveWorkbookAs: "workbook:save-as",
+  sortTableAscending: "table:sort-ascending",
+  sortTableDescending: "table:sort-descending",
 } as const;
 
 export type AppMenuAction = (typeof APP_MENU_ACTIONS)[keyof typeof APP_MENU_ACTIONS];

@@ -38,8 +38,10 @@ export interface WorkbookState {
   version: number;
   activeSheetId: string;
   nextChartNumber: number;
+  nextTableNumber: number;
   nextSheetNumber: number;
   sheets: WorkbookSheet[];
+  tables: WorkbookTable[];
 }
 
 export interface SheetSummary {
@@ -59,6 +61,52 @@ export interface WorkbookSummary {
   activeSheetId: string;
   activeSheetName: string;
   sheets: SheetSummary[];
+  tables: WorkbookTableSummary[];
+}
+
+export type WorkbookTableSortDirection = "ascending" | "descending";
+
+export type WorkbookTableSortValueMode = "display" | "raw";
+
+export interface WorkbookTableRange {
+  sheetId: string;
+  startRow: number;
+  startColumn: number;
+  rowCount: number;
+  columnCount: number;
+}
+
+export interface WorkbookTableSortKey {
+  columnIndex: number;
+  direction: WorkbookTableSortDirection;
+}
+
+export interface WorkbookTableSortState {
+  keys: WorkbookTableSortKey[];
+  valueMode: WorkbookTableSortValueMode;
+}
+
+export interface WorkbookTable {
+  hasHeaderRow: boolean;
+  id: string;
+  name: string;
+  range: WorkbookTableRange;
+  sortState?: WorkbookTableSortState;
+}
+
+export interface WorkbookTableSummary {
+  hasHeaderRow: boolean;
+  id: string;
+  name: string;
+  range: WorkbookTableRange;
+  sheetId: string;
+  sortState?: WorkbookTableSortState;
+}
+
+export interface WorkbookSheetTablesResult {
+  sheetId: string;
+  sheetName: string;
+  tables: WorkbookTable[];
 }
 
 export const WORKBOOK_CHART_TYPES = ["bar", "line", "area", "pie", "scatter"] as const;
@@ -348,6 +396,13 @@ export type WorkbookTransactionOperation =
       type: "addChart";
     }
   | {
+      hasHeaderRow?: boolean;
+      name?: string;
+      range: Omit<WorkbookTableRange, "sheetId"> & { sheetId?: string };
+      tableId?: string;
+      type: "addTable";
+    }
+  | {
       type: "clearRange";
       columnCount: number;
       rowCount: number;
@@ -385,6 +440,10 @@ export type WorkbookTransactionOperation =
       type: "deleteChart";
     }
   | {
+      tableId: string;
+      type: "deleteTable";
+    }
+  | {
       type: "insertColumns";
       columnIndex: number;
       count: number;
@@ -407,6 +466,11 @@ export type WorkbookTransactionOperation =
       type: "renameChart";
     }
   | {
+      name: string;
+      tableId: string;
+      type: "renameTable";
+    }
+  | {
       type: "replaceSheet";
       name?: string;
       rows: string[][];
@@ -427,6 +491,11 @@ export type WorkbookTransactionOperation =
       sheetId?: string;
     }
   | {
+      range: Omit<WorkbookTableRange, "sheetId"> & { sheetId?: string };
+      tableId: string;
+      type: "resizeTable";
+    }
+  | {
       type: "setActiveSheet";
       sheetId: string;
     }
@@ -445,6 +514,13 @@ export type WorkbookTransactionOperation =
       chartId: string;
       spec: WorkbookChartSpec;
       type: "setChartSpec";
+    }
+  | {
+      bodyRowOrder?: number[];
+      keys: WorkbookTableSortKey[];
+      tableId: string;
+      type: "sortTable";
+      valueMode?: WorkbookTableSortValueMode;
     }
   | {
       type: "setSheetSourceFile";
@@ -805,8 +881,10 @@ export function createWorkbookState(): WorkbookState {
     charts: [],
     hasUnsavedChanges: false,
     nextChartNumber: 1,
+    nextTableNumber: 1,
     nextSheetNumber: 2,
     sheets: [defaultSheet],
+    tables: [],
     version: 0,
   };
 }
@@ -833,6 +911,7 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
       rowCount: getSheetRowCount(sheet),
       sourceFilePath: sheet.sourceFilePath,
     })),
+    tables: workbook.tables.map(createWorkbookTableSummary),
     version: workbook.version,
   };
 }
@@ -872,6 +951,41 @@ export function cloneWorkbookChart(chart: WorkbookChart): WorkbookChart {
     ...chart,
     layout: cloneWorkbookChartLayout(chart.layout),
     spec: cloneWorkbookChartSpec(chart.spec),
+  };
+}
+
+export function cloneWorkbookTable(table: WorkbookTable): WorkbookTable {
+  return {
+    hasHeaderRow: table.hasHeaderRow,
+    id: table.id,
+    name: table.name,
+    range: { ...table.range },
+    ...(table.sortState ? { sortState: cloneWorkbookTableSortState(table.sortState) } : {}),
+  };
+}
+
+export function getWorkbookTableById(workbook: WorkbookState, tableId: string): WorkbookTable {
+  const table = workbook.tables.find((entry) => entry.id === tableId);
+
+  if (!table) {
+    throw new Error(`Table "${tableId}" was not found.`);
+  }
+
+  return table;
+}
+
+export function getWorkbookSheetTables(
+  workbook: WorkbookState,
+  sheetId?: string,
+): WorkbookSheetTablesResult {
+  const sheet = getWorkbookSheet(workbook, sheetId ?? workbook.activeSheetId);
+
+  return {
+    sheetId: sheet.id,
+    sheetName: sheet.name,
+    tables: workbook.tables
+      .filter((table) => table.range.sheetId === sheet.id)
+      .map((table) => cloneWorkbookTable(table)),
   };
 }
 
@@ -1242,6 +1356,147 @@ export function createWorkbookChartSummary(
   };
 }
 
+export function createWorkbookTableSummary(table: WorkbookTable): WorkbookTableSummary {
+  return {
+    hasHeaderRow: table.hasHeaderRow,
+    id: table.id,
+    name: table.name,
+    range: { ...table.range },
+    sheetId: table.range.sheetId,
+    ...(table.sortState ? { sortState: cloneWorkbookTableSortState(table.sortState) } : {}),
+  };
+}
+
+export function adjustWorkbookTableForInsertedRows(
+  table: WorkbookTable,
+  sheetId: string,
+  rowIndex: number,
+  count: number,
+): WorkbookTable {
+  assertNonNegativeIndex(rowIndex, "Inserted row index");
+  assertPositiveCount(count, "Inserted row count");
+
+  if (table.range.sheetId !== sheetId) {
+    return table;
+  }
+
+  const rangeEnd = table.range.startRow + table.range.rowCount;
+
+  if (rowIndex <= table.range.startRow) {
+    return updateWorkbookTableRange(table, {
+      ...table.range,
+      startRow: table.range.startRow + count,
+    });
+  }
+
+  if (rowIndex < rangeEnd) {
+    return updateWorkbookTableRange(table, {
+      ...table.range,
+      rowCount: table.range.rowCount + count,
+    });
+  }
+
+  return table;
+}
+
+export function adjustWorkbookTableForDeletedRows(
+  table: WorkbookTable,
+  sheetId: string,
+  rowIndex: number,
+  count: number,
+): WorkbookTable[] {
+  assertNonNegativeIndex(rowIndex, "Deleted row index");
+  assertPositiveCount(count, "Deleted row count");
+
+  if (table.range.sheetId !== sheetId) {
+    return [table];
+  }
+
+  const nextRangeAxis = adjustRangeAxisForDeletion(
+    table.range.startRow,
+    table.range.rowCount,
+    rowIndex,
+    count,
+  );
+
+  if (nextRangeAxis.count === 0) {
+    return [];
+  }
+
+  return [
+    updateWorkbookTableRange(table, {
+      ...table.range,
+      rowCount: nextRangeAxis.count,
+      startRow: nextRangeAxis.start,
+    }),
+  ];
+}
+
+export function adjustWorkbookTableForInsertedColumns(
+  table: WorkbookTable,
+  sheetId: string,
+  columnIndex: number,
+  count: number,
+): WorkbookTable {
+  assertNonNegativeIndex(columnIndex, "Inserted column index");
+  assertPositiveCount(count, "Inserted column count");
+
+  if (table.range.sheetId !== sheetId) {
+    return table;
+  }
+
+  const rangeEnd = table.range.startColumn + table.range.columnCount;
+
+  if (columnIndex <= table.range.startColumn) {
+    return updateWorkbookTableRange(table, {
+      ...table.range,
+      startColumn: table.range.startColumn + count,
+    });
+  }
+
+  if (columnIndex < rangeEnd) {
+    return updateWorkbookTableRange(table, {
+      ...table.range,
+      columnCount: table.range.columnCount + count,
+    });
+  }
+
+  return table;
+}
+
+export function adjustWorkbookTableForDeletedColumns(
+  table: WorkbookTable,
+  sheetId: string,
+  columnIndex: number,
+  count: number,
+): WorkbookTable[] {
+  assertNonNegativeIndex(columnIndex, "Deleted column index");
+  assertPositiveCount(count, "Deleted column count");
+
+  if (table.range.sheetId !== sheetId) {
+    return [table];
+  }
+
+  const nextRangeAxis = adjustRangeAxisForDeletion(
+    table.range.startColumn,
+    table.range.columnCount,
+    columnIndex,
+    count,
+  );
+
+  if (nextRangeAxis.count === 0) {
+    return [];
+  }
+
+  return [
+    updateWorkbookTableRange(table, {
+      ...table.range,
+      columnCount: nextRangeAxis.count,
+      startColumn: nextRangeAxis.start,
+    }),
+  ];
+}
+
 export function adjustWorkbookChartForInsertedRows(
   chart: WorkbookChart,
   sheetId: string,
@@ -1373,6 +1628,7 @@ export function applyWorkbookTransaction(
   const nextState: WorkbookState = {
     ...previousState,
     sheets: [...previousState.sheets],
+    tables: [...previousState.tables],
   };
   const clonedSheetIds = new Set<string>();
   let changed = false;
@@ -1434,6 +1690,39 @@ export function applyWorkbookTransaction(
 
         nextState.charts = [...nextState.charts, chart];
         nextState.nextChartNumber += 1;
+        changed = true;
+        break;
+      }
+
+      case "addTable": {
+        const range = normalizeWorkbookTableRange(nextState, operation.range);
+        const tableId =
+          normalizeOptionalTableId(operation.tableId) ?? createTableId(nextState.nextTableNumber);
+        const nextTableName =
+          operation.name === undefined
+            ? getNextAvailableWorkbookTableName(nextState)
+            : {
+                name: assertWorkbookTableNameAvailable(nextState, operation.name),
+                nextTableNumber: nextState.nextTableNumber + 1,
+              };
+
+        if (findTableIndex(nextState, tableId) >= 0) {
+          throw new Error(`Table "${tableId}" already exists.`);
+        }
+
+        const table: WorkbookTable = {
+          hasHeaderRow: operation.hasHeaderRow ?? true,
+          id: tableId,
+          name: nextTableName.name,
+          range,
+        };
+
+        assertWorkbookTableRangeAvailable(nextState, table);
+        nextState.tables = [...nextState.tables, table];
+        nextState.nextTableNumber = Math.max(
+          nextTableName.nextTableNumber,
+          getNextWorkbookTableNumberForId(tableId),
+        );
         changed = true;
         break;
       }
@@ -1512,6 +1801,9 @@ export function applyWorkbookTransaction(
           deleteStart,
           requestedDeleteCount,
         );
+        nextState.tables = nextState.tables.flatMap((table) =>
+          adjustWorkbookTableForDeletedColumns(table, sheet.id, deleteStart, requestedDeleteCount),
+        );
 
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForDeletedColumns(
@@ -1550,6 +1842,9 @@ export function applyWorkbookTransaction(
         }
 
         sheet.cellStyles = deleteRowStyles(sheet.cellStyles, deleteStart, requestedDeleteCount);
+        nextState.tables = nextState.tables.flatMap((table) =>
+          adjustWorkbookTableForDeletedRows(table, sheet.id, deleteStart, requestedDeleteCount),
+        );
 
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForDeletedRows(
@@ -1577,6 +1872,9 @@ export function applyWorkbookTransaction(
 
         const deletedSheet = nextState.sheets[deleteIndex];
         nextState.sheets.splice(deleteIndex, 1);
+        nextState.tables = nextState.tables.filter(
+          (table) => table.range.sheetId !== deletedSheet.id,
+        );
 
         if (nextState.activeSheetId === deletedSheet.id) {
           const nextActiveSheet =
@@ -1604,6 +1902,19 @@ export function applyWorkbookTransaction(
         break;
       }
 
+      case "deleteTable": {
+        const tableId = normalizeRequiredTableId(operation.tableId);
+        const deleteIndex = findTableIndex(nextState, tableId);
+
+        if (deleteIndex < 0) {
+          throw new Error(`Table "${tableId}" was not found.`);
+        }
+
+        nextState.tables = nextState.tables.filter((_table, index) => index !== deleteIndex);
+        changed = true;
+        break;
+      }
+
       case "insertColumns": {
         assertPositiveCount(operation.count, "Column insert count");
 
@@ -1616,6 +1927,9 @@ export function applyWorkbookTransaction(
 
         sheet.cellStyles = insertColumnStyles(sheet.cellStyles, insertAt, operation.count);
         sheet.columnWidths = insertColumnWidths(sheet.columnWidths, insertAt, operation.count);
+        nextState.tables = nextState.tables.map((table) =>
+          adjustWorkbookTableForInsertedColumns(table, sheet.id, insertAt, operation.count),
+        );
 
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForInsertedColumns(
@@ -1642,6 +1956,9 @@ export function applyWorkbookTransaction(
           ...Array.from({ length: operation.count }, () => Array(columnCount).fill("")),
         );
         sheet.cellStyles = insertRowStyles(sheet.cellStyles, insertAt, operation.count);
+        nextState.tables = nextState.tables.map((table) =>
+          adjustWorkbookTableForInsertedRows(table, sheet.id, insertAt, operation.count),
+        );
         nextState.charts = nextState.charts.map((chart) =>
           adjustWorkbookChartLayoutForInsertedRows(
             adjustWorkbookChartForInsertedRows(chart, sheet.id, insertAt, operation.count),
@@ -1693,6 +2010,32 @@ export function applyWorkbookTransaction(
         break;
       }
 
+      case "renameTable": {
+        const tableId = normalizeRequiredTableId(operation.tableId);
+        const tableIndex = findTableIndex(nextState, tableId);
+
+        if (tableIndex < 0) {
+          throw new Error(`Table "${tableId}" was not found.`);
+        }
+
+        const nextName = assertWorkbookTableNameAvailable(nextState, operation.name, tableId);
+
+        if (nextState.tables[tableIndex].name === nextName) {
+          break;
+        }
+
+        nextState.tables = nextState.tables.map((table, index) =>
+          index === tableIndex
+            ? {
+                ...table,
+                name: nextName,
+              }
+            : table,
+        );
+        changed = true;
+        break;
+      }
+
       case "replaceSheet": {
         const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
         const nextName =
@@ -1716,6 +2059,11 @@ export function applyWorkbookTransaction(
 
         if (Object.keys(sheet.columnWidths).length > 0) {
           sheet.columnWidths = {};
+          changed = true;
+        }
+
+        if (nextState.tables.some((table) => table.range.sheetId === sheet.id)) {
+          nextState.tables = nextState.tables.filter((table) => table.range.sheetId !== sheet.id);
           changed = true;
         }
 
@@ -1758,6 +2106,11 @@ export function applyWorkbookTransaction(
           changed = true;
         }
 
+        if (nextState.tables.some((table) => table.range.sheetId === sheet.id)) {
+          nextState.tables = nextState.tables.filter((table) => table.range.sheetId !== sheet.id);
+          changed = true;
+        }
+
         if (nextName !== undefined && nextName !== sheet.name) {
           sheet.name = nextName;
           changed = true;
@@ -1789,8 +2142,43 @@ export function applyWorkbookTransaction(
           targetColumnCount,
         );
         sheet.columnWidths = filterColumnWidthsInBounds(sheet.columnWidths, targetColumnCount);
+        nextState.tables = nextState.tables.flatMap((table) =>
+          clampWorkbookTableToSheet(table, sheet),
+        );
         nextState.charts = nextState.charts.map((chart) =>
           clampWorkbookChartLayoutToSheet(chart, sheet),
+        );
+        changed = true;
+        break;
+      }
+
+      case "resizeTable": {
+        const tableId = normalizeRequiredTableId(operation.tableId);
+        const tableIndex = findTableIndex(nextState, tableId);
+
+        if (tableIndex < 0) {
+          throw new Error(`Table "${tableId}" was not found.`);
+        }
+
+        const currentTable = nextState.tables[tableIndex];
+        const range = normalizeWorkbookTableRange(nextState, {
+          ...operation.range,
+          sheetId: operation.range.sheetId ?? currentTable.range.sheetId,
+        });
+        const nextTable: WorkbookTable = {
+          ...currentTable,
+          range,
+          sortState: undefined,
+        };
+
+        assertWorkbookTableRangeAvailable(nextState, nextTable, tableId);
+
+        if (workbookTablesEqual(currentTable, nextTable)) {
+          break;
+        }
+
+        nextState.tables = nextState.tables.map((table, index) =>
+          index === tableIndex ? nextTable : table,
         );
         changed = true;
         break;
@@ -1853,6 +2241,50 @@ export function applyWorkbookTransaction(
           index === chartIndex ? nextChart : chart,
         );
         changed = true;
+        break;
+      }
+
+      case "sortTable": {
+        const tableId = normalizeRequiredTableId(operation.tableId);
+        const tableIndex = findTableIndex(nextState, tableId);
+
+        if (tableIndex < 0) {
+          throw new Error(`Table "${tableId}" was not found.`);
+        }
+
+        const table = nextState.tables[tableIndex];
+        const sortState = normalizeWorkbookTableSortState(
+          table,
+          operation.keys,
+          operation.valueMode ?? "raw",
+        );
+        const sheet = getMutableSheet(nextState, clonedSheetIds, table.range.sheetId);
+
+        if (sortWorkbookTableRows(sheet, table, sortState, operation.bodyRowOrder)) {
+          nextState.tables = nextState.tables.map((entry, index) =>
+            index === tableIndex
+              ? {
+                  ...entry,
+                  sortState,
+                }
+              : entry,
+          );
+          changed = true;
+          break;
+        }
+
+        if (!workbookTableSortStatesEqual(table.sortState, sortState)) {
+          nextState.tables = nextState.tables.map((entry, index) =>
+            index === tableIndex
+              ? {
+                  ...entry,
+                  sortState,
+                }
+              : entry,
+          );
+          changed = true;
+        }
+
         break;
       }
 
@@ -2047,6 +2479,22 @@ function assertNonNegativeInteger(value: number, label: string) {
   }
 }
 
+function normalizePositiveInteger(value: number, label: string): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${label} must be a positive integer.`);
+  }
+
+  return value;
+}
+
+function normalizeNonNegativeInteger(value: number, label: string): number {
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${label} must be a non-negative integer.`);
+  }
+
+  return value;
+}
+
 function assertNonNegativeFiniteNumber(value: number, label: string) {
   if (!Number.isFinite(value) || value < 0) {
     throw new Error(`${label} must be a non-negative finite number.`);
@@ -2104,6 +2552,13 @@ function cloneWorkbookChartLayout(layout: WorkbookChartLayout): WorkbookChartLay
   };
 }
 
+function cloneWorkbookTableSortState(sortState: WorkbookTableSortState): WorkbookTableSortState {
+  return {
+    keys: sortState.keys.map((key) => ({ ...key })),
+    valueMode: sortState.valueMode,
+  };
+}
+
 function createWorkbookChart(
   id: string,
   name: string,
@@ -2158,10 +2613,30 @@ function findChartIndex(workbook: WorkbookState, chartId: string): number {
   return workbook.charts.findIndex((chart) => chart.id === chartId);
 }
 
+function createTableId(nextTableNumber: number): string {
+  return `table-${nextTableNumber}`;
+}
+
+function getNextWorkbookTableNumberForId(tableId: string): number {
+  const match = /^table-(\d+)$/u.exec(tableId);
+
+  return match ? Number.parseInt(match[1], 10) + 1 : 1;
+}
+
+function findTableIndex(workbook: Pick<WorkbookState, "tables">, tableId: string): number {
+  return workbook.tables.findIndex((table) => table.id === tableId);
+}
+
 function normalizeOptionalChartId(chartId?: string): string | undefined {
   const nextChartId = chartId?.trim();
 
   return nextChartId && nextChartId.length > 0 ? nextChartId : undefined;
+}
+
+function normalizeOptionalTableId(tableId?: string): string | undefined {
+  const nextTableId = tableId?.trim();
+
+  return nextTableId && nextTableId.length > 0 ? nextTableId : undefined;
 }
 
 function normalizeRequiredChartId(chartId: string): string {
@@ -2172,6 +2647,16 @@ function normalizeRequiredChartId(chartId: string): string {
   }
 
   return nextChartId;
+}
+
+function normalizeRequiredTableId(tableId: string): string {
+  const nextTableId = tableId.trim();
+
+  if (nextTableId.length === 0) {
+    throw new Error("Table id must be a non-empty string.");
+  }
+
+  return nextTableId;
 }
 
 function getWorkbookChartSheetReferences(
@@ -2283,6 +2768,45 @@ function workbookChartsEqual(left: WorkbookChart, right: WorkbookChart): boolean
     left.name === right.name &&
     left.sheetId === right.sheetId &&
     workbookChartSpecsEqual(left.spec, right.spec)
+  );
+}
+
+function workbookTablesEqual(left: WorkbookTable, right: WorkbookTable): boolean {
+  return (
+    left.hasHeaderRow === right.hasHeaderRow &&
+    left.id === right.id &&
+    left.name === right.name &&
+    workbookTableRangesEqual(left.range, right.range) &&
+    workbookTableSortStatesEqual(left.sortState, right.sortState)
+  );
+}
+
+function workbookTableRangesEqual(left: WorkbookTableRange, right: WorkbookTableRange): boolean {
+  return (
+    left.sheetId === right.sheetId &&
+    left.startRow === right.startRow &&
+    left.startColumn === right.startColumn &&
+    left.rowCount === right.rowCount &&
+    left.columnCount === right.columnCount
+  );
+}
+
+function workbookTableSortStatesEqual(
+  left: WorkbookTableSortState | undefined,
+  right: WorkbookTableSortState | undefined,
+): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    left.valueMode === right.valueMode &&
+    left.keys.length === right.keys.length &&
+    left.keys.every(
+      (key, index) =>
+        key.columnIndex === right.keys[index]?.columnIndex &&
+        key.direction === right.keys[index]?.direction,
+    )
   );
 }
 
@@ -2533,6 +3057,51 @@ function updateWorkbookChartRange(chart: WorkbookChart, range: WorkbookChartRang
   };
 }
 
+function updateWorkbookTableRange(table: WorkbookTable, range: WorkbookTableRange): WorkbookTable {
+  if (
+    table.range.sheetId === range.sheetId &&
+    table.range.startRow === range.startRow &&
+    table.range.startColumn === range.startColumn &&
+    table.range.rowCount === range.rowCount &&
+    table.range.columnCount === range.columnCount
+  ) {
+    return table;
+  }
+
+  return {
+    ...table,
+    range,
+    sortState: undefined,
+  };
+}
+
+function clampWorkbookTableToSheet(table: WorkbookTable, sheet: WorkbookSheet): WorkbookTable[] {
+  if (table.range.sheetId !== sheet.id) {
+    return [table];
+  }
+
+  const rowCount = getSheetRowCount(sheet);
+  const columnCount = getSheetColumnCount(sheet);
+  const startRow = Math.min(table.range.startRow, rowCount);
+  const startColumn = Math.min(table.range.startColumn, columnCount);
+  const nextRowCount = Math.max(0, Math.min(table.range.rowCount, rowCount - startRow));
+  const nextColumnCount = Math.max(0, Math.min(table.range.columnCount, columnCount - startColumn));
+
+  if (nextRowCount === 0 || nextColumnCount === 0) {
+    return [];
+  }
+
+  return [
+    updateWorkbookTableRange(table, {
+      columnCount: nextColumnCount,
+      rowCount: nextRowCount,
+      sheetId: sheet.id,
+      startColumn,
+      startRow,
+    }),
+  ];
+}
+
 function adjustRangeAxisForDeletion(
   start: number,
   count: number,
@@ -2578,6 +3147,212 @@ function adjustRangeAxisForDeletion(
     count: nextCount,
     start,
   };
+}
+
+function normalizeWorkbookTableSortState(
+  table: WorkbookTable,
+  keys: WorkbookTableSortKey[],
+  valueMode: WorkbookTableSortValueMode,
+): WorkbookTableSortState {
+  if (keys.length === 0) {
+    throw new Error("Table sort must include at least one sort key.");
+  }
+
+  if (valueMode !== "raw" && valueMode !== "display") {
+    throw new Error('Table sort valueMode must be "raw" or "display".');
+  }
+
+  return {
+    keys: keys.map((key) => {
+      const columnIndex = normalizeNonNegativeInteger(key.columnIndex, "Table sort column index");
+
+      if (
+        columnIndex < table.range.startColumn ||
+        columnIndex >= table.range.startColumn + table.range.columnCount
+      ) {
+        throw new Error(`Table sort column ${columnIndex} is outside table "${table.id}".`);
+      }
+
+      if (key.direction !== "ascending" && key.direction !== "descending") {
+        throw new Error('Table sort direction must be "ascending" or "descending".');
+      }
+
+      return {
+        columnIndex,
+        direction: key.direction,
+      };
+    }),
+    valueMode,
+  };
+}
+
+function sortWorkbookTableRows(
+  sheet: WorkbookSheet,
+  table: WorkbookTable,
+  sortState: WorkbookTableSortState,
+  bodyRowOrder?: number[],
+): boolean {
+  const headerOffset = table.hasHeaderRow ? 1 : 0;
+  const bodyStartRow = table.range.startRow + headerOffset;
+  const bodyRowCount = table.range.rowCount - headerOffset;
+
+  if (bodyRowCount <= 1) {
+    return false;
+  }
+
+  const sortedRows =
+    bodyRowOrder === undefined
+      ? getSortedWorkbookTableBodyRows(sheet, table, sortState)
+      : normalizeWorkbookTableBodyRowOrder(bodyRowOrder, bodyStartRow, bodyRowCount);
+  const originalRows = Array.from(
+    { length: bodyRowCount },
+    (_value, index) => bodyStartRow + index,
+  );
+
+  if (sortedRows.every((rowIndex, index) => rowIndex === originalRows[index])) {
+    return false;
+  }
+
+  const startColumn = table.range.startColumn;
+  const endColumn = startColumn + table.range.columnCount;
+  const sortedValues = sortedRows.map((sourceRowIndex) =>
+    sheet.cells[sourceRowIndex].slice(startColumn, endColumn),
+  );
+
+  for (let rowOffset = 0; rowOffset < bodyRowCount; rowOffset += 1) {
+    const targetRow = sheet.cells[bodyStartRow + rowOffset];
+    const sourceValues = sortedValues[rowOffset];
+
+    for (let columnOffset = 0; columnOffset < table.range.columnCount; columnOffset += 1) {
+      targetRow[startColumn + columnOffset] = sourceValues[columnOffset] ?? "";
+    }
+  }
+
+  sheet.cellStyles = sortWorkbookTableCellStyles(sheet.cellStyles, table, sortedRows);
+  return true;
+}
+
+function getSortedWorkbookTableBodyRows(
+  sheet: WorkbookSheet,
+  table: WorkbookTable,
+  sortState: WorkbookTableSortState,
+): number[] {
+  const headerOffset = table.hasHeaderRow ? 1 : 0;
+  const bodyStartRow = table.range.startRow + headerOffset;
+  const bodyRowCount = table.range.rowCount - headerOffset;
+
+  return Array.from({ length: bodyRowCount }, (_value, index) => bodyStartRow + index)
+    .map((rowIndex, originalIndex) => ({ originalIndex, rowIndex }))
+    .sort((left, right) => {
+      for (const key of sortState.keys) {
+        const comparison = compareWorkbookTableSortValues(
+          sheet.cells[left.rowIndex]?.[key.columnIndex] ?? "",
+          sheet.cells[right.rowIndex]?.[key.columnIndex] ?? "",
+        );
+
+        if (comparison !== 0) {
+          return key.direction === "ascending" ? comparison : -comparison;
+        }
+      }
+
+      return left.originalIndex - right.originalIndex;
+    })
+    .map((entry) => entry.rowIndex);
+}
+
+function normalizeWorkbookTableBodyRowOrder(
+  bodyRowOrder: number[],
+  bodyStartRow: number,
+  bodyRowCount: number,
+): number[] {
+  if (bodyRowOrder.length !== bodyRowCount) {
+    throw new Error("Table body row order must include every table body row exactly once.");
+  }
+
+  const allowedRows = new Set(
+    Array.from({ length: bodyRowCount }, (_value, index) => bodyStartRow + index),
+  );
+  const seenRows = new Set<number>();
+
+  for (const rowIndex of bodyRowOrder) {
+    if (!Number.isInteger(rowIndex) || !allowedRows.has(rowIndex) || seenRows.has(rowIndex)) {
+      throw new Error("Table body row order must include every table body row exactly once.");
+    }
+
+    seenRows.add(rowIndex);
+  }
+
+  return [...bodyRowOrder];
+}
+
+export function compareWorkbookTableSortValues(left: string, right: string): number {
+  const leftBlank = left.trim().length === 0;
+  const rightBlank = right.trim().length === 0;
+
+  if (leftBlank || rightBlank) {
+    if (leftBlank === rightBlank) {
+      return 0;
+    }
+
+    return leftBlank ? 1 : -1;
+  }
+
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+    return leftNumber - rightNumber;
+  }
+
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+function sortWorkbookTableCellStyles(
+  styles: Record<string, WorkbookCellStyle>,
+  table: WorkbookTable,
+  sortedRows: number[],
+): Record<string, WorkbookCellStyle> {
+  const headerOffset = table.hasHeaderRow ? 1 : 0;
+  const bodyStartRow = table.range.startRow + headerOffset;
+  const bodyEndRow = table.range.startRow + table.range.rowCount;
+  const startColumn = table.range.startColumn;
+  const endColumn = table.range.startColumn + table.range.columnCount;
+  const nextStyles: Record<string, WorkbookCellStyle> = {};
+
+  for (const [key, style] of Object.entries(styles)) {
+    const [rowText, columnText] = key.split(":");
+    const rowIndex = Number.parseInt(rowText, 10);
+    const columnIndex = Number.parseInt(columnText, 10);
+
+    if (
+      rowIndex >= bodyStartRow &&
+      rowIndex < bodyEndRow &&
+      columnIndex >= startColumn &&
+      columnIndex < endColumn
+    ) {
+      continue;
+    }
+
+    nextStyles[key] = cloneWorkbookCellStyle(style);
+  }
+
+  for (let rowOffset = 0; rowOffset < sortedRows.length; rowOffset += 1) {
+    const targetRowIndex = bodyStartRow + rowOffset;
+    const sourceRowIndex = sortedRows[rowOffset];
+
+    for (let columnIndex = startColumn; columnIndex < endColumn; columnIndex += 1) {
+      const style = styles[`${sourceRowIndex}:${columnIndex}`];
+
+      if (style) {
+        nextStyles[`${targetRowIndex}:${columnIndex}`] = cloneWorkbookCellStyle(style);
+      }
+    }
+  }
+
+  return nextStyles;
 }
 
 function createWorkbookSheet(
@@ -2639,8 +3414,117 @@ function getNextAvailableWorkbookSheetName(
   }
 }
 
+function getNextAvailableWorkbookTableName(
+  workbook: Pick<WorkbookState, "nextTableNumber" | "tables">,
+): {
+  name: string;
+  nextTableNumber: number;
+} {
+  for (let tableNumber = Math.max(1, Math.floor(workbook.nextTableNumber)); ; tableNumber += 1) {
+    const name = `Table ${tableNumber}`;
+
+    if (
+      !workbook.tables.some(
+        (table) => getWorkbookTableNameKey(table.name) === getWorkbookTableNameKey(name),
+      )
+    ) {
+      return {
+        name,
+        nextTableNumber: tableNumber + 1,
+      };
+    }
+  }
+}
+
 function getWorkbookSheetNameKey(name: string): string {
   return name.trim().toLowerCase();
+}
+
+function normalizeWorkbookTableName(name: string): string {
+  const normalizedName = name.trim();
+
+  if (normalizedName.length === 0) {
+    throw new Error("Table name is required.");
+  }
+
+  return normalizedName;
+}
+
+function getWorkbookTableNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function assertWorkbookTableNameAvailable(
+  workbook: Pick<WorkbookState, "tables">,
+  name: string,
+  allowedTableId?: string,
+): string {
+  const normalizedName = normalizeWorkbookTableName(name);
+  const nameKey = getWorkbookTableNameKey(normalizedName);
+  const existingTable = workbook.tables.find(
+    (table) => table.id !== allowedTableId && getWorkbookTableNameKey(table.name) === nameKey,
+  );
+
+  if (existingTable) {
+    throw new Error(
+      `Table name "${normalizedName}" already exists as "${existingTable.name}". Table names must be unique case-insensitively.`,
+    );
+  }
+
+  return normalizedName;
+}
+
+function normalizeWorkbookTableRange(
+  workbook: WorkbookState,
+  range: Omit<WorkbookTableRange, "sheetId"> & { sheetId?: string },
+): WorkbookTableRange {
+  const sheet = getWorkbookSheet(workbook, range.sheetId ?? workbook.activeSheetId);
+  const startRow = normalizeNonNegativeInteger(range.startRow, "Table start row");
+  const startColumn = normalizeNonNegativeInteger(range.startColumn, "Table start column");
+  const rowCount = normalizePositiveInteger(range.rowCount, "Table row count");
+  const columnCount = normalizePositiveInteger(range.columnCount, "Table column count");
+
+  if (startRow + rowCount > getSheetRowCount(sheet)) {
+    throw new Error("Table range must fit within the sheet row bounds.");
+  }
+
+  if (startColumn + columnCount > getSheetColumnCount(sheet)) {
+    throw new Error("Table range must fit within the sheet column bounds.");
+  }
+
+  return {
+    columnCount,
+    rowCount,
+    sheetId: sheet.id,
+    startColumn,
+    startRow,
+  };
+}
+
+function assertWorkbookTableRangeAvailable(
+  workbook: Pick<WorkbookState, "tables">,
+  table: WorkbookTable,
+  allowedTableId?: string,
+) {
+  const overlappingTable = workbook.tables.find(
+    (existingTable) =>
+      existingTable.id !== allowedTableId &&
+      existingTable.range.sheetId === table.range.sheetId &&
+      rangesOverlap(existingTable.range, table.range),
+  );
+
+  if (overlappingTable) {
+    throw new Error(`Table "${table.name}" overlaps table "${overlappingTable.name}".`);
+  }
+}
+
+function rangesOverlap(left: WorkbookTableRange, right: WorkbookTableRange): boolean {
+  return (
+    left.startRow < right.startRow + right.rowCount &&
+    right.startRow < left.startRow + left.rowCount &&
+    left.startColumn < right.startColumn + right.columnCount &&
+    right.startColumn < left.startColumn + left.columnCount
+  );
 }
 
 function createSheetId(): string {

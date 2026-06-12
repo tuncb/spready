@@ -24,6 +24,36 @@ import {
   workbookChartSummarySchema,
 } from "./mcp-chart-tools";
 
+const workbookTableRangeSchema = z.object({
+  columnCount: z.int().min(1),
+  rowCount: z.int().min(1),
+  sheetId: z.string().min(1),
+  startColumn: z.int().min(0),
+  startRow: z.int().min(0),
+});
+
+const workbookTableSortKeySchema = z.object({
+  columnIndex: z.int().min(0),
+  direction: z.enum(["ascending", "descending"]),
+});
+
+const workbookTableSortStateSchema = z.object({
+  keys: z.array(workbookTableSortKeySchema).min(1),
+  valueMode: z.enum(["display", "raw"]),
+});
+
+const workbookTableSchema = z.object({
+  hasHeaderRow: z.boolean(),
+  id: z.string().min(1),
+  name: z.string().min(1),
+  range: workbookTableRangeSchema,
+  sortState: workbookTableSortStateSchema.optional(),
+});
+
+const workbookTableSummarySchema = workbookTableSchema.extend({
+  sheetId: z.string().min(1),
+});
+
 const workbookSummarySchema = z.object({
   activeSheetId: z.string(),
   activeSheetName: z.string(),
@@ -40,6 +70,7 @@ const workbookSummarySchema = z.object({
       sourceFilePath: z.string().optional(),
     }),
   ),
+  tables: z.array(workbookTableSummarySchema),
   version: z.int().min(0),
 });
 
@@ -104,6 +135,12 @@ const sheetStyleRangeSchema = z.object({
   styles: z.array(z.array(workbookCellStyleSchema.nullable())),
 });
 
+const sheetTablesSchema = z.object({
+  sheetId: z.string().min(1),
+  sheetName: z.string().min(1),
+  tables: z.array(workbookTableSchema),
+});
+
 const cellDataSchema = z.object({
   columnIndex: z.int().min(0),
   display: z.string(),
@@ -166,6 +203,19 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     type: z.literal("addChart"),
   }),
   z.object({
+    hasHeaderRow: z.boolean().optional(),
+    name: z.string().min(1).optional(),
+    range: workbookTableRangeSchema
+      .omit({
+        sheetId: true,
+      })
+      .extend({
+        sheetId: z.string().min(1).optional(),
+      }),
+    tableId: z.string().min(1).optional(),
+    type: z.literal("addTable"),
+  }),
+  z.object({
     columnCount: z.int().min(0),
     rowCount: z.int().min(0),
     sheetId: z.string().min(1).optional(),
@@ -203,6 +253,10 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     type: z.literal("deleteChart"),
   }),
   z.object({
+    tableId: z.string().min(1),
+    type: z.literal("deleteTable"),
+  }),
+  z.object({
     columnIndex: z.int().min(0),
     count: z.int().min(1),
     sheetId: z.string().min(1).optional(),
@@ -225,6 +279,11 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     type: z.literal("renameChart"),
   }),
   z.object({
+    name: z.string().min(1),
+    tableId: z.string().min(1),
+    type: z.literal("renameTable"),
+  }),
+  z.object({
     name: z.string().min(1).optional(),
     rows: z.array(z.array(z.string())),
     sheetId: z.string().min(1).optional(),
@@ -245,6 +304,17 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     type: z.literal("resizeSheet"),
   }),
   z.object({
+    range: workbookTableRangeSchema
+      .omit({
+        sheetId: true,
+      })
+      .extend({
+        sheetId: z.string().min(1).optional(),
+      }),
+    tableId: z.string().min(1),
+    type: z.literal("resizeTable"),
+  }),
+  z.object({
     sheetId: z.string().min(1),
     type: z.literal("setActiveSheet"),
   }),
@@ -263,6 +333,13 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     chartId: z.string().min(1),
     spec: workbookChartSpecSchema,
     type: z.literal("setChartSpec"),
+  }),
+  z.object({
+    bodyRowOrder: z.array(z.int().min(0)).optional(),
+    keys: z.array(workbookTableSortKeySchema).min(1),
+    tableId: z.string().min(1),
+    type: z.literal("sortTable"),
+    valueMode: z.enum(["display", "raw"]).optional(),
   }),
   z.object({
     sheetId: z.string().min(1).optional(),
@@ -412,6 +489,11 @@ const transactionOperations = [
       "Persist one validated chart definition and optionally set its id and display name.",
   },
   {
+    type: "addTable",
+    description:
+      "Define a persistent rectangular table on a sheet. Table ranges must fit within a sheet and may not overlap another table.",
+  },
+  {
     type: "clearRange",
     description: "Clear a rectangular range without resizing the sheet.",
   },
@@ -436,6 +518,10 @@ const transactionOperations = [
     description: "Delete one persisted chart by id.",
   },
   {
+    type: "deleteTable",
+    description: "Delete one persisted table definition by id without clearing cells.",
+  },
+  {
     type: "insertColumns",
     description: "Insert one or more blank columns at a zero-based column index.",
   },
@@ -452,6 +538,10 @@ const transactionOperations = [
     description: "Rename one persisted chart by id.",
   },
   {
+    type: "renameTable",
+    description: "Rename one persisted table. Table names must be unique case-insensitively.",
+  },
+  {
     type: "replaceSheet",
     description:
       "Replace an entire sheet from an in-memory 2D string array, optionally renaming it with the same case-insensitive uniqueness rule.",
@@ -464,6 +554,10 @@ const transactionOperations = [
   {
     type: "resizeSheet",
     description: "Set the row and column counts for a sheet.",
+  },
+  {
+    type: "resizeTable",
+    description: "Resize one persisted table to an exact rectangular range.",
   },
   {
     type: "setActiveSheet",
@@ -481,6 +575,11 @@ const transactionOperations = [
   {
     type: "setChartLayout",
     description: "Move or resize one embedded chart by replacing its persisted layout.",
+  },
+  {
+    type: "sortTable",
+    description:
+      "Stably sort the body rows of a table by one or more sheet column indexes. valueMode raw sorts stored input; display sorts evaluated grid values.",
   },
   {
     type: "setSheetSourceFile",
@@ -657,6 +756,18 @@ const guideResource = {
       name: "get_sheet_range",
       readOnly: true,
     },
+    {
+      defaultsToActiveSheet: true,
+      description: "Return persistent table definitions on a sheet.",
+      name: "get_sheet_tables",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description: "Return one persistent table definition by id.",
+      name: "get_table",
+      readOnly: true,
+    },
     ...chartGuideTools.map((tool) => ({
       defaultsToActiveSheet: tool.defaultsToActiveSheet,
       description: tool.description,
@@ -733,7 +844,10 @@ const guideResource = {
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Sheet names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook.",
+    "Table names are trimmed, required when explicitly provided, unique case-insensitively across the workbook, and table ranges may not overlap.",
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
+    "Use get_sheet_tables and get_table for table inspection. Define, rename, resize, delete, and sort tables through apply_transaction.",
+    "sortTable sorts table body rows only. Raw mode sorts stored input strings; display mode sorts evaluated grid values. Formula strings move with rows and are not rewritten.",
     "Use get_undo_tree to inspect undo branches; undo moves to the parent node, redo follows the latest child unless nodeId selects a redo child, and checkout_undo_node jumps directly to any known history node.",
     "Use format_cells for common cell styling; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
@@ -796,6 +910,8 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 - get_sheet_style_range: Read one rectangular range of rendered cell styles.
 - format_cells: Format one or more cell ranges. Merge mode preserves existing styles, replace mode overwrites styles, and clear mode removes styles.
 - get_sheet_range: Read one rectangular range. Prefer this over loading a large sheet.
+- get_sheet_tables: Return persistent table definitions on a sheet. Omitting sheetId uses the active sheet.
+- get_table: Return one persistent table definition by id.
 - get_sheet_charts: Return the chart definitions owned by a sheet. Omitting sheetId uses the active sheet.
 - get_chart: Return one chart definition plus validation status and issues.
 - get_chart_preview: Return one chart's normalized preview dataset, warnings, and derived ECharts option.
@@ -929,7 +1045,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use format_cells for common style changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use get_sheet_tables/get_table for table metadata, use format_cells for common style changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1376,6 +1492,21 @@ async function main() {
             readOnly: true,
             useWhen: "Use this for targeted inspection of raw workbook input strings.",
           },
+          {
+            defaultsToActiveSheet: true,
+            description: "Return persistent table definitions on a sheet.",
+            name: "get_sheet_tables",
+            readOnly: true,
+            useWhen:
+              "Use this to discover table ids and ranges before sorting or resizing a table.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description: "Return one persistent table definition by id.",
+            name: "get_table",
+            readOnly: true,
+            useWhen: "Use this when you already know the table id.",
+          },
           ...chartGuideTools,
           {
             defaultsToActiveSheet: true,
@@ -1625,6 +1756,45 @@ async function main() {
     },
     async (args) =>
       createTextResult(await controlConnection.requireConnectedClient().getSheetRange(args)),
+  );
+
+  server.registerTool(
+    "get_sheet_tables",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description:
+        "Return persistent table definitions on a sheet. Omit sheetId to use the active sheet.",
+      inputSchema: z.object({
+        sheetId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("Optional target sheet id. Defaults to the active sheet."),
+      }),
+      outputSchema: sheetTablesSchema,
+    },
+    async ({ sheetId }) =>
+      createTextResult(await controlConnection.requireConnectedClient().getSheetTables(sheetId)),
+  );
+
+  server.registerTool(
+    "get_table",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description: "Return one persistent table definition by id.",
+      inputSchema: z.object({
+        tableId: z.string().min(1).describe("Table id to read."),
+      }),
+      outputSchema: workbookTableSchema,
+    },
+    async ({ tableId }) =>
+      createTextResult(await controlConnection.requireConnectedClient().getTable(tableId)),
   );
 
   registerChartTools(server, {
@@ -1999,6 +2169,7 @@ async function main() {
                 "- Use get_undo_tree before branch-aware undo or redo decisions.\n" +
                 "- Use zero-based row and column indexes.\n" +
                 "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.\n" +
+                "- Use get_sheet_tables and get_table for table metadata; use sortTable through apply_transaction for table sorting.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
                 "- Read only the ranges you need with get_used_range, get_sheet_range, get_sheet_display_range, or get_sheet_style_range.\n" +
                 "- Use format_cells for common cell styling changes; merge mode preserves existing style properties.\n" +

@@ -264,15 +264,20 @@ Supported transaction operations currently include:
 
 - `addSheet`
 - `addChart`
+- `addTable`
 - `setActiveSheet`
 - `setColumnWidth`
 - `setChartLayout`
 - `setChartSpec`
+- `sortTable`
 - `renameSheet`
 - `renameChart`
+- `renameTable`
 - `deleteSheet`
 - `deleteChart`
+- `deleteTable`
 - `resizeSheet`
+- `resizeTable`
 - `insertRows`
 - `deleteRows`
 - `insertColumns`
@@ -289,6 +294,7 @@ Supported transaction operations currently include:
 
 Sheet names supplied to `addSheet`, `renameSheet`, `replaceSheet`, and `replaceSheetFromCsv` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. When `addSheet` omits `name`, Spready generates the next non-conflicting `Sheet N` name.
 Column widths are sparse per-sheet pixel overrides. Omitted columns use the default width, and `setColumnWidth` with the default width clears the override.
+Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet and may not overlap another table. `sortTable` sorts body rows only; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated grid values. Formula strings move with sorted rows and are not rewritten.
 
 ## MCP surface
 
@@ -307,6 +313,8 @@ The stdio MCP wrapper currently exposes:
 - `get_sheet_style_range`
 - `format_cells`
 - `get_sheet_range`
+- `get_sheet_tables`
+- `get_table`
 - `get_sheet_csv`
 - `get_sheet_charts`
 - `get_chart`
@@ -322,6 +330,7 @@ The stdio MCP wrapper currently exposes:
 `get_sheet_range` returns raw stored cell input, including formula strings like `=A1+B1`.
 `get_sheet_display_range` returns evaluated display values for the grid view.
 `get_sheet_style_range` returns sparse rendered cell styles for the grid view.
+`get_sheet_tables` returns persistent table definitions for a sheet, and `get_table` returns one table by id.
 `format_cells` applies common cell styling without requiring callers to build transaction operations. Merge mode preserves omitted style properties.
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.

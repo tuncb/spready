@@ -39,6 +39,7 @@ import {
   type ClipboardRangeMode,
   type WorkbookCellStyle,
   type WorkbookChartLayout,
+  type WorkbookTableSummary,
   type WorkbookSheetChartPreviewsResult,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
@@ -448,6 +449,22 @@ function selectionContainsCell(selection: GridSelection, cell: Item): boolean {
   return false;
 }
 
+function tableContainsCell(table: WorkbookTableSummary, cell: Item | null): boolean {
+  if (!cell) {
+    return false;
+  }
+
+  const [columnIndex, rowIndex] = cell;
+  const range = table.range;
+
+  return (
+    rowIndex >= range.startRow &&
+    rowIndex < range.startRow + range.rowCount &&
+    columnIndex >= range.startColumn &&
+    columnIndex < range.startColumn + range.columnCount
+  );
+}
+
 function compactSelectionToRuns(
   selection: CompactSelection,
 ): Array<{ count: number; start: number }> {
@@ -657,6 +674,14 @@ export default function App() {
       status: chartStatuses.get(preview.chart.id) ?? preview.status,
     }));
   }, [activeSheet?.id, sheetChartPreviews, sheetSummary?.charts]);
+  const activeSheetTableEntries = useMemo(
+    () => (sheetSummary?.tables ?? []).filter((table) => table.sheetId === activeSheet?.id),
+    [activeSheet?.id, sheetSummary?.tables],
+  );
+  const selectedTable = useMemo(
+    () => activeSheetTableEntries.find((table) => tableContainsCell(table, selectedCell)) ?? null,
+    [activeSheetTableEntries, selectedCell],
+  );
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
   const effectiveColumnWidths = useMemo(
@@ -1359,12 +1384,13 @@ export default function App() {
           canCut: true,
           canDelete: true,
           canFormat: true,
+          canSortTable: Boolean(selectedTable),
         })
         .catch((error) => {
           pushErrorToast(error);
         });
     },
-    [gridSelection, pushErrorToast],
+    [gridSelection, pushErrorToast, selectedTable],
   );
 
   const commitFormulaBar = useCallback(async () => {
@@ -1749,6 +1775,71 @@ export default function App() {
     });
   }, [activeSheet, currentSelectionRange, isModalDialogOpen, sheetSummary]);
 
+  const createTableFromSelection = useCallback(() => {
+    if (!activeSheet || !currentSelectionRange) {
+      return false;
+    }
+
+    void applyTransaction([
+      {
+        hasHeaderRow: true,
+        range: {
+          columnCount: currentSelectionRange.columnCount,
+          rowCount: currentSelectionRange.rowCount,
+          sheetId: activeSheet.id,
+          startColumn: currentSelectionRange.startColumn,
+          startRow: currentSelectionRange.startRow,
+        },
+        type: "addTable",
+      },
+    ]).catch((error) => {
+      pushErrorToast(error);
+    });
+
+    return true;
+  }, [activeSheet, applyTransaction, currentSelectionRange, pushErrorToast]);
+
+  const sortSelectedTable = useCallback(
+    (direction: "ascending" | "descending") => {
+      if (!selectedTable || !selectedCell) {
+        return false;
+      }
+
+      void applyTransaction([
+        {
+          keys: [
+            {
+              columnIndex: selectedCell[0],
+              direction,
+            },
+          ],
+          tableId: selectedTable.id,
+          type: "sortTable",
+          valueMode: "display",
+        },
+      ])
+        .then(() => {
+          void loadVisibleRange(lastVisibleRegionRef.current);
+          void refreshSelectedCellData();
+        })
+        .catch((error) => {
+          pushErrorToast(error);
+          void loadVisibleRange(lastVisibleRegionRef.current);
+          void refreshSelectedCellData();
+        });
+
+      return true;
+    },
+    [
+      applyTransaction,
+      loadVisibleRange,
+      pushErrorToast,
+      refreshSelectedCellData,
+      selectedCell,
+      selectedTable,
+    ],
+  );
+
   const openEditChartEditor = useCallback(
     (chartId: string) => {
       if (!sheetSummary || isModalDialogOpen) {
@@ -2080,6 +2171,16 @@ export default function App() {
             return;
           case APP_MENU_ACTIONS.insertChart:
             openCreateChartEditor();
+            return;
+          case APP_MENU_ACTIONS.insertTable:
+            createTableFromSelection();
+            return;
+          case APP_MENU_ACTIONS.sortTableAscending:
+            sortSelectedTable("ascending");
+            return;
+          case APP_MENU_ACTIONS.sortTableDescending:
+            sortSelectedTable("descending");
+            return;
         }
       };
 
@@ -2092,6 +2193,7 @@ export default function App() {
     clearSelectionFormatting,
     cutSelection,
     copySelection,
+    createTableFromSelection,
     deleteSelection,
     deleteSheet,
     handleExport,
@@ -2105,6 +2207,7 @@ export default function App() {
     openRenameSheetDialog,
     pasteSelection,
     restoreWorkbookHistory,
+    sortSelectedTable,
   ]);
 
   useEffect(() => {
@@ -2296,6 +2399,7 @@ export default function App() {
 
         <div className="app-shell__stats" aria-label="Workbook state">
           <span>{`${rowCount}x${columnCount}`}</span>
+          <span>{`${activeSheetTableEntries.length} tables`}</span>
           <span>{`${activeSheetChartEntries.length} charts`}</span>
           <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
         </div>

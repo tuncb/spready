@@ -13,11 +13,12 @@ import {
   type WorkbookChart,
   type WorkbookSheet,
   type WorkbookState,
+  type WorkbookTable,
 } from "./workbook-core";
 
 export const WORKBOOK_DOCUMENT_EXTENSION = ".spready";
 export const WORKBOOK_DOCUMENT_FORMAT = "spready-workbook";
-export const WORKBOOK_DOCUMENT_VERSION = 4;
+export const WORKBOOK_DOCUMENT_VERSION = 5;
 
 export interface WorkbookDocumentCell {
   column: number;
@@ -45,16 +46,19 @@ export interface WorkbookDocumentSheet {
 }
 
 export type WorkbookDocumentChart = WorkbookChart;
+export type WorkbookDocumentTable = WorkbookTable;
 
 export interface WorkbookDocument {
   format: typeof WORKBOOK_DOCUMENT_FORMAT;
-  formatVersion: typeof WORKBOOK_DOCUMENT_VERSION;
+  formatVersion: 4 | typeof WORKBOOK_DOCUMENT_VERSION;
   workbook: {
     activeSheetId: string;
     charts: WorkbookDocumentChart[];
     nextChartNumber: number;
     nextSheetNumber: number;
+    nextTableNumber?: number;
     sheets: WorkbookDocumentSheet[];
+    tables?: WorkbookDocumentTable[];
   };
 }
 
@@ -155,15 +159,45 @@ const workbookDocumentChartSchema = z.object({
   ]),
 });
 
+const workbookDocumentTableRangeSchema = z.object({
+  columnCount: z.int().min(1),
+  rowCount: z.int().min(1),
+  sheetId: z.string().min(1),
+  startColumn: z.int().min(0),
+  startRow: z.int().min(0),
+});
+
+const workbookDocumentTableSortStateSchema = z.object({
+  keys: z
+    .array(
+      z.object({
+        columnIndex: z.int().min(0),
+        direction: z.enum(["ascending", "descending"]),
+      }),
+    )
+    .min(1),
+  valueMode: z.enum(["display", "raw"]),
+});
+
+const workbookDocumentTableSchema = z.object({
+  hasHeaderRow: z.boolean(),
+  id: z.string().min(1),
+  name: z.string().min(1),
+  range: workbookDocumentTableRangeSchema,
+  sortState: workbookDocumentTableSortStateSchema.optional(),
+});
+
 const workbookDocumentSchema = z.object({
   format: z.literal(WORKBOOK_DOCUMENT_FORMAT),
-  formatVersion: z.literal(WORKBOOK_DOCUMENT_VERSION),
+  formatVersion: z.union([z.literal(4), z.literal(WORKBOOK_DOCUMENT_VERSION)]),
   workbook: z.object({
     activeSheetId: z.string().min(1),
     charts: z.array(workbookDocumentChartSchema),
     nextChartNumber: z.int().min(1),
     nextSheetNumber: z.int().min(1),
+    nextTableNumber: z.int().min(1).optional(),
     sheets: z.array(workbookDocumentSheetSchema).min(1),
+    tables: z.array(workbookDocumentTableSchema).optional(),
   }),
 });
 
@@ -176,7 +210,9 @@ export function createWorkbookDocument(workbook: WorkbookState): WorkbookDocumen
       charts: workbook.charts.map((chart) => ({ ...chart })),
       nextChartNumber: workbook.nextChartNumber,
       nextSheetNumber: workbook.nextSheetNumber,
+      nextTableNumber: workbook.nextTableNumber,
       sheets: workbook.sheets.map((sheet) => createWorkbookDocumentSheet(sheet)),
+      tables: workbook.tables.map((table) => restoreWorkbookTable(table)),
     },
   };
 }
@@ -197,6 +233,8 @@ export function parseWorkbookDocument(content: string): WorkbookState {
   const document = parseWorkbookDocumentJson(parsedJson);
   const chartIds = new Set<string>();
   const sheetIds = new Set<string>();
+  const tableIds = new Set<string>();
+  const tableNames = new Map<string, string>();
 
   assertWorkbookSheetNamesAreUnique({ sheets: document.workbook.sheets });
 
@@ -216,6 +254,62 @@ export function parseWorkbookDocument(content: string): WorkbookState {
     chartIds.add(chart.id);
   }
 
+  for (const table of document.workbook.tables ?? []) {
+    if (tableIds.has(table.id)) {
+      throw new Error(`Workbook file contains a duplicate table id "${table.id}".`);
+    }
+
+    tableIds.add(table.id);
+
+    const tableNameKey = table.name.trim().toLowerCase();
+    const existingName = tableNames.get(tableNameKey);
+
+    if (existingName) {
+      throw new Error(
+        `Workbook file contains duplicate table names "${existingName}" and "${table.name}".`,
+      );
+    }
+
+    tableNames.set(tableNameKey, table.name);
+
+    const sheet = document.workbook.sheets.find((entry) => entry.id === table.range.sheetId);
+
+    if (!sheet) {
+      throw new Error(`Workbook file table "${table.id}" references missing sheet.`);
+    }
+
+    if (
+      table.range.startRow + table.range.rowCount > sheet.rowCount ||
+      table.range.startColumn + table.range.columnCount > sheet.columnCount
+    ) {
+      throw new Error(`Workbook file table "${table.id}" is outside sheet bounds.`);
+    }
+
+    for (const key of table.sortState?.keys ?? []) {
+      if (
+        key.columnIndex < table.range.startColumn ||
+        key.columnIndex >= table.range.startColumn + table.range.columnCount
+      ) {
+        throw new Error(`Workbook file table "${table.id}" has an out-of-bounds sort key.`);
+      }
+    }
+  }
+
+  for (let leftIndex = 0; leftIndex < (document.workbook.tables ?? []).length; leftIndex += 1) {
+    for (
+      let rightIndex = leftIndex + 1;
+      rightIndex < (document.workbook.tables ?? []).length;
+      rightIndex += 1
+    ) {
+      const left = document.workbook.tables?.[leftIndex];
+      const right = document.workbook.tables?.[rightIndex];
+
+      if (left && right && tableRangesOverlap(left.range, right.range)) {
+        throw new Error(`Workbook file tables "${left.id}" and "${right.id}" overlap.`);
+      }
+    }
+  }
+
   if (!sheetIds.has(document.workbook.activeSheetId)) {
     throw new Error(
       `Workbook file references missing active sheet "${document.workbook.activeSheetId}".`,
@@ -228,11 +322,17 @@ export function parseWorkbookDocument(content: string): WorkbookState {
     hasUnsavedChanges: false,
     nextChartNumber: document.workbook.nextChartNumber,
     nextSheetNumber: document.workbook.nextSheetNumber,
+    nextTableNumber: document.workbook.nextTableNumber ?? 1,
     sheets: document.workbook.sheets.map((sheet) => restoreWorkbookSheet(sheet)),
+    tables: (document.workbook.tables ?? []).map((table) => restoreWorkbookTable(table)),
     version: 0,
   };
 
   syncSheetIdSequence(workbook);
+  workbook.nextTableNumber = Math.max(
+    workbook.nextTableNumber,
+    getNextTableNumber(workbook.tables),
+  );
 
   return workbook;
 }
@@ -424,4 +524,51 @@ function restoreWorkbookChart(chart: WorkbookDocumentChart): WorkbookChart {
       },
     },
   };
+}
+
+function restoreWorkbookTable(table: WorkbookDocumentTable): WorkbookTable {
+  return {
+    hasHeaderRow: table.hasHeaderRow,
+    id: table.id,
+    name: table.name,
+    range: {
+      ...table.range,
+    },
+    ...(table.sortState
+      ? {
+          sortState: {
+            keys: table.sortState.keys.map((key) => ({ ...key })),
+            valueMode: table.sortState.valueMode,
+          },
+        }
+      : {}),
+  };
+}
+
+function tableRangesOverlap(
+  left: WorkbookDocumentTable["range"],
+  right: WorkbookDocumentTable["range"],
+): boolean {
+  if (left.sheetId !== right.sheetId) {
+    return false;
+  }
+
+  return (
+    left.startRow < right.startRow + right.rowCount &&
+    right.startRow < left.startRow + left.rowCount &&
+    left.startColumn < right.startColumn + right.columnCount &&
+    right.startColumn < left.startColumn + left.columnCount
+  );
+}
+
+function getNextTableNumber(tables: WorkbookTable[]): number {
+  return (
+    Math.max(
+      0,
+      ...tables.map((table) => {
+        const match = /^table-(\d+)$/u.exec(table.id);
+        return match ? Number.parseInt(match[1], 10) : 0;
+      }),
+    ) + 1
+  );
 }

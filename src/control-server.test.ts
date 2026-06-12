@@ -729,6 +729,110 @@ test("SpreadyControlServer applies chart lifecycle transactions over TCP", async
   }
 });
 
+test("SpreadyControlServer applies table lifecycle and sort transactions over TCP", async () => {
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
+
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    await client.applyTransaction({
+      operations: [
+        {
+          startColumn: 0,
+          startRow: 0,
+          type: "setRange",
+          values: [
+            ["Name", "Score"],
+            ["Bob", "10"],
+            ["Ann", "30"],
+            ["Cal", "20"],
+          ],
+        },
+        {
+          range: {
+            columnCount: 2,
+            rowCount: 4,
+            startColumn: 0,
+            startRow: 0,
+          },
+          tableId: "table-scores",
+          type: "addTable",
+        },
+      ],
+    });
+
+    await client.applyTransaction({
+      operations: [
+        {
+          keys: [
+            {
+              columnIndex: 1,
+              direction: "ascending",
+            },
+          ],
+          tableId: "table-scores",
+          type: "sortTable",
+          valueMode: "display",
+        },
+      ],
+    });
+
+    assert.ok((await client.call<string[]>("listMethods")).includes("getSheetTables"));
+    assert.ok((await client.call<string[]>("listMethods")).includes("getTable"));
+    assert.deepEqual((await client.getSheetTables()).tables[0], {
+      hasHeaderRow: true,
+      id: "table-scores",
+      name: "Table 1",
+      range: {
+        columnCount: 2,
+        rowCount: 4,
+        sheetId: controller.getSummary().activeSheetId,
+        startColumn: 0,
+        startRow: 0,
+      },
+      sortState: {
+        keys: [
+          {
+            columnIndex: 1,
+            direction: "ascending",
+          },
+        ],
+        valueMode: "display",
+      },
+    });
+    assert.equal((await client.getTable("table-scores")).name, "Table 1");
+    assert.deepEqual(
+      (
+        await client.getSheetRange({
+          columnCount: 2,
+          rowCount: 4,
+          startColumn: 0,
+          startRow: 0,
+        })
+      ).values,
+      [
+        ["Name", "Score"],
+        ["Bob", "10"],
+        ["Cal", "20"],
+        ["Ann", "30"],
+      ],
+    );
+  } finally {
+    await client.close();
+    await server.stop();
+  }
+});
+
 test("SpreadyControlServer rejects stale expectedVersion writes over TCP", async () => {
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);

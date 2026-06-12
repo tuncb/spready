@@ -23,6 +23,7 @@ import {
   getSheetStyleRange,
   getSheetRowCount,
   getSheetUsedRange,
+  getWorkbookSheetTables,
   getWorkbookSummary,
   normalizeSheet,
   parseCsv,
@@ -1280,6 +1281,149 @@ test("applyWorkbookTransaction manages chart lifecycle operations", () => {
   }).state;
 
   assert.equal(afterDelete.charts.length, 0);
+});
+
+test("applyWorkbookTransaction manages tables and sorts table body rows", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Score", "Double"],
+          ["Bob", "10", "=B2*2"],
+          ["Ann", "30", "=B3*2"],
+          ["Cal", "20", "=B4*2"],
+        ],
+      },
+      {
+        columnIndex: 0,
+        rowIndex: 2,
+        style: {
+          bold: true,
+        },
+        type: "setCellStyle",
+      },
+      {
+        range: {
+          columnCount: 3,
+          rowCount: 4,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-scores",
+        type: "addTable",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getWorkbookSheetTables(workbook).tables, [
+    {
+      hasHeaderRow: true,
+      id: "table-scores",
+      name: "Table 1",
+      range: {
+        columnCount: 3,
+        rowCount: 4,
+        sheetId: workbook.activeSheetId,
+        startColumn: 0,
+        startRow: 0,
+      },
+    },
+  ]);
+
+  const sorted = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        keys: [
+          {
+            columnIndex: 1,
+            direction: "descending",
+          },
+        ],
+        tableId: "table-scores",
+        type: "sortTable",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(
+    getSheetRange(sorted, {
+      columnCount: 3,
+      rowCount: 4,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["Name", "Score", "Double"],
+      ["Ann", "30", "=B3*2"],
+      ["Cal", "20", "=B4*2"],
+      ["Bob", "10", "=B2*2"],
+    ],
+  );
+  assert.deepEqual(
+    getSheetStyleRange(sorted, {
+      columnCount: 1,
+      rowCount: 4,
+      startColumn: 0,
+      startRow: 0,
+    }).styles,
+    [[null], [{ bold: true }], [null], [null]],
+  );
+  assert.equal(getWorkbookSummary(sorted).tables[0]?.sortState?.valueMode, "raw");
+});
+
+test("applyWorkbookTransaction adjusts table ranges for structural row and column edits", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        range: {
+          columnCount: 3,
+          rowCount: 4,
+          startColumn: 1,
+          startRow: 1,
+        },
+        tableId: "table-1",
+        type: "addTable",
+      },
+    ],
+  }).state;
+
+  const inserted = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        count: 1,
+        rowIndex: 2,
+        type: "insertRows",
+      },
+      {
+        columnIndex: 0,
+        count: 1,
+        type: "insertColumns",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(inserted.tables[0]?.range, {
+    columnCount: 3,
+    rowCount: 5,
+    sheetId: workbook.activeSheetId,
+    startColumn: 2,
+    startRow: 1,
+  });
+
+  const deleted = applyWorkbookTransaction(inserted, {
+    operations: [
+      {
+        columnIndex: 2,
+        count: 10,
+        type: "deleteColumns",
+      },
+    ],
+  }).state;
+
+  assert.equal(deleted.tables.length, 0);
 });
 
 test("buildCreateChartOperation creates a valid chart from the used range by default", () => {

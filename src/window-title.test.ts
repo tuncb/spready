@@ -19,6 +19,7 @@ function createSummary(overrides: Partial<WorkbookSummary> = {}): WorkbookSummar
         rowCount: 20,
       },
     ],
+    tables: [],
     version: 0,
     ...overrides,
   };

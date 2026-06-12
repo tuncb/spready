@@ -284,6 +284,68 @@ test("WorkbookController keeps CSV export on raw input strings even when formula
   );
 });
 
+test("WorkbookController sorts table rows by displayed formula values", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Score"],
+          ["Bob", "=5+5"],
+          ["Ann", "=20+10"],
+          ["Cal", "=8+12"],
+        ],
+      },
+      {
+        range: {
+          columnCount: 2,
+          rowCount: 4,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-scores",
+        type: "addTable",
+      },
+    ],
+  });
+
+  controller.applyTransaction({
+    operations: [
+      {
+        keys: [
+          {
+            columnIndex: 1,
+            direction: "descending",
+          },
+        ],
+        tableId: "table-scores",
+        type: "sortTable",
+        valueMode: "display",
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    controller.getSheetRange({
+      columnCount: 2,
+      rowCount: 4,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["Name", "Score"],
+      ["Ann", "=20+10"],
+      ["Cal", "=8+12"],
+      ["Bob", "=5+5"],
+    ],
+  );
+  assert.equal(controller.getSheetTables().tables[0]?.sortState?.valueMode, "display");
+});
+
 test("WorkbookController supports raw-vs-display range copy plus explicit cut, paste, and clear helpers", () => {
   const controller = new WorkbookController();
 

@@ -340,6 +340,12 @@ export class SpreadyControlServer {
         return this.#controller.getSheetRange(params as SheetRangeRequest);
       case "getSheetStyleRange":
         return this.#controller.getSheetStyleRange(params as SheetRangeRequest);
+      case "getSheetTables":
+        return this.#controller.getSheetTables(
+          (params as { sheetId?: string } | undefined)?.sheetId,
+        );
+      case "getTable":
+        return this.#controller.getTable((params as { tableId: string }).tableId);
       case "getUsedRange":
         return this.#controller.getUsedRange((params as { sheetId?: string } | undefined)?.sheetId);
       case "getUndoTree":
@@ -385,6 +391,8 @@ export class SpreadyControlServer {
           "getSheetDisplayRange",
           "getSheetRange",
           "getSheetStyleRange",
+          "getSheetTables",
+          "getTable",
           "getUndoTree",
           "getUsedRange",
           "getWorkbookSummary",

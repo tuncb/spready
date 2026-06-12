@@ -31,6 +31,7 @@ const summary: WorkbookSummary = {
       rowCount: 12,
     },
   ],
+  tables: [],
   version: 3,
 };
 

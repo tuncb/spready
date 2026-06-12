@@ -61,3 +61,12 @@
 - Undo, redo, and history checkout move the current pointer through the tree and commit a new workbook version so renderer, TCP, and MCP clients continue to observe normal workbookChanged/version behavior.
 - Redo follows the latest child branch by default, while TCP and MCP expose explicit node checkout for branch-aware automation. New writes after undo add a child branch instead of pruning existing redo branches.
 - Save marks the current history node as the saved node without creating an undoable workbook edit. Open workbook and new workbook reset the history tree.
+
+## 2026-06-11
+
+- V1 table support persists rectangular table definitions in workbook state and `.spready` document format version 5. Version 4 documents remain readable with no tables.
+- Table writes use shared transaction operations (`addTable`, `renameTable`, `resizeTable`, `deleteTable`, `sortTable`) so UI, TCP, and MCP use the same workbook rules.
+- `sortTable` stably sorts table body rows only. Header rows remain fixed, and cell styles inside the sorted table columns move with their source cells.
+- `valueMode: "raw"` sorts by stored input strings. `valueMode: "display"` resolves evaluated display values in the controller before applying an explicit row order through the core transaction.
+- Formula strings move with sorted rows and are not rewritten. This matches the current formula/structural-edit policy and leaves Excel-style structured references or formula rewrites out of V1.
+- Tables shift or resize on row/column insertion and deletion, are removed when their sheet is deleted or replaced, and cannot overlap another table on the same sheet.

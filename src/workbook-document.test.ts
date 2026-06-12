@@ -31,6 +31,16 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
         width: 220,
       },
       {
+        range: {
+          columnCount: 3,
+          rowCount: 2,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-revenue",
+        type: "addTable",
+      },
+      {
         columnCount: 2,
         rowCount: 1,
         startColumn: 0,
@@ -161,7 +171,9 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
   assert.equal(parsed.activeSheetId, "sheet-12");
   assert.equal(parsed.nextChartNumber, 3);
   assert.equal(parsed.nextSheetNumber, workbook.nextSheetNumber);
+  assert.equal(parsed.nextTableNumber, workbook.nextTableNumber);
   assert.deepEqual(parsed.charts, workbook.charts);
+  assert.deepEqual(parsed.tables, workbook.tables);
   assert.deepEqual(
     parsed.sheets.map((sheet) => ({
       columnCount: sheet.cells[0]?.length ?? 0,

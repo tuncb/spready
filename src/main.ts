@@ -78,6 +78,7 @@ type ShowCellContextMenuArgs = {
   canCut: boolean;
   canDelete: boolean;
   canFormat: boolean;
+  canSortTable?: boolean;
 };
 
 type SaveWorkbookFileAsArgs = {
@@ -322,6 +323,21 @@ function buildCellContextMenu(browserWindow: BrowserWindow, args: ShowCellContex
       label: "Clear Formatting",
       click: () => {
         sendMenuAction(APP_MENU_ACTIONS.clearFormatting, browserWindow);
+      },
+    },
+    { type: "separator" },
+    {
+      enabled: args.canSortTable ?? false,
+      label: "Sort Table Ascending",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.sortTableAscending, browserWindow);
+      },
+    },
+    {
+      enabled: args.canSortTable ?? false,
+      label: "Sort Table Descending",
+      click: () => {
+        sendMenuAction(APP_MENU_ACTIONS.sortTableDescending, browserWindow);
       },
     },
   ]);
@@ -609,10 +625,40 @@ function buildAppMenu() {
       label: "Insert",
       submenu: [
         {
+          label: "Table",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.insertTable);
+            });
+          },
+        },
+        {
           label: "Chart...",
           click: () => {
             runMenuCommand(() => {
               sendMenuAction(APP_MENU_ACTIONS.insertChart);
+            });
+          },
+        },
+      ],
+    },
+    {
+      enabled: menuEnabled,
+      label: "Data",
+      submenu: [
+        {
+          label: "Sort Table Ascending",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.sortTableAscending);
+            });
+          },
+        },
+        {
+          label: "Sort Table Descending",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.sortTableDescending);
             });
           },
         },

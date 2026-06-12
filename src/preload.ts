@@ -50,6 +50,7 @@ type ShowCellContextMenuRequest = {
   canCut: boolean;
   canDelete: boolean;
   canFormat: boolean;
+  canSortTable?: boolean;
 };
 
 type OpenWorkbookFileResult =
