@@ -16,6 +16,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,6 +28,11 @@ import { CellFormatDialog } from "./CellFormatDialog";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
 import { RenameSheetDialog } from "./RenameSheetDialog";
+import {
+  createSortTableOperation,
+  getVisibleTableHeaderSortTargets,
+  type TableHeaderSortTarget,
+} from "./app-table-sort-controls";
 import {
   DEFAULT_COLUMN_WIDTH,
   getColumnTitle,
@@ -61,6 +67,9 @@ const DEFAULT_CELL_FONT_SIZE = 13;
 const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
 const DEFAULT_VISIBLE_ROW_COUNT = 36;
 const DEFAULT_WORKBOOK_FILE_NAME = "Workbook.spready";
+const TABLE_SORT_BUTTON_SIZE = 16.5;
+const TABLE_SORT_CONTROL_GAP = 1.5;
+const TABLE_SORT_CONTROL_WIDTH = TABLE_SORT_BUTTON_SIZE * 2 + TABLE_SORT_CONTROL_GAP;
 const VISIBLE_COLUMN_PADDING = 4;
 const VISIBLE_ROW_PADDING = 24;
 
@@ -127,6 +136,12 @@ type RenameSheetSession = {
 
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
 type StyleRangeCache = SheetStyleRangeResult;
+type TableSortControlPlacement = TableHeaderSortTarget & {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+};
 
 function buildRangeRequest(
   activeSheetId: string,
@@ -624,6 +639,7 @@ export default function App() {
   const [sheetChartPreviews, setSheetChartPreviews] =
     useState<WorkbookSheetChartPreviewsResult | null>(null);
   const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(null);
+  const [tableSortControls, setTableSortControls] = useState<TableSortControlPlacement[]>([]);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [viewNonce, setViewNonce] = useState(0);
 
@@ -700,6 +716,61 @@ export default function App() {
     [activeSheet, gridSelection],
   );
   const shouldRenderChartOverlay = (sheetChartPreviews?.previews.length ?? 0) > 0;
+  useLayoutEffect(() => {
+    const animationFrameId = window.requestAnimationFrame(() => {
+      const grid = gridRef.current;
+      const surface = sheetSurfaceRef.current;
+
+      if (!grid || !surface) {
+        setTableSortControls([]);
+        return;
+      }
+
+      const fallbackVisibleRegion =
+        activeSheet === null
+          ? null
+          : {
+              height: Math.min(activeSheet.rowCount, DEFAULT_VISIBLE_ROW_COUNT),
+              width: Math.min(activeSheet.columnCount, DEFAULT_VISIBLE_COLUMN_COUNT),
+              x: 0,
+              y: 0,
+            };
+      const targets = getVisibleTableHeaderSortTargets(
+        activeSheetTableEntries,
+        lastVisibleRegionRef.current ?? fallbackVisibleRegion,
+      );
+      const surfaceBounds = surface.getBoundingClientRect();
+      const placements = targets.flatMap<TableSortControlPlacement>((target) => {
+        const cellBounds = grid.getBounds(target.columnIndex, target.rowIndex);
+
+        if (!cellBounds || cellBounds.width < TABLE_SORT_CONTROL_WIDTH + 8) {
+          return [];
+        }
+
+        return [
+          {
+            ...target,
+            height: TABLE_SORT_BUTTON_SIZE,
+            left:
+              cellBounds.x -
+              surfaceBounds.left +
+              Math.max(0, cellBounds.width - TABLE_SORT_CONTROL_WIDTH - 6),
+            top:
+              cellBounds.y -
+              surfaceBounds.top +
+              Math.max(0, (cellBounds.height - TABLE_SORT_BUTTON_SIZE) / 2),
+            width: TABLE_SORT_CONTROL_WIDTH,
+          },
+        ];
+      });
+
+      setTableSortControls(placements);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrameId);
+    };
+  }, [activeSheet, activeSheetTableEntries, effectiveColumnWidths, gridViewportNonce]);
   const dismissToast = useCallback((toastId: string) => {
     setToasts((current) => removeToast(current, toastId));
   }, []);
@@ -1799,25 +1870,9 @@ export default function App() {
     return true;
   }, [activeSheet, applyTransaction, currentSelectionRange, pushErrorToast]);
 
-  const sortSelectedTable = useCallback(
-    (direction: "ascending" | "descending") => {
-      if (!selectedTable || !selectedCell) {
-        return false;
-      }
-
-      void applyTransaction([
-        {
-          keys: [
-            {
-              columnIndex: selectedCell[0],
-              direction,
-            },
-          ],
-          tableId: selectedTable.id,
-          type: "sortTable",
-          valueMode: "display",
-        },
-      ])
+  const sortTableColumn = useCallback(
+    (tableId: string, columnIndex: number, direction: "ascending" | "descending") => {
+      void applyTransaction([createSortTableOperation(tableId, columnIndex, direction)])
         .then(() => {
           void loadVisibleRange(lastVisibleRegionRef.current);
           void refreshSelectedCellData();
@@ -1830,14 +1885,18 @@ export default function App() {
 
       return true;
     },
-    [
-      applyTransaction,
-      loadVisibleRange,
-      pushErrorToast,
-      refreshSelectedCellData,
-      selectedCell,
-      selectedTable,
-    ],
+    [applyTransaction, loadVisibleRange, pushErrorToast, refreshSelectedCellData],
+  );
+
+  const sortSelectedTable = useCallback(
+    (direction: "ascending" | "descending") => {
+      if (!selectedTable || !selectedCell) {
+        return false;
+      }
+
+      return sortTableColumn(selectedTable.id, selectedCell[0], direction);
+    },
+    [selectedCell, selectedTable, sortTableColumn],
   );
 
   const openEditChartEditor = useCallback(
@@ -2361,6 +2420,56 @@ export default function App() {
             theme={GRID_THEME}
             width="100%"
           />
+          {tableSortControls.length > 0 ? (
+            <div className="table-sort-overlay" aria-label="Table sort controls">
+              {tableSortControls.map((control) => (
+                <div
+                  className="table-sort-control"
+                  key={`${control.tableId}:${control.columnIndex}`}
+                  style={{
+                    height: control.height,
+                    left: control.left,
+                    top: control.top,
+                    width: control.width,
+                  }}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                >
+                  <button
+                    aria-label={`Sort ${getColumnTitle(control.columnIndex)} ascending`}
+                    className={`table-sort-control__button${
+                      control.direction === "ascending" ? " is-active" : ""
+                    }`}
+                    title="Sort ascending"
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      sortTableColumn(control.tableId, control.columnIndex, "ascending");
+                    }}
+                  >
+                    <span className="table-sort-control__icon table-sort-control__icon--ascending" />
+                  </button>
+                  <button
+                    aria-label={`Sort ${getColumnTitle(control.columnIndex)} descending`}
+                    className={`table-sort-control__button${
+                      control.direction === "descending" ? " is-active" : ""
+                    }`}
+                    title="Sort descending"
+                    type="button"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      sortTableColumn(control.tableId, control.columnIndex, "descending");
+                    }}
+                  >
+                    <span className="table-sort-control__icon table-sort-control__icon--descending" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {shouldRenderChartOverlay ? (
             <Suspense fallback={null}>
               <LazyWorkbookChartOverlay

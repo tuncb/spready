@@ -160,6 +160,64 @@ select {
   background: transparent;
 }
 
+.table-sort-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.table-sort-control {
+  position: absolute;
+  display: inline-grid;
+  grid-template-columns: 16.5px 16.5px;
+  gap: 1.5px;
+  pointer-events: auto;
+}
+
+.table-sort-control__button {
+  width: 16.5px;
+  height: 16.5px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(100, 116, 139, 0.42);
+  border-radius: 0;
+  color: var(--color-text-medium);
+  background: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+  padding: 0;
+}
+
+.table-sort-control__button:hover,
+.table-sort-control__button:focus-visible {
+  border-color: var(--color-primary);
+  color: var(--color-primary-strong);
+  background: rgba(234, 241, 255, 0.94);
+  outline: none;
+}
+
+.table-sort-control__button.is-active {
+  border-color: var(--color-primary);
+  color: #ffffff;
+  background: var(--color-primary);
+}
+
+.table-sort-control__icon {
+  width: 0;
+  height: 0;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+}
+
+.table-sort-control__icon--ascending {
+  border-bottom: 5.25px solid currentColor;
+}
+
+.table-sort-control__icon--descending {
+  border-top: 5.25px solid currentColor;
+}
+
 .chart-overlay-layer {
   position: absolute;
   inset: 0;
