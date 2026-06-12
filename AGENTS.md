@@ -10,7 +10,8 @@ Run code formatter, linter and typescript compilation, and make sure they don't 
 
 ## Version update
 
-- When the user asks for a version update, update the package version in `package.json`.
+- When the user asks for a version update, run `npm version <new-version> --no-git-tag-version` so `package.json` and `package-lock.json` stay in sync without npm creating its own git tag.
+- Do not update the MCP server version in `src/mcp-stdio.ts` for an app release version bump unless the MCP protocol or tool contract changed.
 - If there are no unrelated changes in the repo, make a git commit and wait for the commit to finish. Only then execute `nu C:\tools\gittag.nu npm` from the repo so the tag version is read directly from `package.json`.
 
 # Architectural Principles
