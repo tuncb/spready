@@ -50,6 +50,8 @@ type ShowCellContextMenuRequest = {
   canCut: boolean;
   canDelete: boolean;
   canFormat: boolean;
+  canDeleteTable?: boolean;
+  canInsertTable?: boolean;
   canSortTable?: boolean;
 };
 

@@ -78,6 +78,8 @@ type ShowCellContextMenuArgs = {
   canCut: boolean;
   canDelete: boolean;
   canFormat: boolean;
+  canDeleteTable?: boolean;
+  canInsertTable?: boolean;
   canSortTable?: boolean;
 };
 
@@ -327,18 +329,34 @@ function buildCellContextMenu(browserWindow: BrowserWindow, args: ShowCellContex
     },
     { type: "separator" },
     {
-      enabled: args.canSortTable ?? false,
-      label: "Sort Table Ascending",
-      click: () => {
-        sendMenuAction(APP_MENU_ACTIONS.sortTableAscending, browserWindow);
-      },
-    },
-    {
-      enabled: args.canSortTable ?? false,
-      label: "Sort Table Descending",
-      click: () => {
-        sendMenuAction(APP_MENU_ACTIONS.sortTableDescending, browserWindow);
-      },
+      label: "Table",
+      submenu: [
+        {
+          enabled: (args.canInsertTable ?? false) || (args.canDeleteTable ?? false),
+          label: args.canDeleteTable ? "Remove Table" : "Insert Table",
+          click: () => {
+            sendMenuAction(
+              args.canDeleteTable ? APP_MENU_ACTIONS.deleteTable : APP_MENU_ACTIONS.insertTable,
+              browserWindow,
+            );
+          },
+        },
+        { type: "separator" },
+        {
+          enabled: args.canSortTable ?? false,
+          label: "Sort Ascending",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.sortTableAscending, browserWindow);
+          },
+        },
+        {
+          enabled: args.canSortTable ?? false,
+          label: "Sort Descending",
+          click: () => {
+            sendMenuAction(APP_MENU_ACTIONS.sortTableDescending, browserWindow);
+          },
+        },
+      ],
     },
   ]);
 }
@@ -637,28 +655,6 @@ function buildAppMenu() {
           click: () => {
             runMenuCommand(() => {
               sendMenuAction(APP_MENU_ACTIONS.insertChart);
-            });
-          },
-        },
-      ],
-    },
-    {
-      enabled: menuEnabled,
-      label: "Data",
-      submenu: [
-        {
-          label: "Sort Table Ascending",
-          click: () => {
-            runMenuCommand(() => {
-              sendMenuAction(APP_MENU_ACTIONS.sortTableAscending);
-            });
-          },
-        },
-        {
-          label: "Sort Table Descending",
-          click: () => {
-            runMenuCommand(() => {
-              sendMenuAction(APP_MENU_ACTIONS.sortTableDescending);
             });
           },
         },

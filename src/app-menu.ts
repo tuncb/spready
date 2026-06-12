@@ -13,6 +13,7 @@ export const APP_MENU_ACTIONS = {
   importCsv: "csv:import",
   insertChart: "insert:chart",
   insertTable: "insert:table",
+  deleteTable: "table:delete",
   newSheet: "sheet:new-sheet",
   openWorkbook: "workbook:open",
   paste: "edit:paste",

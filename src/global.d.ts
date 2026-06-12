@@ -90,6 +90,8 @@ declare global {
         canCut: boolean;
         canDelete: boolean;
         canFormat: boolean;
+        canDeleteTable?: boolean;
+        canInsertTable?: boolean;
         canSortTable?: boolean;
       }) => Promise<void>;
       redo: (request?: WorkbookRedoRequest) => Promise<WorkbookHistoryResult>;

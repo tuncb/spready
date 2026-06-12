@@ -480,6 +480,13 @@ function tableContainsCell(table: WorkbookTableSummary, cell: Item | null): bool
   );
 }
 
+function getTableContainingCell(
+  tables: readonly WorkbookTableSummary[],
+  cell: Item | null,
+): WorkbookTableSummary | null {
+  return tables.find((table) => tableContainsCell(table, cell)) ?? null;
+}
+
 function compactSelectionToRuns(
   selection: CompactSelection,
 ): Array<{ count: number; start: number }> {
@@ -695,7 +702,7 @@ export default function App() {
     [activeSheet?.id, sheetSummary?.tables],
   );
   const selectedTable = useMemo(
-    () => activeSheetTableEntries.find((table) => tableContainsCell(table, selectedCell)) ?? null,
+    () => getTableContainingCell(activeSheetTableEntries, selectedCell),
     [activeSheetTableEntries, selectedCell],
   );
   const rowCount = activeSheet?.rowCount ?? 1;
@@ -1443,6 +1450,8 @@ export default function App() {
     (cell: Item, event: { preventDefault?: () => void }) => {
       event.preventDefault?.();
 
+      const contextTable = getTableContainingCell(activeSheetTableEntries, cell);
+
       if (!selectionContainsCell(gridSelection, cell)) {
         flushSync(() => {
           setGridSelection(createCellSelection(cell));
@@ -1455,13 +1464,15 @@ export default function App() {
           canCut: true,
           canDelete: true,
           canFormat: true,
-          canSortTable: Boolean(selectedTable),
+          canDeleteTable: Boolean(contextTable),
+          canInsertTable: activeSheet !== null && !contextTable,
+          canSortTable: Boolean(contextTable),
         })
         .catch((error) => {
           pushErrorToast(error);
         });
     },
-    [gridSelection, pushErrorToast, selectedTable],
+    [activeSheet, activeSheetTableEntries, gridSelection, pushErrorToast],
   );
 
   const commitFormulaBar = useCallback(async () => {
@@ -1870,6 +1881,30 @@ export default function App() {
     return true;
   }, [activeSheet, applyTransaction, currentSelectionRange, pushErrorToast]);
 
+  const deleteSelectedTable = useCallback(() => {
+    if (!selectedTable) {
+      return false;
+    }
+
+    void applyTransaction([
+      {
+        tableId: selectedTable.id,
+        type: "deleteTable",
+      },
+    ])
+      .then(() => {
+        void loadVisibleRange(lastVisibleRegionRef.current);
+        void refreshSelectedCellData();
+      })
+      .catch((error) => {
+        pushErrorToast(error);
+        void loadVisibleRange(lastVisibleRegionRef.current);
+        void refreshSelectedCellData();
+      });
+
+    return true;
+  }, [applyTransaction, loadVisibleRange, pushErrorToast, refreshSelectedCellData, selectedTable]);
+
   const sortTableColumn = useCallback(
     (tableId: string, columnIndex: number, direction: "ascending" | "descending") => {
       void applyTransaction([createSortTableOperation(tableId, columnIndex, direction)])
@@ -2234,6 +2269,9 @@ export default function App() {
           case APP_MENU_ACTIONS.insertTable:
             createTableFromSelection();
             return;
+          case APP_MENU_ACTIONS.deleteTable:
+            deleteSelectedTable();
+            return;
           case APP_MENU_ACTIONS.sortTableAscending:
             sortSelectedTable("ascending");
             return;
@@ -2254,6 +2292,7 @@ export default function App() {
     copySelection,
     createTableFromSelection,
     deleteSelection,
+    deleteSelectedTable,
     deleteSheet,
     handleExport,
     handleImport,
