@@ -40,8 +40,8 @@ import {
   MAX_COLUMN_WIDTH,
   MIN_COLUMN_WIDTH,
   parseTsv,
-  serializeTsv,
   type CellDataResult,
+  type ClipboardRangePayload,
   type ClipboardRangeMode,
   type WorkbookCellStyle,
   type WorkbookChartLayout,
@@ -1068,7 +1068,11 @@ export default function App() {
   );
 
   const handlePaste = useCallback(
-    (target: Item, values: readonly (readonly string[])[]) => {
+    (
+      target: Item,
+      values: readonly (readonly string[])[],
+      options: { clipboard?: ClipboardRangePayload; mode?: ClipboardRangeMode } = {},
+    ) => {
       if (!activeSheet || values.length === 0) {
         return false;
       }
@@ -1116,29 +1120,27 @@ export default function App() {
 
       setViewNonce((current) => current + 1);
 
-      void applyTransaction([
-        {
+      void window.appShell
+        .pasteRange({
+          clipboard: options.clipboard,
+          mode: options.mode,
+          sheetId: activeSheet.id,
           startColumn,
           startRow,
-          type: "setRange",
           values: nextValues,
-        },
-      ]).catch((error) => {
-        pushErrorToast(error);
-        void loadVisibleRange(lastVisibleRegionRef.current);
-        void refreshSelectedCellData();
-      });
+        })
+        .then((result) => {
+          setSheetSummary(result.summary);
+        })
+        .catch((error) => {
+          pushErrorToast(error);
+          void loadVisibleRange(lastVisibleRegionRef.current);
+          void refreshSelectedCellData();
+        });
 
       return true;
     },
-    [
-      activeSheet,
-      applyTransaction,
-      loadVisibleRange,
-      pushErrorToast,
-      refreshSelectedCellData,
-      selectedCell,
-    ],
+    [activeSheet, loadVisibleRange, pushErrorToast, refreshSelectedCellData, selectedCell],
   );
 
   const replaceFormulaInputSelection = useCallback((nextText: string) => {
@@ -1210,21 +1212,14 @@ export default function App() {
       }
 
       try {
-        const [rawRange, displayRange] = await Promise.all([
-          window.appShell.getSheetRange(currentSelectionRange),
-          window.appShell.getSheetDisplayRange(currentSelectionRange),
-        ]);
-        const rawText = serializeTsv(rawRange.values);
-        const displayText = serializeTsv(displayRange.values);
+        const result = await window.appShell.copyRange({
+          ...currentSelectionRange,
+          mode,
+        });
 
         await window.appShell.writeClipboard({
-          payload: {
-            displayText,
-            displayValues: displayRange.values.map((row) => [...row]),
-            rawText,
-            rawValues: rawRange.values.map((row) => [...row]),
-          },
-          text: mode === "display" ? displayText : rawText,
+          payload: result.clipboard,
+          text: result.text,
         });
         return true;
       } catch (error) {
@@ -1259,26 +1254,14 @@ export default function App() {
       }
 
       try {
-        const [rawRange, displayRange] = await Promise.all([
-          window.appShell.getSheetRange(currentSelectionRange),
-          window.appShell.getSheetDisplayRange(currentSelectionRange),
-        ]);
-        const rawText = serializeTsv(rawRange.values);
-        const displayText = serializeTsv(displayRange.values);
-
-        await window.appShell.writeClipboard({
-          payload: {
-            displayText,
-            displayValues: displayRange.values.map((row) => [...row]),
-            rawText,
-            rawValues: rawRange.values.map((row) => [...row]),
-          },
-          text: mode === "display" ? displayText : rawText,
-        });
-
         const result = await window.appShell.cutRange({
           ...currentSelectionRange,
           mode,
+        });
+
+        await window.appShell.writeClipboard({
+          payload: result.clipboard,
+          text: result.text,
         });
 
         setSheetSummary(result.summary);
@@ -1340,7 +1323,10 @@ export default function App() {
           ? (clipboard.payload?.displayValues ?? parseTsv(clipboard.text))
           : (clipboard.payload?.rawValues ?? parseTsv(clipboard.text));
 
-      return handlePaste(selectedCell, values);
+      return handlePaste(selectedCell, values, {
+        clipboard: clipboard.payload,
+        mode,
+      });
     },
     [handlePaste, replaceFormulaInputSelection, selectedCell],
   );

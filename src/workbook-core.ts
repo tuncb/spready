@@ -399,6 +399,7 @@ export type WorkbookTransactionOperation =
       hasHeaderRow?: boolean;
       name?: string;
       range: Omit<WorkbookTableRange, "sheetId"> & { sheetId?: string };
+      sortState?: WorkbookTableSortState;
       tableId?: string;
       type: "addTable";
     }
@@ -622,6 +623,38 @@ export interface ClipboardRangePayload {
   displayValues: string[][];
   rawText: string;
   rawValues: string[][];
+  styles?: ClipboardCellStyle[];
+  tables?: ClipboardTable[];
+}
+
+export interface ClipboardCellStyle {
+  columnOffset: number;
+  rowOffset: number;
+  style: WorkbookCellStyle;
+}
+
+export interface ClipboardTableRange {
+  startColumnOffset: number;
+  startRowOffset: number;
+  rowCount: number;
+  columnCount: number;
+}
+
+export interface ClipboardTableSortKey {
+  columnOffset: number;
+  direction: WorkbookTableSortDirection;
+}
+
+export interface ClipboardTableSortState {
+  keys: ClipboardTableSortKey[];
+  valueMode: WorkbookTableSortValueMode;
+}
+
+export interface ClipboardTable {
+  hasHeaderRow: boolean;
+  name: string;
+  range: ClipboardTableRange;
+  sortState?: ClipboardTableSortState;
 }
 
 export interface CopyRangeRequest extends SheetRangeRequest {
@@ -638,6 +671,7 @@ export interface CopyRangeResult {
   startRow: number;
   text: string;
   values: string[][];
+  clipboard: ClipboardRangePayload;
 }
 
 export interface CutRangeRequest extends SheetRangeRequest {
@@ -661,6 +695,8 @@ export interface CutRangeResult {
 }
 
 export interface PasteRangeRequest {
+  clipboard?: ClipboardRangePayload;
+  mode?: ClipboardRangeMode;
   sheetId?: string;
   startColumn: number;
   startRow: number;
@@ -987,6 +1023,295 @@ export function getWorkbookSheetTables(
       .filter((table) => table.range.sheetId === sheet.id)
       .map((table) => cloneWorkbookTable(table)),
   };
+}
+
+export function createClipboardRangePayload(
+  workbook: WorkbookState,
+  rawRange: SheetRangeResult,
+  displayRange: SheetDisplayRangeResult,
+): ClipboardRangePayload {
+  const sheet = getSheetById(workbook, rawRange.sheetId);
+  const selectionRange = createWorkbookRangeFromSheetRange(rawRange);
+  const styles: ClipboardCellStyle[] = [];
+  const tables: ClipboardTable[] = [];
+
+  for (const [key, style] of Object.entries(sheet.cellStyles)) {
+    const [rowText, columnText] = key.split(":");
+    const rowIndex = Number.parseInt(rowText, 10);
+    const columnIndex = Number.parseInt(columnText, 10);
+
+    if (
+      rowIndex < rawRange.startRow ||
+      rowIndex >= rawRange.startRow + rawRange.rowCount ||
+      columnIndex < rawRange.startColumn ||
+      columnIndex >= rawRange.startColumn + rawRange.columnCount
+    ) {
+      continue;
+    }
+
+    styles.push({
+      columnOffset: columnIndex - rawRange.startColumn,
+      rowOffset: rowIndex - rawRange.startRow,
+      style: cloneWorkbookCellStyle(style),
+    });
+  }
+
+  for (const table of workbook.tables) {
+    if (!workbookTableRangeContains(selectionRange, table.range)) {
+      continue;
+    }
+
+    tables.push({
+      hasHeaderRow: table.hasHeaderRow,
+      name: table.name,
+      range: {
+        columnCount: table.range.columnCount,
+        rowCount: table.range.rowCount,
+        startColumnOffset: table.range.startColumn - rawRange.startColumn,
+        startRowOffset: table.range.startRow - rawRange.startRow,
+      },
+      ...(table.sortState
+        ? {
+            sortState: {
+              keys: table.sortState.keys.map((key) => ({
+                columnOffset: key.columnIndex - table.range.startColumn,
+                direction: key.direction,
+              })),
+              valueMode: table.sortState.valueMode,
+            },
+          }
+        : {}),
+    });
+  }
+
+  return {
+    displayText: serializeTsv(displayRange.values),
+    displayValues: cloneRangeValues(displayRange.values),
+    rawText: serializeTsv(rawRange.values),
+    rawValues: cloneRangeValues(rawRange.values),
+    styles,
+    tables,
+  };
+}
+
+export function buildCutRangeOperations(
+  workbook: WorkbookState,
+  range: SheetRangeResult,
+): WorkbookTransactionOperation[] {
+  const targetRange = createWorkbookRangeFromSheetRange(range);
+  const operations: WorkbookTransactionOperation[] = [
+    {
+      columnCount: range.columnCount,
+      rowCount: range.rowCount,
+      sheetId: range.sheetId,
+      startColumn: range.startColumn,
+      startRow: range.startRow,
+      type: "clearRange",
+    },
+    {
+      columnCount: range.columnCount,
+      rowCount: range.rowCount,
+      sheetId: range.sheetId,
+      startColumn: range.startColumn,
+      startRow: range.startRow,
+      type: "clearRangeStyle",
+    },
+  ];
+
+  for (const table of workbook.tables) {
+    if (table.range.sheetId !== range.sheetId || !rangesOverlap(table.range, targetRange)) {
+      continue;
+    }
+
+    if (
+      workbookTableRangeContains(targetRange, table.range) ||
+      (table.hasHeaderRow && workbookRangeIntersectsTableHeader(targetRange, table))
+    ) {
+      operations.push({
+        tableId: table.id,
+        type: "deleteTable",
+      });
+      continue;
+    }
+
+    if (table.sortState) {
+      operations.push({
+        range: { ...table.range },
+        tableId: table.id,
+        type: "resizeTable",
+      });
+    }
+  }
+
+  return operations;
+}
+
+export function buildPasteRangeOperations(
+  workbook: WorkbookState,
+  request: PasteRangeRequest,
+  values: string[][],
+): WorkbookTransactionOperation[] {
+  if (values.length === 0) {
+    return [];
+  }
+
+  const columnCount = Math.max(0, ...values.map((row) => row.length));
+
+  if (columnCount === 0) {
+    return [];
+  }
+
+  const sheet = getWorkbookSheet(workbook, request.sheetId);
+  const targetRange: WorkbookTableRange = {
+    columnCount,
+    rowCount: values.length,
+    sheetId: sheet.id,
+    startColumn: request.startColumn,
+    startRow: request.startRow,
+  };
+  const operations: WorkbookTransactionOperation[] = [];
+  const clipboardTables = request.clipboard?.tables ?? [];
+  const replacedTableIds = new Set<string>();
+
+  if (clipboardTables.length > 0) {
+    const targetTableRanges = clipboardTables.map((table) =>
+      createWorkbookRangeFromClipboardTable(request, sheet.id, table),
+    );
+    const replacedTables = workbook.tables.filter(
+      (table) =>
+        table.range.sheetId === sheet.id &&
+        targetTableRanges.some((tableRange) => rangesOverlap(table.range, tableRange)),
+    );
+
+    for (const table of replacedTables) {
+      replacedTableIds.add(table.id);
+      operations.push({
+        tableId: table.id,
+        type: "deleteTable",
+      });
+      operations.push({
+        columnCount: table.range.columnCount,
+        rowCount: table.range.rowCount,
+        sheetId: sheet.id,
+        startColumn: table.range.startColumn,
+        startRow: table.range.startRow,
+        type: "clearRange",
+      });
+      operations.push({
+        columnCount: table.range.columnCount,
+        rowCount: table.range.rowCount,
+        sheetId: sheet.id,
+        startColumn: table.range.startColumn,
+        startRow: table.range.startRow,
+        type: "clearRangeStyle",
+      });
+    }
+  } else {
+    const targetTopLeftTable = workbook.tables.find(
+      (table) =>
+        table.range.sheetId === sheet.id &&
+        table.range.startRow === request.startRow &&
+        table.range.startColumn === request.startColumn,
+    );
+
+    if (targetTopLeftTable) {
+      for (const remainder of getWorkbookRangeRemainders(targetTopLeftTable.range, targetRange)) {
+        operations.push({
+          columnCount: remainder.columnCount,
+          rowCount: remainder.rowCount,
+          sheetId: sheet.id,
+          startColumn: remainder.startColumn,
+          startRow: remainder.startRow,
+          type: "clearRange",
+        });
+        operations.push({
+          columnCount: remainder.columnCount,
+          rowCount: remainder.rowCount,
+          sheetId: sheet.id,
+          startColumn: remainder.startColumn,
+          startRow: remainder.startRow,
+          type: "clearRangeStyle",
+        });
+      }
+
+      operations.push({
+        range: targetRange,
+        tableId: targetTopLeftTable.id,
+        type: "resizeTable",
+      });
+    }
+  }
+
+  operations.push({
+    sheetId: sheet.id,
+    startColumn: request.startColumn,
+    startRow: request.startRow,
+    type: "setRange",
+    values,
+  });
+
+  if (request.clipboard?.styles) {
+    operations.push({
+      columnCount: targetRange.columnCount,
+      rowCount: targetRange.rowCount,
+      sheetId: sheet.id,
+      startColumn: targetRange.startColumn,
+      startRow: targetRange.startRow,
+      type: "clearRangeStyle",
+    });
+
+    for (const cellStyle of request.clipboard.styles) {
+      if (
+        cellStyle.rowOffset < 0 ||
+        cellStyle.columnOffset < 0 ||
+        cellStyle.rowOffset >= targetRange.rowCount ||
+        cellStyle.columnOffset >= targetRange.columnCount
+      ) {
+        continue;
+      }
+
+      operations.push({
+        columnIndex: targetRange.startColumn + cellStyle.columnOffset,
+        rowIndex: targetRange.startRow + cellStyle.rowOffset,
+        sheetId: sheet.id,
+        style: cloneWorkbookCellStyle(cellStyle.style),
+        type: "setCellStyle",
+      });
+    }
+  }
+
+  if (clipboardTables.length > 0) {
+    const usedNames = new Set(
+      workbook.tables
+        .filter((table) => !replacedTableIds.has(table.id))
+        .map((table) => getWorkbookTableNameKey(table.name)),
+    );
+
+    for (const table of clipboardTables) {
+      const tableRange = createWorkbookRangeFromClipboardTable(request, sheet.id, table);
+      const tableName = getAvailablePastedWorkbookTableName(usedNames, table.name);
+
+      operations.push({
+        hasHeaderRow: table.hasHeaderRow,
+        name: tableName,
+        range: tableRange,
+        ...(table.sortState
+          ? {
+              sortState: {
+                keys: table.sortState.keys.map((key) => ({
+                  columnIndex: tableRange.startColumn + key.columnOffset,
+                  direction: key.direction,
+                })),
+                valueMode: table.sortState.valueMode,
+              },
+            }
+          : {}),
+        type: "addTable",
+      });
+    }
+  }
+
+  return operations;
 }
 
 export function getWorkbookChartById(workbook: WorkbookState, chartId: string): WorkbookChart {
@@ -1716,9 +2041,21 @@ export function applyWorkbookTransaction(
           name: nextTableName.name,
           range,
         };
+        const sortState =
+          operation.sortState === undefined
+            ? undefined
+            : normalizeWorkbookTableSortState(
+                table,
+                operation.sortState.keys,
+                operation.sortState.valueMode,
+              );
+        const nextTable: WorkbookTable = {
+          ...table,
+          ...(sortState ? { sortState } : {}),
+        };
 
-        assertWorkbookTableRangeAvailable(nextState, table);
-        nextState.tables = [...nextState.tables, table];
+        assertWorkbookTableRangeAvailable(nextState, nextTable);
+        nextState.tables = [...nextState.tables, nextTable];
         nextState.nextTableNumber = Math.max(
           nextTableName.nextTableNumber,
           getNextWorkbookTableNumberForId(tableId),
@@ -1738,6 +2075,7 @@ export function applyWorkbookTransaction(
           maxColumn,
           startColumn + Math.max(0, Math.floor(operation.columnCount)),
         );
+        let rangeChanged = false;
 
         for (let rowIndex = startRow; rowIndex < endRow; rowIndex += 1) {
           const row = sheet.cells[rowIndex];
@@ -1748,8 +2086,19 @@ export function applyWorkbookTransaction(
             }
 
             row[columnIndex] = "";
+            rangeChanged = true;
             changed = true;
           }
+        }
+
+        if (rangeChanged) {
+          clearWorkbookTableSortStatesInRange(nextState, {
+            columnCount: endColumn - startColumn,
+            rowCount: endRow - startRow,
+            sheetId: sheet.id,
+            startColumn,
+            startRow,
+          });
         }
 
         break;
@@ -2339,6 +2688,13 @@ export function applyWorkbookTransaction(
         }
 
         sheet.cells[operation.rowIndex][operation.columnIndex] = operation.value;
+        clearWorkbookTableSortStatesInRange(nextState, {
+          columnCount: 1,
+          rowCount: 1,
+          sheetId: sheet.id,
+          startColumn: operation.columnIndex,
+          startRow: operation.rowIndex,
+        });
         changed = true;
         break;
       }
@@ -2369,6 +2725,7 @@ export function applyWorkbookTransaction(
 
         const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
         const maxColumnCount = Math.max(0, ...operation.values.map((row) => row.length));
+        let rangeChanged = false;
 
         if (maxColumnCount === 0) {
           break;
@@ -2393,8 +2750,19 @@ export function applyWorkbookTransaction(
             }
 
             targetRow[targetColumn] = nextValue;
+            rangeChanged = true;
             changed = true;
           }
+        }
+
+        if (rangeChanged) {
+          clearWorkbookTableSortStatesInRange(nextState, {
+            columnCount: maxColumnCount,
+            rowCount: operation.values.length,
+            sheetId: sheet.id,
+            startColumn: operation.startColumn,
+            startRow: operation.startRow,
+          });
         }
 
         break;
@@ -2557,6 +2925,110 @@ function cloneWorkbookTableSortState(sortState: WorkbookTableSortState): Workboo
     keys: sortState.keys.map((key) => ({ ...key })),
     valueMode: sortState.valueMode,
   };
+}
+
+function cloneRangeValues(values: readonly (readonly string[])[]): string[][] {
+  return values.map((row) => [...row]);
+}
+
+function createWorkbookRangeFromSheetRange(range: SheetRangeResult): WorkbookTableRange {
+  return {
+    columnCount: range.columnCount,
+    rowCount: range.rowCount,
+    sheetId: range.sheetId,
+    startColumn: range.startColumn,
+    startRow: range.startRow,
+  };
+}
+
+function createWorkbookRangeFromClipboardTable(
+  request: Pick<PasteRangeRequest, "startColumn" | "startRow">,
+  sheetId: string,
+  table: ClipboardTable,
+): WorkbookTableRange {
+  return {
+    columnCount: table.range.columnCount,
+    rowCount: table.range.rowCount,
+    sheetId,
+    startColumn: request.startColumn + table.range.startColumnOffset,
+    startRow: request.startRow + table.range.startRowOffset,
+  };
+}
+
+function workbookTableRangeContains(outer: WorkbookTableRange, inner: WorkbookTableRange): boolean {
+  return (
+    outer.sheetId === inner.sheetId &&
+    inner.startRow >= outer.startRow &&
+    inner.startColumn >= outer.startColumn &&
+    inner.startRow + inner.rowCount <= outer.startRow + outer.rowCount &&
+    inner.startColumn + inner.columnCount <= outer.startColumn + outer.columnCount
+  );
+}
+
+function workbookRangeIntersectsTableHeader(
+  range: WorkbookTableRange,
+  table: WorkbookTable,
+): boolean {
+  return (
+    range.sheetId === table.range.sheetId &&
+    range.startRow <= table.range.startRow &&
+    range.startRow + range.rowCount > table.range.startRow &&
+    range.startColumn < table.range.startColumn + table.range.columnCount &&
+    range.startColumn + range.columnCount > table.range.startColumn
+  );
+}
+
+function getWorkbookRangeRemainders(
+  previousRange: WorkbookTableRange,
+  nextRange: WorkbookTableRange,
+): WorkbookTableRange[] {
+  const remainders: WorkbookTableRange[] = [];
+  const previousEndRow = previousRange.startRow + previousRange.rowCount;
+  const previousEndColumn = previousRange.startColumn + previousRange.columnCount;
+  const nextEndRow = nextRange.startRow + nextRange.rowCount;
+  const nextEndColumn = nextRange.startColumn + nextRange.columnCount;
+
+  if (nextEndRow < previousEndRow) {
+    remainders.push({
+      columnCount: previousRange.columnCount,
+      rowCount: previousEndRow - nextEndRow,
+      sheetId: previousRange.sheetId,
+      startColumn: previousRange.startColumn,
+      startRow: nextEndRow,
+    });
+  }
+
+  if (nextEndColumn < previousEndColumn) {
+    remainders.push({
+      columnCount: previousEndColumn - nextEndColumn,
+      rowCount: Math.min(previousEndRow, nextEndRow) - previousRange.startRow,
+      sheetId: previousRange.sheetId,
+      startColumn: nextEndColumn,
+      startRow: previousRange.startRow,
+    });
+  }
+
+  return remainders.filter((range) => range.rowCount > 0 && range.columnCount > 0);
+}
+
+function getAvailablePastedWorkbookTableName(usedNameKeys: Set<string>, name: string): string {
+  const baseName = name.trim() || "Table";
+  const baseNameKey = getWorkbookTableNameKey(baseName);
+
+  if (!usedNameKeys.has(baseNameKey)) {
+    usedNameKeys.add(baseNameKey);
+    return baseName;
+  }
+
+  for (let index = 1; ; index += 1) {
+    const candidate = index === 1 ? `${baseName} Copy` : `${baseName} Copy ${index}`;
+    const candidateKey = getWorkbookTableNameKey(candidate);
+
+    if (!usedNameKeys.has(candidateKey)) {
+      usedNameKeys.add(candidateKey);
+      return candidate;
+    }
+  }
 }
 
 function createWorkbookChart(
@@ -3516,6 +3988,35 @@ function assertWorkbookTableRangeAvailable(
   if (overlappingTable) {
     throw new Error(`Table "${table.name}" overlaps table "${overlappingTable.name}".`);
   }
+}
+
+function clearWorkbookTableSortStatesInRange(
+  workbook: Pick<WorkbookState, "tables">,
+  range: WorkbookTableRange,
+): boolean {
+  let changed = false;
+
+  const tables = workbook.tables.map((table) => {
+    if (
+      !table.sortState ||
+      table.range.sheetId !== range.sheetId ||
+      !rangesOverlap(table.range, range)
+    ) {
+      return table;
+    }
+
+    changed = true;
+    return {
+      ...table,
+      sortState: undefined,
+    };
+  });
+
+  if (changed) {
+    workbook.tables = tables;
+  }
+
+  return changed;
 }
 
 function rangesOverlap(left: WorkbookTableRange, right: WorkbookTableRange): boolean {

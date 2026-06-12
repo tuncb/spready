@@ -444,6 +444,330 @@ test("WorkbookController supports raw-vs-display range copy plus explicit cut, p
   );
 });
 
+test("WorkbookController copies and pastes full table metadata and styles", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Score"],
+          ["Bob", "2"],
+          ["Ann", "1"],
+        ],
+      },
+      {
+        columnIndex: 1,
+        rowIndex: 1,
+        style: {
+          bold: true,
+          textColor: "#123456",
+        },
+        type: "setCellStyle",
+      },
+      {
+        name: "Scores",
+        range: {
+          columnCount: 2,
+          rowCount: 3,
+          startColumn: 0,
+          startRow: 0,
+        },
+        sortState: {
+          keys: [
+            {
+              columnIndex: 1,
+              direction: "ascending",
+            },
+          ],
+          valueMode: "raw",
+        },
+        tableId: "table-scores",
+        type: "addTable",
+      },
+    ],
+  });
+
+  const copied = controller.copyRange({
+    columnCount: 2,
+    rowCount: 3,
+    startColumn: 0,
+    startRow: 0,
+  });
+
+  assert.equal(copied.clipboard.tables?.length, 1);
+  assert.equal(copied.clipboard.styles?.length, 1);
+
+  controller.pasteRange({
+    clipboard: copied.clipboard,
+    mode: "raw",
+    startColumn: 3,
+    startRow: 0,
+  });
+
+  assert.deepEqual(
+    controller.getSheetRange({
+      columnCount: 2,
+      rowCount: 3,
+      startColumn: 3,
+      startRow: 0,
+    }).values,
+    [
+      ["Name", "Score"],
+      ["Bob", "2"],
+      ["Ann", "1"],
+    ],
+  );
+  assert.deepEqual(
+    controller.getSheetStyleRange({
+      columnCount: 1,
+      rowCount: 1,
+      startColumn: 4,
+      startRow: 1,
+    }).styles,
+    [[{ bold: true, textColor: "#123456" }]],
+  );
+
+  const pastedTable = controller
+    .getSheetTables()
+    .tables.find((table) => table.range.startColumn === 3);
+
+  assert.ok(pastedTable);
+  assert.equal(pastedTable.name, "Scores Copy");
+  assert.deepEqual(pastedTable.range, {
+    columnCount: 2,
+    rowCount: 3,
+    sheetId: controller.getSummary().activeSheetId,
+    startColumn: 3,
+    startRow: 0,
+  });
+  assert.deepEqual(pastedTable.sortState, {
+    keys: [
+      {
+        columnIndex: 4,
+        direction: "ascending",
+      },
+    ],
+    valueMode: "raw",
+  });
+});
+
+test("WorkbookController cuts full tables and header cuts remove table metadata", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Score"],
+          ["Bob", "2"],
+        ],
+      },
+      {
+        columnIndex: 1,
+        rowIndex: 1,
+        style: {
+          italic: true,
+        },
+        type: "setCellStyle",
+      },
+      {
+        range: {
+          columnCount: 2,
+          rowCount: 2,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-scores",
+        type: "addTable",
+      },
+    ],
+  });
+
+  const cutResult = controller.cutRange({
+    columnCount: 2,
+    rowCount: 2,
+    startColumn: 0,
+    startRow: 0,
+  });
+
+  assert.equal(cutResult.clipboard.tables?.length, 1);
+  assert.deepEqual(controller.getSheetTables().tables, []);
+  assert.deepEqual(
+    controller.getSheetRange({
+      columnCount: 2,
+      rowCount: 2,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["", ""],
+      ["", ""],
+    ],
+  );
+  assert.deepEqual(
+    controller.getSheetStyleRange({
+      columnCount: 1,
+      rowCount: 1,
+      startColumn: 1,
+      startRow: 1,
+    }).styles,
+    [[null]],
+  );
+
+  controller.pasteRange({
+    clipboard: cutResult.clipboard,
+    startColumn: 0,
+    startRow: 0,
+  });
+  controller.cutRange({
+    columnCount: 1,
+    rowCount: 1,
+    startColumn: 0,
+    startRow: 0,
+  });
+
+  assert.deepEqual(controller.getSheetTables().tables, []);
+});
+
+test("WorkbookController resizes target tables on top-left paste and clears stale sort state", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Score", "Region"],
+          ["Bob", "2", "West"],
+          ["Ann", "1", "East"],
+        ],
+      },
+      {
+        columnIndex: 2,
+        rowIndex: 2,
+        style: {
+          bold: true,
+        },
+        type: "setCellStyle",
+      },
+      {
+        range: {
+          columnCount: 3,
+          rowCount: 3,
+          startColumn: 0,
+          startRow: 0,
+        },
+        sortState: {
+          keys: [
+            {
+              columnIndex: 1,
+              direction: "descending",
+            },
+          ],
+          valueMode: "raw",
+        },
+        tableId: "table-scores",
+        type: "addTable",
+      },
+    ],
+  });
+
+  controller.pasteRange({
+    startColumn: 0,
+    startRow: 0,
+    values: [
+      ["Name", "Score"],
+      ["Cal", "3"],
+    ],
+  });
+
+  assert.deepEqual(controller.getSheetTables().tables[0]?.range, {
+    columnCount: 2,
+    rowCount: 2,
+    sheetId: controller.getSummary().activeSheetId,
+    startColumn: 0,
+    startRow: 0,
+  });
+  assert.equal(controller.getSheetTables().tables[0]?.sortState, undefined);
+  assert.deepEqual(
+    controller.getSheetRange({
+      columnCount: 3,
+      rowCount: 3,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["Name", "Score", ""],
+      ["Cal", "3", ""],
+      ["", "", ""],
+    ],
+  );
+  assert.deepEqual(
+    controller.getSheetStyleRange({
+      columnCount: 1,
+      rowCount: 1,
+      startColumn: 2,
+      startRow: 2,
+    }).styles,
+    [[null]],
+  );
+});
+
+test("WorkbookController clears table sort state when pasted values change table cells", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Score"],
+          ["Bob", "2"],
+          ["Ann", "1"],
+        ],
+      },
+      {
+        range: {
+          columnCount: 2,
+          rowCount: 3,
+          startColumn: 0,
+          startRow: 0,
+        },
+        sortState: {
+          keys: [
+            {
+              columnIndex: 1,
+              direction: "ascending",
+            },
+          ],
+          valueMode: "raw",
+        },
+        tableId: "table-scores",
+        type: "addTable",
+      },
+    ],
+  });
+
+  controller.pasteRange({
+    startColumn: 1,
+    startRow: 2,
+    values: [["5"]],
+  });
+
+  assert.equal(controller.getSheetTables().tables[0]?.sortState, undefined);
+});
+
 test("WorkbookController formats cells through the simplified style request contract", () => {
   const controller = new WorkbookController();
 

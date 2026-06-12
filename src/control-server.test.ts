@@ -145,9 +145,9 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.equal(cutResult.clipboard.rawText, "4\t5\t=A1+B1");
     assert.equal(cutResult.clipboard.displayText, "4\t5\t9");
     assert.deepEqual(displayRange.values, [["", "", ""]]);
-    assert.deepEqual(styleRange.styles, [[{ bold: true, fontSize: 16 }]]);
+    assert.deepEqual(styleRange.styles, [[null]]);
     assert.equal(formatDryRun.changed, true);
-    assert.deepEqual(formattedStyleRange.styles, [[{ bold: true, fontSize: 16, italic: true }]]);
+    assert.deepEqual(formattedStyleRange.styles, [[{ italic: true }]]);
     assert.deepEqual(cellData, {
       columnIndex: 2,
       display: "",

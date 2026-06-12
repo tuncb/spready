@@ -159,7 +159,7 @@ desktop app to create, restore, show, and focus a window, then returns the lates
 For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, you can pass
 `sheetId` explicitly. If you omit `sheetId`, the active sheet is used.
 
-`copyRange` returns one rectangular range as tab-delimited text using raw input or displayed values. `cutRange` returns the same clipboard payloads and clears the source cells through the controller in one mutation.
+`copyRange` returns one rectangular range as tab-delimited text using raw input or displayed values. Its structured clipboard payload also includes copied cell styles and any complete table definitions contained by the range. `cutRange` returns the same clipboard payloads and clears the source cells/styles through the controller in one mutation; full-table cuts remove the table definition, while partial table cuts clear stale table sort state and header cuts remove the table metadata.
 
 `formatCells` formats one or more ranges. Its default `merge` mode preserves existing style properties while applying the requested changes; `replace` overwrites each target cell style, and `clear` removes styles.
 
@@ -325,6 +325,10 @@ The stdio MCP wrapper currently exposes:
 - `save_workbook_file`
 - `import_csv_file`
 - `export_csv_file`
+- `copy_range`
+- `cut_range`
+- `paste_range`
+- `clear_range`
 - `apply_transaction`
 
 `get_sheet_range` returns raw stored cell input, including formula strings like `=A1+B1`.
@@ -335,6 +339,7 @@ The stdio MCP wrapper currently exposes:
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
 `open_spready_app` now returns success only after TCP reports that an Electron frontend window is visible.
+`copy_range` and `cut_range` return structured clipboard payloads with raw/display values, styles, and complete table definitions. `paste_range` accepts those payloads to recreate copied tables, or plain text/values for cell-only paste.
 
 Display reads evaluate the workbook formula engine used by the app UI, including arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, reference intersection, parenthesized reference union, core math/logical/text functions such as `LN`, date/time functions such as `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, and `DAY`, and lookup functions such as `INDEX`, `MATCH`, `XLOOKUP`, and `VLOOKUP`.
 Raw reads continue to preserve the stored input exactly as written.

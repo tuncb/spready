@@ -4,9 +4,12 @@ import { EventEmitter } from "node:events";
 
 import {
   applyWorkbookTransaction,
+  buildCutRangeOperations,
   buildCreateChartOperation,
   buildFormatCellsOperations,
+  buildPasteRangeOperations,
   compareWorkbookTableSortValues,
+  createClipboardRangePayload,
   cloneWorkbookChart,
   cloneWorkbookTable,
   createWorkbookState,
@@ -28,7 +31,6 @@ import {
   type ApplyTransactionResult,
   type CellDataRequest,
   type CellDataResult,
-  type ClipboardRangePayload,
   type ClearRangeRequest,
   type CopyRangeRequest,
   type CopyRangeResult,
@@ -42,7 +44,6 @@ import {
   type FormatCellsRequest,
   type ImportCsvFileRequest,
   parseTsv,
-  serializeTsv,
   type OpenWorkbookFileRequest,
   type PasteRangeRequest,
   type SaveWorkbookFileRequest,
@@ -274,13 +275,16 @@ export class WorkbookController extends EventEmitter {
 
   copyRange(request: CopyRangeRequest): CopyRangeResult {
     const mode = request.mode ?? "raw";
-    const range =
-      mode === "display" ? this.getSheetDisplayRange(request) : this.getSheetRange(request);
+    const rawRange = this.getSheetRange(request);
+    const displayRange = this.getSheetDisplayRange(request);
+    const clipboard = createClipboardRangePayload(this.#state, rawRange, displayRange);
+    const range = mode === "display" ? displayRange : rawRange;
 
     return {
       ...range,
+      clipboard,
       mode,
-      text: serializeTsv(range.values),
+      text: mode === "display" ? clipboard.displayText : clipboard.rawText,
     };
   }
 
@@ -288,19 +292,10 @@ export class WorkbookController extends EventEmitter {
     const mode = request.mode ?? "raw";
     const rawRange = this.getSheetRange(request);
     const displayRange = this.getSheetDisplayRange(request);
-    const clipboard: ClipboardRangePayload = {
-      displayText: serializeTsv(displayRange.values),
-      displayValues: cloneRangeValues(displayRange.values),
-      rawText: serializeTsv(rawRange.values),
-      rawValues: cloneRangeValues(rawRange.values),
-    };
+    const clipboard = createClipboardRangePayload(this.#state, rawRange, displayRange);
     const selectedRange = mode === "display" ? displayRange : rawRange;
-    const clearResult = this.clearRange({
-      columnCount: rawRange.columnCount,
-      rowCount: rawRange.rowCount,
-      sheetId: rawRange.sheetId,
-      startColumn: rawRange.startColumn,
-      startRow: rawRange.startRow,
+    const clearResult = this.applyTransaction({
+      operations: buildCutRangeOperations(this.#state, rawRange),
     });
 
     return {
@@ -355,6 +350,11 @@ export class WorkbookController extends EventEmitter {
   pasteRange(request: PasteRangeRequest): ApplyTransactionResult {
     const values =
       request.values?.map((row) => [...row]) ??
+      (request.clipboard
+        ? request.mode === "display"
+          ? request.clipboard.displayValues.map((row) => [...row])
+          : request.clipboard.rawValues.map((row) => [...row])
+        : undefined) ??
       (request.text !== undefined ? parseTsv(request.text) : undefined);
 
     if (!values || values.length === 0) {
@@ -364,15 +364,7 @@ export class WorkbookController extends EventEmitter {
     }
 
     return this.applyTransaction({
-      operations: [
-        {
-          sheetId: request.sheetId,
-          startColumn: request.startColumn,
-          startRow: request.startRow,
-          type: "setRange",
-          values,
-        },
-      ],
+      operations: buildPasteRangeOperations(this.#state, request, values),
     });
   }
 
@@ -802,8 +794,4 @@ function assertCellIndex(value: number, limit: number, label: string) {
   if (!Number.isInteger(value) || value < 0 || value >= limit) {
     throw new Error(`${label} index must be a non-negative integer within sheet bounds.`);
   }
-}
-
-function cloneRangeValues(values: string[][]): string[][] {
-  return values.map((row) => [...row]);
 }

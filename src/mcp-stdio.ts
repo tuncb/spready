@@ -157,11 +157,43 @@ const cellDataSchema = z.object({
 
 const clipboardRangeModeSchema = z.enum(["display", "raw"]);
 
+const clipboardCellStyleSchema = z.object({
+  columnOffset: z.int().min(0),
+  rowOffset: z.int().min(0),
+  style: workbookCellStyleSchema,
+});
+
+const clipboardTableRangeSchema = z.object({
+  columnCount: z.int().min(1),
+  rowCount: z.int().min(1),
+  startColumnOffset: z.int().min(0),
+  startRowOffset: z.int().min(0),
+});
+
+const clipboardTableSortKeySchema = z.object({
+  columnOffset: z.int().min(0),
+  direction: z.enum(["ascending", "descending"]),
+});
+
+const clipboardTableSortStateSchema = z.object({
+  keys: z.array(clipboardTableSortKeySchema).min(1),
+  valueMode: z.enum(["display", "raw"]),
+});
+
+const clipboardTableSchema = z.object({
+  hasHeaderRow: z.boolean(),
+  name: z.string().min(1),
+  range: clipboardTableRangeSchema,
+  sortState: clipboardTableSortStateSchema.optional(),
+});
+
 const clipboardRangePayloadSchema = z.object({
   displayText: z.string(),
   displayValues: z.array(z.array(z.string())),
   rawText: z.string(),
   rawValues: z.array(z.array(z.string())),
+  styles: z.array(clipboardCellStyleSchema).optional(),
+  tables: z.array(clipboardTableSchema).optional(),
 });
 
 const copyRangeResultSchema = z.object({
@@ -174,6 +206,7 @@ const copyRangeResultSchema = z.object({
   startRow: z.int().min(0),
   text: z.string(),
   values: z.array(z.array(z.string())),
+  clipboard: clipboardRangePayloadSchema,
 });
 
 const cutRangeResultSchema = copyRangeResultSchema.extend({
@@ -212,6 +245,7 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
       .extend({
         sheetId: z.string().min(1).optional(),
       }),
+    sortState: workbookTableSortStateSchema.optional(),
     tableId: z.string().min(1).optional(),
     type: z.literal("addTable"),
   }),
@@ -2055,6 +2089,16 @@ async function main() {
       description: "Paste tab-delimited text or explicit values into a sheet starting at one cell.",
       inputSchema: z
         .object({
+          clipboard: clipboardRangePayloadSchema
+            .optional()
+            .describe(
+              "Optional structured clipboard payload returned by copy_range or cut_range. When provided, table and style metadata are pasted with the values.",
+            ),
+          mode: clipboardRangeModeSchema
+            .optional()
+            .describe(
+              'When clipboard is provided, use "raw" to preserve formulas or "display" to paste visible values.',
+            ),
           sheetId: z
             .string()
             .min(1)
@@ -2071,8 +2115,16 @@ async function main() {
             .optional()
             .describe("Optional explicit 2D string matrix to paste."),
         })
-        .refine((value) => value.text !== undefined || value.values !== undefined, {
-          message: 'Provide either "text" or "values".',
+        .refine(
+          (value) =>
+            value.text !== undefined || value.values !== undefined || value.clipboard !== undefined,
+          {
+            message: 'Provide "clipboard", "text", or "values".',
+            path: ["text"],
+          },
+        )
+        .refine((value) => value.text === undefined || value.values === undefined, {
+          message: 'Provide either "text" or "values", not both.',
           path: ["text"],
         }),
       outputSchema: applyTransactionResultSchema,

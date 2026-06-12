@@ -30,7 +30,9 @@ import type {
   ApplyTransactionRequest,
   CellDataRequest,
   ControlAppStatus,
+  CopyRangeRequest,
   CutRangeRequest,
+  PasteRangeRequest,
   SheetRangeRequest,
   WorkbookHistoryRequest,
   WorkbookRedoRequest,
@@ -1085,6 +1087,10 @@ ipcMain.handle("workbook:get-chart-preview", (_event, args: { chartId: string })
   workbookController.getChartPreview(args.chartId),
 );
 
+ipcMain.handle("workbook:copy-range", (_event, args: CopyRangeRequest) =>
+  workbookController.copyRange(args),
+);
+
 ipcMain.handle("workbook:cut-range", (_event, args: CutRangeRequest) =>
   workbookController.cutRange(args),
 );
@@ -1099,6 +1105,10 @@ ipcMain.handle("workbook:get-range", (_event, args: SheetRangeRequest) =>
 
 ipcMain.handle("workbook:get-style-range", (_event, args: SheetRangeRequest) =>
   workbookController.getSheetStyleRange(args),
+);
+
+ipcMain.handle("workbook:paste-range", (_event, args: PasteRangeRequest) =>
+  workbookController.pasteRange(args),
 );
 
 ipcMain.handle("workbook:get-sheet-csv", (_event, args?: { sheetId?: string }) =>

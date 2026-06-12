@@ -5,8 +5,11 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
+  CopyRangeRequest,
+  CopyRangeResult,
   CutRangeRequest,
   CutRangeResult,
+  PasteRangeRequest,
   WorkbookChartPreview,
   WorkbookChartResult,
   SheetDisplayRangeResult,
@@ -63,6 +66,7 @@ declare global {
   interface Window {
     appShell: {
       applyTransaction: (request: ApplyTransactionRequest) => Promise<ApplyTransactionResult>;
+      copyRange: (request: CopyRangeRequest) => Promise<CopyRangeResult>;
       cutRange: (request: CutRangeRequest) => Promise<CutRangeResult>;
       getUndoTree: () => Promise<WorkbookUndoTree>;
       getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
@@ -83,6 +87,7 @@ declare global {
       onWorkbookChanged: (listener: (summary: WorkbookSummary) => void) => () => void;
       openCsvFile: () => Promise<OpenCsvFileResult>;
       openWorkbookFile: () => Promise<OpenWorkbookFileResult>;
+      pasteRange: (request: PasteRangeRequest) => Promise<ApplyTransactionResult>;
       saveCsvFile: (content: string, defaultPath?: string) => Promise<SaveCsvFileResult>;
       setChartDialogOpen: (isOpen: boolean) => Promise<void>;
       showCellContextMenu: (request: {

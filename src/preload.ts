@@ -7,8 +7,11 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
+  CopyRangeRequest,
+  CopyRangeResult,
   CutRangeRequest,
   CutRangeResult,
+  PasteRangeRequest,
   WorkbookChartPreview,
   WorkbookChartResult,
   SheetDisplayRangeResult,
@@ -171,6 +174,8 @@ contextBridge.exposeInMainWorld("appShell", {
     ipcRenderer.invoke("workbook:get-chart-preview", {
       chartId,
     }) as Promise<WorkbookChartPreview>,
+  copyRange: (request: CopyRangeRequest) =>
+    ipcRenderer.invoke("workbook:copy-range", request) as Promise<CopyRangeResult>,
   cutRange: (request: CutRangeRequest) =>
     ipcRenderer.invoke("workbook:cut-range", request) as Promise<CutRangeResult>,
   getSheetCsv: (sheetId?: string) =>
@@ -224,6 +229,8 @@ contextBridge.exposeInMainWorld("appShell", {
   openCsvFile: () => ipcRenderer.invoke("dialog:open-csv-file") as Promise<OpenCsvFileResult>,
   openWorkbookFile: () =>
     ipcRenderer.invoke("dialog:open-workbook-file") as Promise<OpenWorkbookFileResult>,
+  pasteRange: (request: PasteRangeRequest) =>
+    ipcRenderer.invoke("workbook:paste-range", request) as Promise<ApplyTransactionResult>,
   saveCsvFile: (content: string, defaultPath?: string) =>
     ipcRenderer.invoke("dialog:save-csv-file", {
       content,
