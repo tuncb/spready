@@ -23,7 +23,6 @@ export interface ControlAppStatus {
 }
 
 export interface InstallerOptions {
-  autoStart: boolean;
   startMenuShortcut: boolean;
 }
 

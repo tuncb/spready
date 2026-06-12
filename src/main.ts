@@ -68,21 +68,11 @@ const installerService = new InstallerService({
   currentAppDirectory: path.dirname(process.execPath),
   currentExecutablePath: process.execPath,
   currentVersion: app.getVersion(),
-  getAutoStartEnabled: (executablePath) =>
-    app.getLoginItemSettings({
-      path: executablePath,
-    }).openAtLogin,
   isPackaged: app.isPackaged,
   requestQuit: () => {
     setTimeout(() => {
       app.quit();
     }, 100);
-  },
-  setAutoStart: (executablePath, enabled) => {
-    app.setLoginItemSettings({
-      openAtLogin: enabled,
-      path: executablePath,
-    });
   },
   writeShortcut: (shortcutPath, executablePath) =>
     shell.writeShortcutLink(shortcutPath, "replace", {

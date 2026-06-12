@@ -47,11 +47,9 @@ interface InstallerServiceDependencies {
   currentVersion: string;
   env?: NodeJS.ProcessEnv;
   fetch?: typeof fetch;
-  getAutoStartEnabled?: (executablePath: string) => boolean;
   isPackaged: boolean;
   platform?: NodeJS.Platform;
   requestQuit?: () => void;
-  setAutoStart?: (executablePath: string, enabled: boolean) => void;
   writeShortcut?: (shortcutPath: string, executablePath: string) => boolean;
 }
 
@@ -216,11 +214,9 @@ export class InstallerService {
   #currentVersion: string;
   #env: NodeJS.ProcessEnv;
   #fetch: typeof fetch;
-  #getAutoStartEnabled?: (executablePath: string) => boolean;
   #isPackaged: boolean;
   #platform: NodeJS.Platform;
   #requestQuit?: () => void;
-  #setAutoStart?: (executablePath: string, enabled: boolean) => void;
   #writeShortcut?: (shortcutPath: string, executablePath: string) => boolean;
 
   constructor(dependencies: InstallerServiceDependencies) {
@@ -230,11 +226,9 @@ export class InstallerService {
     this.#currentVersion = dependencies.currentVersion;
     this.#env = dependencies.env ?? process.env;
     this.#fetch = dependencies.fetch ?? fetch;
-    this.#getAutoStartEnabled = dependencies.getAutoStartEnabled;
     this.#isPackaged = dependencies.isPackaged;
     this.#platform = dependencies.platform ?? process.platform;
     this.#requestQuit = dependencies.requestQuit;
-    this.#setAutoStart = dependencies.setAutoStart;
     this.#writeShortcut = dependencies.writeShortcut;
   }
 
@@ -255,9 +249,6 @@ export class InstallerService {
       installedExecutablePath,
       isPackaged: this.#isPackaged,
       options: {
-        autoStart: installed
-          ? (this.#getAutoStartEnabled?.(installedExecutablePath) ?? false)
-          : false,
         startMenuShortcut: installed ? await isRegularFile(shortcutPath) : false,
       },
       platform: this.#platform,
@@ -312,7 +303,7 @@ export class InstallerService {
       throw new Error(`${APP_NAME} is not installed.`);
     }
 
-    await this.#applyOptions({ autoStart: false, startMenuShortcut: false });
+    await this.#applyOptions({ startMenuShortcut: false });
     await runProcess("reg.exe", ["delete", UNINSTALL_REGISTRY_KEY, "/f"]).catch(() => undefined);
     spawnPowerShellScript(buildUninstallScript(process.pid, status.installDirectory));
     this.#requestQuit?.();
@@ -427,13 +418,12 @@ export class InstallerService {
 
   async #applyOptions(options: InstallerOptions) {
     const installDirectory = getDefaultInstallDirectory(this.#env, this.#platform);
-    const installedExecutablePath = getInstalledExecutablePath(installDirectory);
     const shortcutPath = getStartMenuShortcutPath(this.#env, this.#platform);
-
-    this.#setAutoStart?.(installedExecutablePath, options.autoStart);
 
     if (options.startMenuShortcut) {
       await fs.mkdir(path.dirname(shortcutPath), { recursive: true });
+
+      const installedExecutablePath = getInstalledExecutablePath(installDirectory);
 
       if (!(this.#writeShortcut?.(shortcutPath, installedExecutablePath) ?? false)) {
         throw new Error("Failed to write the Start Menu shortcut.");

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -8,6 +9,7 @@ import {
   extractSha256FromText,
   getDefaultInstallDirectory,
   getInstalledExecutablePath,
+  InstallerService,
   parseLatestReleaseResponse,
   parseVersionTag,
   selectSha256Asset,
@@ -106,4 +108,27 @@ test("non-Windows install directory uses the user data area", () => {
     getDefaultInstallDirectory({}, "linux"),
     path.join(os.homedir(), ".local", "share", "Spready"),
   );
+});
+
+test("installer status reports only supported installation options", async () => {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-installer-status-"));
+
+  try {
+    const service = new InstallerService({
+      currentAppDirectory: tempDirectory,
+      currentExecutablePath: path.join(tempDirectory, "Spready.exe"),
+      currentVersion: "1.2.3",
+      env: {
+        LOCALAPPDATA: tempDirectory,
+      },
+      isPackaged: true,
+      platform: "win32",
+    });
+
+    assert.deepEqual((await service.getStatus()).options, {
+      startMenuShortcut: false,
+    });
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
 });

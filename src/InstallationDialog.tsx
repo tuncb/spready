@@ -17,7 +17,6 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [options, setOptions] = useState<InstallerOptions>({
-    autoStart: false,
     startMenuShortcut: false,
   });
   const [status, setStatus] = useState<InstallerStatus | null>(null);
@@ -174,17 +173,6 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
                   <span>Install folder</span>
                   <strong>{status.installDirectory}</strong>
                 </div>
-                <label className="chart-editor__checkbox">
-                  <input
-                    checked={options.autoStart}
-                    disabled={!canInstall || isBusy}
-                    onChange={(event) => {
-                      updateOption("autoStart", event.target.checked);
-                    }}
-                    type="checkbox"
-                  />
-                  Start Spready when Windows starts
-                </label>
                 <label className="chart-editor__checkbox">
                   <input
                     checked={options.startMenuShortcut}
