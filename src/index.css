@@ -652,6 +652,36 @@ select {
   align-self: center;
 }
 
+.installation-window {
+  width: min(100vw - 24px, 680px);
+}
+
+.installation__section {
+  grid-template-columns: 1fr;
+}
+
+.installation__detail {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  min-width: 0;
+  color: var(--color-text-medium);
+  font-size: 12px;
+}
+
+.installation__detail strong {
+  min-width: 0;
+  color: var(--color-text-dark);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.installation-panel .chart-editor__actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .chart-editor__status {
   min-width: 0;
   flex: 1;

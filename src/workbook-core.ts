@@ -22,6 +22,44 @@ export interface ControlAppStatus {
   windowCount: number;
 }
 
+export interface InstallerOptions {
+  autoStart: boolean;
+  startMenuShortcut: boolean;
+}
+
+export interface InstallerStatus {
+  canManageInstalledInstance: boolean;
+  currentVersion: string;
+  installDirectory: string;
+  installed: boolean;
+  installedExecutablePath: string;
+  isPackaged: boolean;
+  options: InstallerOptions;
+  platform: NodeJS.Platform;
+  updateSupported: boolean;
+}
+
+export interface InstallerOperationResult {
+  message: string;
+  status: InstallerStatus;
+}
+
+export interface InstallerCheckUpdatesRequest {
+  restart?: boolean;
+  startUpdate?: boolean;
+}
+
+export interface InstallerCheckUpdatesResult {
+  assetName?: string;
+  currentVersion: string;
+  latestVersion?: string;
+  message: string;
+  releaseUrl?: string;
+  status: InstallerStatus;
+  updateAvailable: boolean;
+  updateStarted: boolean;
+}
+
 export interface WorkbookSheet {
   id: string;
   name: string;

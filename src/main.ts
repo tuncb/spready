@@ -8,6 +8,7 @@ import {
   dialog,
   ipcMain,
   Menu,
+  shell,
   type MenuItemConstructorOptions,
   type OpenDialogOptions,
   type SaveDialogOptions,
@@ -23,6 +24,7 @@ import {
 } from "./clipboard";
 import { SpreadyControlServer } from "./control-server";
 import { clearDiscoveredControlInfo, writeDiscoveredControlInfo } from "./control-discovery";
+import { InstallerService } from "./installer-service";
 import { createStartupLogSink, STARTUP_TIMING_LOG_FILE_PATH, StartupTimer } from "./startup-timing";
 import { formatWorkbookWindowTitle } from "./window-title";
 import { WorkbookController } from "./workbook-controller";
@@ -32,6 +34,8 @@ import type {
   ControlAppStatus,
   CopyRangeRequest,
   CutRangeRequest,
+  InstallerOptions,
+  InstallerCheckUpdatesRequest,
   PasteRangeRequest,
   SheetRangeRequest,
   WorkbookHistoryRequest,
@@ -52,12 +56,42 @@ const configuredControlPort = Number.parseInt(
 );
 let isChartDialogOpen = false;
 let isAppShowRequested = false;
+const isInstallerUninstallCommand = process.argv.includes("--spready-uninstall");
 
 if (started) {
   app.quit();
 }
 
 app.setName(APP_DISPLAY_NAME);
+
+const installerService = new InstallerService({
+  currentAppDirectory: path.dirname(process.execPath),
+  currentExecutablePath: process.execPath,
+  currentVersion: app.getVersion(),
+  getAutoStartEnabled: (executablePath) =>
+    app.getLoginItemSettings({
+      path: executablePath,
+    }).openAtLogin,
+  isPackaged: app.isPackaged,
+  requestQuit: () => {
+    setTimeout(() => {
+      app.quit();
+    }, 100);
+  },
+  setAutoStart: (executablePath, enabled) => {
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      path: executablePath,
+    });
+  },
+  writeShortcut: (shortcutPath, executablePath) =>
+    shell.writeShortcutLink(shortcutPath, "replace", {
+      cwd: path.dirname(executablePath),
+      description: "Start Spready",
+      icon: executablePath,
+      target: executablePath,
+    }),
+});
 
 const startupTimer = new StartupTimer("spready-main", createStartupLogSink(console.log));
 startupTimer.log(
@@ -518,6 +552,23 @@ function buildAppMenu() {
           click: () => {
             runMenuCommand(() => {
               sendMenuAction(APP_MENU_ACTIONS.exportCsv);
+            });
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Installation...",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.installation);
+            });
+          },
+        },
+        {
+          label: "Check for Updates...",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.checkUpdates);
             });
           },
         },
@@ -1061,6 +1112,22 @@ ipcMain.handle("dialog:save-workbook-file-as", async (event, args?: SaveWorkbook
   };
 });
 
+ipcMain.handle("installer:get-status", () => installerService.getStatus());
+
+ipcMain.handle("installer:install-current-app", (_event, options: InstallerOptions) =>
+  installerService.installCurrentApp(options),
+);
+
+ipcMain.handle("installer:apply-options", (_event, options: InstallerOptions) =>
+  installerService.applyOptions(options),
+);
+
+ipcMain.handle("installer:start-uninstall", () => installerService.startUninstall());
+
+ipcMain.handle("installer:check-for-updates", (_event, request?: InstallerCheckUpdatesRequest) =>
+  installerService.checkForUpdates(request),
+);
+
 ipcMain.handle("workbook:apply-transaction", (_event, args: ApplyTransactionRequest) =>
   workbookController.applyTransaction(args),
 );
@@ -1137,51 +1204,64 @@ workbookController.on("changed", () => {
   broadcastWorkbookChanged();
 });
 
-app.whenReady().then(() => {
-  startupTimer.log("app-when-ready");
-  startupTimer.log("control-server-start-requested");
-  void controlServer
-    .start()
-    .then(() => {
-      const controlInfo = controlServer.getInfo();
-      startupTimer.log("control-server-started", `tcp://${controlInfo.host}:${controlInfo.port}`);
-      startupTimer.log("control-discovery-write-start");
-      void writeDiscoveredControlInfo(APP_DISPLAY_NAME, controlInfo)
-        .then(() => {
-          startupTimer.log("control-discovery-write-done");
-        })
-        .catch((error) => {
-          startupTimer.log(
-            "control-discovery-write-failed",
-            error instanceof Error ? error.message : "unknown error",
-          );
-        });
-      console.log(
-        `${APP_DISPLAY_NAME} control server listening on tcp://${controlInfo.host}:${controlInfo.port}`,
-      );
-    })
+if (isInstallerUninstallCommand) {
+  app
+    .whenReady()
+    .then(() => installerService.startUninstall())
     .catch((error) => {
-      startupTimer.log(
-        "control-server-start-failed",
-        error instanceof Error ? error.message : "unknown error",
+      dialog.showErrorBox(
+        "Uninstall failed",
+        error instanceof Error ? error.message : "Spready could not be uninstalled.",
       );
-      console.error(
-        `${APP_DISPLAY_NAME} control server failed to start: ${
-          error instanceof Error ? error.message : "unknown error"
-        }`,
-      );
+      app.quit();
     });
+} else {
+  app.whenReady().then(() => {
+    startupTimer.log("app-when-ready");
+    startupTimer.log("control-server-start-requested");
+    void controlServer
+      .start()
+      .then(() => {
+        const controlInfo = controlServer.getInfo();
+        startupTimer.log("control-server-started", `tcp://${controlInfo.host}:${controlInfo.port}`);
+        startupTimer.log("control-discovery-write-start");
+        void writeDiscoveredControlInfo(APP_DISPLAY_NAME, controlInfo)
+          .then(() => {
+            startupTimer.log("control-discovery-write-done");
+          })
+          .catch((error) => {
+            startupTimer.log(
+              "control-discovery-write-failed",
+              error instanceof Error ? error.message : "unknown error",
+            );
+          });
+        console.log(
+          `${APP_DISPLAY_NAME} control server listening on tcp://${controlInfo.host}:${controlInfo.port}`,
+        );
+      })
+      .catch((error) => {
+        startupTimer.log(
+          "control-server-start-failed",
+          error instanceof Error ? error.message : "unknown error",
+        );
+        console.error(
+          `${APP_DISPLAY_NAME} control server failed to start: ${
+            error instanceof Error ? error.message : "unknown error"
+          }`,
+        );
+      });
 
-  createWindow();
-  buildAppMenu();
-  startupTimer.log("initial-window-and-menu-created");
+    createWindow();
+    buildAppMenu();
+    startupTimer.log("initial-window-and-menu-created");
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
   });
-});
+}
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

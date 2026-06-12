@@ -27,6 +27,7 @@ import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
 import { CellFormatDialog } from "./CellFormatDialog";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
+import { InstallationDialog } from "./InstallationDialog";
 import { RenameSheetDialog } from "./RenameSheetDialog";
 import {
   createSortTableOperation,
@@ -133,6 +134,8 @@ type RenameSheetSession = {
   name: string;
   sheetId: string;
 };
+
+type InstallationDialogMode = "check-updates" | "manage";
 
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
 type StyleRangeCache = SheetStyleRangeResult;
@@ -634,6 +637,8 @@ export default function App() {
   }
 
   const [cellFormatSession, setCellFormatSession] = useState<CellFormatSession | null>(null);
+  const [installationDialogMode, setInstallationDialogMode] =
+    useState<InstallationDialogMode | null>(null);
   const [chartEditorSession, setChartEditorSession] = useState<ChartEditorSession | null>(null);
   const [columnResizeOverrides, setColumnResizeOverrides] = useState<Record<string, number>>({});
   const [formulaInputValue, setFormulaInputValue] = useState("");
@@ -663,8 +668,10 @@ export default function App() {
   const styleRangeCacheRef = useRef<SheetStyleRangeResult | null>(null);
   const isChartEditorOpen = chartEditorSession !== null;
   const isCellFormatOpen = cellFormatSession !== null;
+  const isInstallationDialogOpen = installationDialogMode !== null;
   const isRenameSheetOpen = renameSheetSession !== null;
-  const isModalDialogOpen = isChartEditorOpen || isCellFormatOpen || isRenameSheetOpen;
+  const isModalDialogOpen =
+    isChartEditorOpen || isCellFormatOpen || isInstallationDialogOpen || isRenameSheetOpen;
 
   const activeSheet = useMemo(
     () => sheetSummary?.sheets.find((sheet) => sheet.id === sheetSummary.activeSheetId) ?? null,
@@ -1802,6 +1809,10 @@ export default function App() {
     setCellFormatSession(null);
   }, []);
 
+  const closeInstallationDialog = useCallback(() => {
+    setInstallationDialogMode(null);
+  }, []);
+
   const closeRenameSheetDialog = useCallback(() => {
     setRenameSheetSession(null);
   }, []);
@@ -1814,6 +1825,7 @@ export default function App() {
     (message: string) => {
       setChartEditorSession(null);
       setCellFormatSession(null);
+      setInstallationDialogMode(null);
       setRenameSheetSession(null);
       pushErrorToast(new Error(message));
     },
@@ -2219,6 +2231,12 @@ export default function App() {
           case APP_MENU_ACTIONS.exportCsv:
             void handleExport();
             return;
+          case APP_MENU_ACTIONS.installation:
+            setInstallationDialogMode("manage");
+            return;
+          case APP_MENU_ACTIONS.checkUpdates:
+            setInstallationDialogMode("check-updates");
+            return;
           case APP_MENU_ACTIONS.paste:
             void pasteSelection("raw");
             return;
@@ -2578,6 +2596,14 @@ export default function App() {
           onSaved={handleRenameSheetSaved}
           onVersionConflict={handleChartEditorVersionConflict}
           sheetId={renameSheetSession.sheetId}
+        />
+      ) : null}
+
+      {installationDialogMode ? (
+        <InstallationDialog
+          initialMode={installationDialogMode}
+          key={`installation:${installationDialogMode}`}
+          onClose={closeInstallationDialog}
         />
       ) : null}
 

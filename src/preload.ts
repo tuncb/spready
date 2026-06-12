@@ -11,6 +11,11 @@ import type {
   CopyRangeResult,
   CutRangeRequest,
   CutRangeResult,
+  InstallerCheckUpdatesRequest,
+  InstallerCheckUpdatesResult,
+  InstallerOperationResult,
+  InstallerOptions,
+  InstallerStatus,
   PasteRangeRequest,
   WorkbookChartPreview,
   WorkbookChartResult,
@@ -201,6 +206,21 @@ contextBridge.exposeInMainWorld("appShell", {
       sheetId,
     }) as Promise<UsedRangeResult>,
   getWorkbookSummary: () => ipcRenderer.invoke("workbook:get-summary") as Promise<WorkbookSummary>,
+  getInstallerStatus: () => ipcRenderer.invoke("installer:get-status") as Promise<InstallerStatus>,
+  installCurrentApp: (options: InstallerOptions) =>
+    ipcRenderer.invoke(
+      "installer:install-current-app",
+      options,
+    ) as Promise<InstallerOperationResult>,
+  applyInstallerOptions: (options: InstallerOptions) =>
+    ipcRenderer.invoke("installer:apply-options", options) as Promise<InstallerOperationResult>,
+  startUninstall: () =>
+    ipcRenderer.invoke("installer:start-uninstall") as Promise<InstallerOperationResult>,
+  checkForInstallerUpdates: (request?: InstallerCheckUpdatesRequest) =>
+    ipcRenderer.invoke(
+      "installer:check-for-updates",
+      request,
+    ) as Promise<InstallerCheckUpdatesResult>,
   logStartupTiming,
   name: "Spready",
   readClipboard: () => ipcRenderer.invoke("clipboard:read") as Promise<ClipboardReadResult>,

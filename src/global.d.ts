@@ -9,6 +9,11 @@ import type {
   CopyRangeResult,
   CutRangeRequest,
   CutRangeResult,
+  InstallerCheckUpdatesRequest,
+  InstallerCheckUpdatesResult,
+  InstallerOperationResult,
+  InstallerOptions,
+  InstallerStatus,
   PasteRangeRequest,
   WorkbookChartPreview,
   WorkbookChartResult,
@@ -80,6 +85,13 @@ declare global {
       getSheetStyleRange: (request: SheetRangeRequest) => Promise<SheetStyleRangeResult>;
       getUsedRange: (sheetId?: string) => Promise<UsedRangeResult>;
       getWorkbookSummary: () => Promise<WorkbookSummary>;
+      getInstallerStatus: () => Promise<InstallerStatus>;
+      installCurrentApp: (options: InstallerOptions) => Promise<InstallerOperationResult>;
+      applyInstallerOptions: (options: InstallerOptions) => Promise<InstallerOperationResult>;
+      startUninstall: () => Promise<InstallerOperationResult>;
+      checkForInstallerUpdates: (
+        request?: InstallerCheckUpdatesRequest,
+      ) => Promise<InstallerCheckUpdatesResult>;
       logStartupTiming: (event: string, detail?: string) => void;
       name: string;
       readClipboard: () => Promise<ClipboardReadResult>;
