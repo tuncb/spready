@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
+import { promises as fs, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
 import {
+  buildStartMenuShortcutDetails,
   extractSha256FromDigest,
   extractSha256FromText,
   getDefaultInstallDirectory,
   getInstalledExecutablePath,
+  getStartMenuShortcutPath,
   InstallerService,
+  type InstallerShortcutDetails,
   parseLatestReleaseResponse,
   parseVersionTag,
   runWithAsarFilesystemDisabled,
@@ -104,11 +107,68 @@ test("install paths are derived from Windows local app data", () => {
   );
 });
 
+test("start menu shortcut details include a matching icon index", () => {
+  const executablePath = path.join(
+    "C:\\Users\\person\\AppData\\Local",
+    "Programs",
+    "Spready",
+    "Spready.exe",
+  );
+
+  assert.deepEqual(buildStartMenuShortcutDetails(executablePath), {
+    cwd: path.dirname(executablePath),
+    description: "Start Spready",
+    icon: executablePath,
+    iconIndex: 0,
+    target: executablePath,
+  });
+});
+
 test("non-Windows install directory uses the user data area", () => {
   assert.equal(
     getDefaultInstallDirectory({}, "linux"),
     path.join(os.homedir(), ".local", "share", "Spready"),
   );
+});
+
+test("applying installer options writes the start menu shortcut", async () => {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-installer-shortcut-"));
+  const env = {
+    APPDATA: tempDirectory,
+    LOCALAPPDATA: tempDirectory,
+  };
+  const installDirectory = getDefaultInstallDirectory(env, "win32");
+  const executablePath = getInstalledExecutablePath(installDirectory);
+  const expectedShortcutPath = getStartMenuShortcutPath(env, "win32");
+  let writtenShortcut: InstallerShortcutDetails | null = null;
+
+  try {
+    await fs.mkdir(installDirectory, { recursive: true });
+    await fs.writeFile(executablePath, "");
+
+    const service = new InstallerService({
+      currentAppDirectory: installDirectory,
+      currentExecutablePath: executablePath,
+      currentVersion: "1.2.3",
+      env,
+      isPackaged: true,
+      platform: "win32",
+      writeShortcut: (shortcutPath, shortcut) => {
+        assert.equal(shortcutPath, expectedShortcutPath);
+        writtenShortcut = shortcut;
+        writeFileSync(shortcutPath, "shortcut");
+
+        return true;
+      },
+    });
+
+    const result = await service.applyOptions({ startMenuShortcut: true });
+
+    assert.deepEqual(writtenShortcut, buildStartMenuShortcutDetails(executablePath));
+    assert.equal(result.status.options.startMenuShortcut, true);
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
 });
 
 test("installer status reports only supported installation options", async () => {

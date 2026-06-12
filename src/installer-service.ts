@@ -50,7 +50,15 @@ interface InstallerServiceDependencies {
   isPackaged: boolean;
   platform?: NodeJS.Platform;
   requestQuit?: () => void;
-  writeShortcut?: (shortcutPath: string, executablePath: string) => boolean;
+  writeShortcut?: (shortcutPath: string, shortcut: InstallerShortcutDetails) => boolean;
+}
+
+export interface InstallerShortcutDetails {
+  cwd: string;
+  description: string;
+  icon: string;
+  iconIndex: number;
+  target: string;
 }
 
 export function parseVersionTag(tag: string): VersionNumber | null {
@@ -131,6 +139,16 @@ export function getStartMenuShortcutPath(
       : path.join(os.homedir(), "Start Menu", "Programs");
 
   return path.join(programsDirectory, `${APP_NAME}.lnk`);
+}
+
+export function buildStartMenuShortcutDetails(executablePath: string): InstallerShortcutDetails {
+  return {
+    cwd: path.dirname(executablePath),
+    description: `Start ${APP_NAME}`,
+    icon: executablePath,
+    iconIndex: 0,
+    target: executablePath,
+  };
 }
 
 export function selectWindowsReleaseAsset(
@@ -217,7 +235,7 @@ export class InstallerService {
   #isPackaged: boolean;
   #platform: NodeJS.Platform;
   #requestQuit?: () => void;
-  #writeShortcut?: (shortcutPath: string, executablePath: string) => boolean;
+  #writeShortcut?: (shortcutPath: string, shortcut: InstallerShortcutDetails) => boolean;
 
   constructor(dependencies: InstallerServiceDependencies) {
     this.#arch = dependencies.arch ?? process.arch;
@@ -424,8 +442,9 @@ export class InstallerService {
       await fs.mkdir(path.dirname(shortcutPath), { recursive: true });
 
       const installedExecutablePath = getInstalledExecutablePath(installDirectory);
+      const shortcut = buildStartMenuShortcutDetails(installedExecutablePath);
 
-      if (!(this.#writeShortcut?.(shortcutPath, installedExecutablePath) ?? false)) {
+      if (!(this.#writeShortcut?.(shortcutPath, shortcut) ?? false)) {
         throw new Error("Failed to write the Start Menu shortcut.");
       }
     } else {

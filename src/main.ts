@@ -74,13 +74,8 @@ const installerService = new InstallerService({
       app.quit();
     }, 100);
   },
-  writeShortcut: (shortcutPath, executablePath) =>
-    shell.writeShortcutLink(shortcutPath, "replace", {
-      cwd: path.dirname(executablePath),
-      description: "Start Spready",
-      icon: executablePath,
-      target: executablePath,
-    }),
+  writeShortcut: (shortcutPath, shortcut) =>
+    shell.writeShortcutLink(shortcutPath, "replace", shortcut),
 });
 
 const startupTimer = new StartupTimer("spready-main", createStartupLogSink(console.log));
