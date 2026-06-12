@@ -535,15 +535,36 @@ export class InstallerService {
   }
 }
 
-async function copyDirectoryContents(sourceDirectory: string, targetDirectory: string) {
-  await fs.mkdir(targetDirectory, { recursive: true });
+export async function runWithAsarFilesystemDisabled<T>(operation: () => Promise<T>): Promise<T> {
+  const processWithAsarFlag = process as NodeJS.Process & {
+    noAsar?: boolean;
+  };
+  const previousNoAsar = processWithAsarFlag.noAsar;
 
-  for (const entry of await fs.readdir(sourceDirectory)) {
-    await fs.cp(path.join(sourceDirectory, entry), path.join(targetDirectory, entry), {
-      dereference: false,
-      recursive: true,
-    });
+  processWithAsarFlag.noAsar = true;
+
+  try {
+    return await operation();
+  } finally {
+    if (previousNoAsar === undefined) {
+      Reflect.deleteProperty(processWithAsarFlag, "noAsar");
+    } else {
+      processWithAsarFlag.noAsar = previousNoAsar;
+    }
   }
+}
+
+async function copyDirectoryContents(sourceDirectory: string, targetDirectory: string) {
+  await runWithAsarFilesystemDisabled(async () => {
+    await fs.mkdir(targetDirectory, { recursive: true });
+
+    for (const entry of await fs.readdir(sourceDirectory)) {
+      await fs.cp(path.join(sourceDirectory, entry), path.join(targetDirectory, entry), {
+        dereference: false,
+        recursive: true,
+      });
+    }
+  });
 }
 
 async function findExtractedAppDirectory(extractionDirectory: string) {

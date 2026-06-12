@@ -12,6 +12,7 @@ import {
   InstallerService,
   parseLatestReleaseResponse,
   parseVersionTag,
+  runWithAsarFilesystemDisabled,
   selectSha256Asset,
   selectWindowsReleaseAsset,
   isVersionNewer,
@@ -130,5 +131,59 @@ test("installer status reports only supported installation options", async () =>
     });
   } finally {
     await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
+});
+
+test("runWithAsarFilesystemDisabled restores the previous ASAR filesystem flag", async () => {
+  const processWithAsarFlag = process as NodeJS.Process & {
+    noAsar?: boolean;
+  };
+  const originalNoAsar = processWithAsarFlag.noAsar;
+
+  try {
+    processWithAsarFlag.noAsar = false;
+
+    const result = await runWithAsarFilesystemDisabled(async () => {
+      assert.equal(processWithAsarFlag.noAsar, true);
+
+      return "copied";
+    });
+
+    assert.equal(result, "copied");
+    assert.equal(processWithAsarFlag.noAsar, false);
+  } finally {
+    if (originalNoAsar === undefined) {
+      Reflect.deleteProperty(processWithAsarFlag, "noAsar");
+    } else {
+      processWithAsarFlag.noAsar = originalNoAsar;
+    }
+  }
+});
+
+test("runWithAsarFilesystemDisabled restores the ASAR filesystem flag after failure", async () => {
+  const processWithAsarFlag = process as NodeJS.Process & {
+    noAsar?: boolean;
+  };
+  const originalNoAsar = processWithAsarFlag.noAsar;
+
+  try {
+    Reflect.deleteProperty(processWithAsarFlag, "noAsar");
+
+    await assert.rejects(
+      runWithAsarFilesystemDisabled(async () => {
+        assert.equal(processWithAsarFlag.noAsar, true);
+
+        throw new Error("copy failed");
+      }),
+      /copy failed/u,
+    );
+
+    assert.equal(processWithAsarFlag.noAsar, undefined);
+  } finally {
+    if (originalNoAsar === undefined) {
+      Reflect.deleteProperty(processWithAsarFlag, "noAsar");
+    } else {
+      processWithAsarFlag.noAsar = originalNoAsar;
+    }
   }
 });
