@@ -1,13 +1,23 @@
 import type { ForgeConfig } from "@electron-forge/shared-types";
 import { MakerSquirrel } from "@electron-forge/maker-squirrel";
 import { VitePlugin } from "@electron-forge/plugin-vite";
+import path from "node:path";
+
+const iconBasePath = path.resolve(__dirname, "assets", "spready");
+const windowsIconPath = `${iconBasePath}.ico`;
 
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    icon: iconBasePath,
   },
   rebuildConfig: {},
-  makers: [new MakerSquirrel({})],
+  makers: [
+    new MakerSquirrel({
+      authors: "Spready",
+      setupIcon: windowsIconPath,
+    }),
+  ],
   plugins: [
     new VitePlugin({
       build: [

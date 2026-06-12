@@ -44,6 +44,7 @@ import type {
 } from "./workbook-core";
 
 const APP_DISPLAY_NAME = "Spready";
+const APP_ICON_PATH = path.join(__dirname, "..", "..", "assets", "spready.png");
 const DEFAULT_EXPORT_FILE_NAME = "Sheet1.csv";
 const DEFAULT_WORKBOOK_FILE_NAME = "Workbook.spready";
 const DEFAULT_CONTROL_HOST = "127.0.0.1";
@@ -775,6 +776,7 @@ const createWindow = () => {
     show: false,
     autoHideMenuBar: false,
     backgroundColor: "#f3efe8",
+    icon: APP_ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
