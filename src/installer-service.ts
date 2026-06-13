@@ -50,7 +50,11 @@ interface InstallerServiceDependencies {
   isPackaged: boolean;
   platform?: NodeJS.Platform;
   requestQuit?: () => void;
-  writeShortcut?: (shortcutPath: string, shortcut: InstallerShortcutDetails) => boolean;
+  writeShortcut?: (
+    shortcutPath: string,
+    operation: InstallerShortcutOperation,
+    shortcut: InstallerShortcutDetails,
+  ) => boolean;
 }
 
 export interface InstallerShortcutDetails {
@@ -60,6 +64,8 @@ export interface InstallerShortcutDetails {
   iconIndex: number;
   target: string;
 }
+
+export type InstallerShortcutOperation = "create" | "update" | "replace";
 
 export function parseVersionTag(tag: string): VersionNumber | null {
   const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/u.exec(tag.trim());
@@ -235,7 +241,11 @@ export class InstallerService {
   #isPackaged: boolean;
   #platform: NodeJS.Platform;
   #requestQuit?: () => void;
-  #writeShortcut?: (shortcutPath: string, shortcut: InstallerShortcutDetails) => boolean;
+  #writeShortcut?: (
+    shortcutPath: string,
+    operation: InstallerShortcutOperation,
+    shortcut: InstallerShortcutDetails,
+  ) => boolean;
 
   constructor(dependencies: InstallerServiceDependencies) {
     this.#arch = dependencies.arch ?? process.arch;
@@ -444,7 +454,7 @@ export class InstallerService {
       const installedExecutablePath = getInstalledExecutablePath(installDirectory);
       const shortcut = buildStartMenuShortcutDetails(installedExecutablePath);
 
-      if (!(this.#writeShortcut?.(shortcutPath, shortcut) ?? false)) {
+      if (!(this.#writeShortcut?.(shortcutPath, "create", shortcut) ?? false)) {
         throw new Error("Failed to write the Start Menu shortcut.");
       }
     } else {

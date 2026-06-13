@@ -153,8 +153,9 @@ test("applying installer options writes the start menu shortcut", async () => {
       env,
       isPackaged: true,
       platform: "win32",
-      writeShortcut: (shortcutPath, shortcut) => {
+      writeShortcut: (shortcutPath, operation, shortcut) => {
         assert.equal(shortcutPath, expectedShortcutPath);
+        assert.equal(operation, "create");
         writtenShortcut = shortcut;
         writeFileSync(shortcutPath, "shortcut");
 

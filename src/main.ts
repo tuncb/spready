@@ -75,8 +75,8 @@ const installerService = new InstallerService({
       app.quit();
     }, 100);
   },
-  writeShortcut: (shortcutPath, shortcut) =>
-    shell.writeShortcutLink(shortcutPath, "replace", shortcut),
+  writeShortcut: (shortcutPath, operation, shortcut) =>
+    shell.writeShortcutLink(shortcutPath, operation, shortcut),
 });
 
 const startupTimer = new StartupTimer("spready-main", createStartupLogSink(console.log));
