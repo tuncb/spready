@@ -18,7 +18,7 @@ import {
 
 export const WORKBOOK_DOCUMENT_EXTENSION = ".spready";
 export const WORKBOOK_DOCUMENT_FORMAT = "spready-workbook";
-export const WORKBOOK_DOCUMENT_VERSION = 5;
+export const WORKBOOK_DOCUMENT_VERSION = 6;
 
 export interface WorkbookDocumentCell {
   column: number;
@@ -50,7 +50,7 @@ export type WorkbookDocumentTable = WorkbookTable;
 
 export interface WorkbookDocument {
   format: typeof WORKBOOK_DOCUMENT_FORMAT;
-  formatVersion: 4 | typeof WORKBOOK_DOCUMENT_VERSION;
+  formatVersion: 4 | 5 | typeof WORKBOOK_DOCUMENT_VERSION;
   workbook: {
     activeSheetId: string;
     charts: WorkbookDocumentChart[];
@@ -76,6 +76,45 @@ const workbookDocumentCellStyleValueSchema = z
     fontSize: z.number().min(6).optional(),
     horizontalAlign: z.enum(["center", "left", "right"]).optional(),
     italic: z.boolean().optional(),
+    numberFormat: z
+      .discriminatedUnion("type", [
+        z.object({
+          type: z.literal("general"),
+        }),
+        z
+          .object({
+            decimalPlaces: z.int().min(0).max(20).optional(),
+            significantDigits: z.int().min(1).max(21).optional(),
+            type: z.literal("number"),
+            useGrouping: z.boolean().optional(),
+          })
+          .refine(
+            (format) =>
+              !(format.decimalPlaces !== undefined && format.significantDigits !== undefined),
+            {
+              message: "Number format cannot set both decimalPlaces and significantDigits.",
+            },
+          ),
+        z
+          .object({
+            decimalPlaces: z.int().min(0).max(20).optional(),
+            significantDigits: z.int().min(1).max(21).optional(),
+            type: z.literal("percent"),
+            useGrouping: z.boolean().optional(),
+          })
+          .refine(
+            (format) =>
+              !(format.decimalPlaces !== undefined && format.significantDigits !== undefined),
+            {
+              message: "Number format cannot set both decimalPlaces and significantDigits.",
+            },
+          ),
+        z.object({
+          significantDigits: z.int().min(1).max(21).optional(),
+          type: z.literal("scientific"),
+        }),
+      ])
+      .optional(),
     textColor: z.string().min(1).optional(),
     wrapText: z.boolean().optional(),
   })
@@ -189,7 +228,7 @@ const workbookDocumentTableSchema = z.object({
 
 const workbookDocumentSchema = z.object({
   format: z.literal(WORKBOOK_DOCUMENT_FORMAT),
-  formatVersion: z.union([z.literal(4), z.literal(WORKBOOK_DOCUMENT_VERSION)]),
+  formatVersion: z.union([z.literal(4), z.literal(5), z.literal(WORKBOOK_DOCUMENT_VERSION)]),
   workbook: z.object({
     activeSheetId: z.string().min(1),
     charts: z.array(workbookDocumentChartSchema),

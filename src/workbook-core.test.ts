@@ -622,6 +622,11 @@ test("applyWorkbookTransaction stores sparse cell styles and exposes style range
           bold: true,
           fontSize: 14.9,
           horizontalAlign: "center",
+          numberFormat: {
+            decimalPlaces: 2,
+            type: "number",
+            useGrouping: true,
+          },
           textColor: "#111827",
         },
         type: "setCellStyle",
@@ -654,6 +659,11 @@ test("applyWorkbookTransaction stores sparse cell styles and exposes style range
           bold: true,
           fontSize: 14,
           horizontalAlign: "center",
+          numberFormat: {
+            decimalPlaces: 2,
+            type: "number",
+            useGrouping: true,
+          },
           textColor: "#111827",
         },
         {
@@ -695,6 +705,11 @@ test("applyWorkbookTransaction stores sparse cell styles and exposes style range
           bold: true,
           fontSize: 14,
           horizontalAlign: "center",
+          numberFormat: {
+            decimalPlaces: 2,
+            type: "number",
+            useGrouping: true,
+          },
           textColor: "#111827",
         },
         null,
@@ -705,6 +720,48 @@ test("applyWorkbookTransaction stores sparse cell styles and exposes style range
         },
       ],
     ],
+  );
+});
+
+test("applyWorkbookTransaction rejects conflicting number format digit settings", () => {
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(createWorkbookState(), {
+        operations: [
+          {
+            columnIndex: 0,
+            rowIndex: 0,
+            style: {
+              numberFormat: {
+                decimalPlaces: 2,
+                significantDigits: 3,
+                type: "number",
+              } as never,
+            },
+            type: "setCellStyle",
+          },
+        ],
+      }),
+    /cannot set both decimalPlaces and significantDigits/,
+  );
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(createWorkbookState(), {
+        operations: [
+          {
+            columnIndex: 0,
+            rowIndex: 0,
+            style: {
+              numberFormat: {
+                decimalPlaces: 2,
+                type: "scientific",
+              } as never,
+            },
+            type: "setCellStyle",
+          },
+        ],
+      }),
+    /scientific number format cannot set decimalPlaces/,
   );
 });
 

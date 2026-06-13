@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type {
   SheetRangeRequest,
+  WorkbookCellNumberFormat,
   WorkbookCellStyle,
   WorkbookTransactionOperation,
 } from "./workbook-core";
@@ -28,6 +29,14 @@ export function CellFormatDialog({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [formState, setFormState] = useState<WorkbookCellStyle>(() => initialStyle ?? {});
   const [isSaving, setIsSaving] = useState(false);
+  const numberFormat = formState.numberFormat;
+  const numberFormatType = numberFormat?.type ?? "general";
+  const digitMode =
+    numberFormat?.decimalPlaces !== undefined
+      ? "decimal"
+      : numberFormat?.significantDigits !== undefined
+        ? "significant"
+        : "none";
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -193,6 +202,95 @@ export function CellFormatDialog({
               </div>
 
               <div className="chart-editor__field">
+                <label htmlFor="cell-format-number-type">Number format</label>
+                <select
+                  id="cell-format-number-type"
+                  onChange={(event) => {
+                    updateStyle({
+                      numberFormat: createNumberFormatForType(
+                        event.target.value as WorkbookCellNumberFormat["type"],
+                        numberFormat,
+                      ),
+                    });
+                  }}
+                  value={numberFormatType}
+                >
+                  <option value="general">General</option>
+                  <option value="number">Number</option>
+                  <option value="percent">Percent</option>
+                  <option value="scientific">Scientific</option>
+                </select>
+              </div>
+
+              {numberFormatType !== "general" ? (
+                <>
+                  <div className="chart-editor__field">
+                    <label htmlFor="cell-format-digit-mode">Digits</label>
+                    <select
+                      id="cell-format-digit-mode"
+                      onChange={(event) => {
+                        updateStyle({
+                          numberFormat: setNumberFormatDigitMode(
+                            numberFormat,
+                            event.target.value as NumberFormatDigitMode,
+                          ),
+                        });
+                      }}
+                      value={digitMode}
+                    >
+                      <option value="none">Automatic</option>
+                      {numberFormatType !== "scientific" ? (
+                        <option value="decimal">Decimal places</option>
+                      ) : null}
+                      <option value="significant">Significant digits</option>
+                    </select>
+                  </div>
+
+                  {digitMode !== "none" ? (
+                    <div className="chart-editor__field">
+                      <label htmlFor="cell-format-digit-value">
+                        {digitMode === "decimal" ? "Decimal places" : "Significant digits"}
+                      </label>
+                      <input
+                        id="cell-format-digit-value"
+                        max={digitMode === "decimal" ? 20 : 21}
+                        min={digitMode === "decimal" ? 0 : 1}
+                        onChange={(event) => {
+                          updateStyle({
+                            numberFormat: setNumberFormatDigitValue(
+                              numberFormat,
+                              digitMode,
+                              Number.parseInt(event.target.value, 10),
+                            ),
+                          });
+                        }}
+                        type="number"
+                        value={getNumberFormatDigitValue(numberFormat, digitMode)}
+                      />
+                    </div>
+                  ) : null}
+
+                  {numberFormatType === "number" || numberFormatType === "percent" ? (
+                    <label className="chart-editor__checkbox cell-format__checkbox">
+                      <input
+                        checked={numberFormat?.useGrouping ?? false}
+                        onChange={(event) => {
+                          updateStyle({
+                            numberFormat: setNumberFormatGrouping(
+                              numberFormat,
+                              event.target.checked,
+                            ),
+                          });
+                        }}
+                        type="checkbox"
+                      />
+                      <span>Use grouping</span>
+                    </label>
+                  ) : null}
+                </>
+              ) : null}
+
+              <div className="chart-editor__field">
                 <label htmlFor="cell-format-text-color">Text color</label>
                 <input
                   id="cell-format-text-color"
@@ -298,6 +396,10 @@ function normalizeDialogCellStyle(style: WorkbookCellStyle): WorkbookCellStyle |
     normalized.italic = true;
   }
 
+  if (style.numberFormat && style.numberFormat.type !== "general") {
+    normalized.numberFormat = style.numberFormat;
+  }
+
   if (style.textColor) {
     normalized.textColor = style.textColor;
   }
@@ -307,6 +409,165 @@ function normalizeDialogCellStyle(style: WorkbookCellStyle): WorkbookCellStyle |
   }
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+type NumberFormatDigitMode = "decimal" | "none" | "significant";
+
+function createNumberFormatForType(
+  type: WorkbookCellNumberFormat["type"],
+  current: WorkbookCellNumberFormat | undefined,
+): WorkbookCellNumberFormat | undefined {
+  if (type === "general") {
+    return undefined;
+  }
+
+  if (type === "scientific") {
+    return {
+      ...(current?.significantDigits !== undefined
+        ? { significantDigits: current.significantDigits }
+        : {}),
+      type,
+    };
+  }
+
+  return {
+    ...(current?.decimalPlaces !== undefined ? { decimalPlaces: current.decimalPlaces } : {}),
+    ...(current?.significantDigits !== undefined
+      ? { significantDigits: current.significantDigits }
+      : {}),
+    ...(current?.useGrouping !== undefined ? { useGrouping: current.useGrouping } : {}),
+    type,
+  };
+}
+
+function setNumberFormatDigitMode(
+  current: WorkbookCellNumberFormat | undefined,
+  digitMode: NumberFormatDigitMode,
+): WorkbookCellNumberFormat | undefined {
+  if (!current || current.type === "general") {
+    return current;
+  }
+
+  if (digitMode === "none") {
+    return clearNumberFormatDigits(current);
+  }
+
+  if (digitMode === "decimal") {
+    if (current.type === "scientific") {
+      return current;
+    }
+
+    return {
+      decimalPlaces: current.decimalPlaces ?? 2,
+      ...(current.useGrouping !== undefined ? { useGrouping: current.useGrouping } : {}),
+      type: current.type,
+    };
+  }
+
+  if (current.type === "scientific") {
+    return {
+      significantDigits: current.significantDigits ?? 3,
+      type: "scientific",
+    };
+  }
+
+  return {
+    significantDigits: current.significantDigits ?? 3,
+    ...(current.useGrouping !== undefined ? { useGrouping: current.useGrouping } : {}),
+    type: current.type,
+  };
+}
+
+function setNumberFormatDigitValue(
+  current: WorkbookCellNumberFormat | undefined,
+  digitMode: Exclude<NumberFormatDigitMode, "none">,
+  value: number,
+): WorkbookCellNumberFormat | undefined {
+  if (!current || current.type === "general") {
+    return current;
+  }
+
+  const boundedValue =
+    digitMode === "decimal"
+      ? clampInteger(value, 0, 20, current.decimalPlaces ?? 2)
+      : clampInteger(value, 1, 21, current.significantDigits ?? 3);
+
+  if (digitMode === "decimal") {
+    if (current.type === "scientific") {
+      return current;
+    }
+
+    return {
+      decimalPlaces: boundedValue,
+      ...(current.useGrouping !== undefined ? { useGrouping: current.useGrouping } : {}),
+      type: current.type,
+    };
+  }
+
+  if (current.type === "scientific") {
+    return {
+      significantDigits: boundedValue,
+      type: "scientific",
+    };
+  }
+
+  return {
+    significantDigits: boundedValue,
+    ...(current.useGrouping !== undefined ? { useGrouping: current.useGrouping } : {}),
+    type: current.type,
+  };
+}
+
+function clearNumberFormatDigits(
+  current: Exclude<WorkbookCellNumberFormat, { type: "general" }>,
+): Exclude<WorkbookCellNumberFormat, { type: "general" }> {
+  if (current.type === "scientific") {
+    return {
+      type: "scientific",
+    };
+  }
+
+  return {
+    ...(current.useGrouping !== undefined ? { useGrouping: current.useGrouping } : {}),
+    type: current.type,
+  };
+}
+
+function setNumberFormatGrouping(
+  current: WorkbookCellNumberFormat | undefined,
+  useGrouping: boolean,
+): WorkbookCellNumberFormat | undefined {
+  if (!current || current.type === "general" || current.type === "scientific") {
+    return current;
+  }
+
+  return {
+    ...current,
+    useGrouping,
+  };
+}
+
+function getNumberFormatDigitValue(
+  current: WorkbookCellNumberFormat | undefined,
+  digitMode: NumberFormatDigitMode,
+): number | string {
+  if (!current || current.type === "general" || digitMode === "none") {
+    return "";
+  }
+
+  if (digitMode === "decimal") {
+    return current.decimalPlaces ?? 2;
+  }
+
+  return current.significantDigits ?? 3;
+}
+
+function clampInteger(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isInteger(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, value));
 }
 
 function getColorInputValue(value: string | undefined, fallback: string) {

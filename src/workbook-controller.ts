@@ -8,7 +8,6 @@ import {
   buildCreateChartOperation,
   buildFormatCellsOperations,
   buildPasteRangeOperations,
-  compareWorkbookTableSortValues,
   createClipboardRangePayload,
   cloneWorkbookChart,
   cloneWorkbookTable,
@@ -70,8 +69,10 @@ import {
   type WorkbookUndoTree,
 } from "./workbook-core";
 import {
+  compareCellEvaluationSortValues,
   evaluateWorkbook,
   getCellEvaluation,
+  type CellEvaluation,
   type SheetEvaluationSnapshot,
 } from "./formula-engine";
 import { buildWorkbookChartPreview } from "./workbook-charting";
@@ -553,9 +554,9 @@ export class WorkbookController extends EventEmitter {
     return rows
       .sort((left, right) => {
         for (const key of operation.keys) {
-          const comparison = compareWorkbookTableSortValues(
-            getCellEvaluation(snapshot, left.rowIndex, key.columnIndex).display,
-            getCellEvaluation(snapshot, right.rowIndex, key.columnIndex).display,
+          const comparison = compareDisplayTableSortValues(
+            getCellEvaluation(snapshot, left.rowIndex, key.columnIndex),
+            getCellEvaluation(snapshot, right.rowIndex, key.columnIndex),
             key.direction,
           );
 
@@ -769,6 +770,22 @@ export class WorkbookController extends EventEmitter {
     this.#nextHistoryNodeNumber += 1;
     return nodeId;
   }
+}
+
+function compareDisplayTableSortValues(
+  left: CellEvaluation,
+  right: CellEvaluation,
+  direction: "ascending" | "descending",
+): number {
+  const leftBlank = left.value.type === "blank";
+  const rightBlank = right.value.type === "blank";
+
+  if (leftBlank || rightBlank) {
+    return compareCellEvaluationSortValues(left, right);
+  }
+
+  const comparison = compareCellEvaluationSortValues(left, right);
+  return direction === "ascending" ? comparison : -comparison;
 }
 
 function normalizeCsvFilePath(filePath: string): string {

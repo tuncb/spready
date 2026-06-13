@@ -84,6 +84,47 @@ test("evaluateSheet supports text, boolean, comparison, exponent, percent, and e
   assert.equal(getCellEvaluation(snapshot, 0, 7).display, "#N/A");
 });
 
+test("evaluateSheet applies number formats to display without changing raw inputs or formula values", () => {
+  const sheet = createSheet([["00123", "0.1234", "=1/3", "=12345"]]);
+
+  sheet.cellStyles = {
+    "0:0": {
+      numberFormat: {
+        decimalPlaces: 1,
+        type: "number",
+        useGrouping: true,
+      },
+    },
+    "0:1": {
+      numberFormat: {
+        decimalPlaces: 1,
+        type: "percent",
+      },
+    },
+    "0:2": {
+      numberFormat: {
+        significantDigits: 3,
+        type: "number",
+      },
+    },
+    "0:3": {
+      numberFormat: {
+        significantDigits: 3,
+        type: "scientific",
+      },
+    },
+  };
+
+  const snapshot = evaluateSheet(sheet, 29);
+
+  assert.equal(getCellEvaluation(snapshot, 0, 0).input, "00123");
+  assert.equal(getCellEvaluation(snapshot, 0, 0).display, "123.0");
+  assert.equal(getCellEvaluation(snapshot, 0, 1).display, "12.3%");
+  assert.equal(getCellEvaluation(snapshot, 0, 2).display, "0.333");
+  assert.equal(getCellEvaluation(snapshot, 0, 2).value.type, "number");
+  assert.equal(getCellEvaluation(snapshot, 0, 3).display, "1.23E+4");
+});
+
 test("evaluateSheet treats single-cell ranges as scalars and multi-cell ranges as value errors outside functions", () => {
   const sheet = createSheet([["1", "2", "=A1:A1", "=A1:B1", "=A1:A1+4", "=A1:B1+1"]]);
   const snapshot = evaluateSheet(sheet, 19);

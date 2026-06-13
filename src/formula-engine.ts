@@ -1,8 +1,10 @@
 import {
+  formatWorkbookNumberDisplay,
   getSheetColumnCount,
   getSheetRowCount,
   isFormulaInput,
   parseCellReference,
+  type WorkbookCellStyle,
   type FormulaErrorCode,
   type WorkbookState,
   type WorkbookSheet,
@@ -160,6 +162,43 @@ export function getCellEvaluation(
   }
 
   return evaluation;
+}
+
+export function compareCellEvaluationSortValues(
+  left: CellEvaluation,
+  right: CellEvaluation,
+): number {
+  const leftBlank = left.value.type === "blank";
+  const rightBlank = right.value.type === "blank";
+
+  if (leftBlank || rightBlank) {
+    if (leftBlank === rightBlank) {
+      return 0;
+    }
+
+    return leftBlank ? 1 : -1;
+  }
+
+  if (left.value.type === "number" && right.value.type === "number") {
+    return left.value.value - right.value.value;
+  }
+
+  if (left.value.type === "boolean" && right.value.type === "boolean") {
+    return Number(left.value.value) - Number(right.value.value);
+  }
+
+  if (left.value.type === "text" && right.value.type === "text") {
+    return compareDisplayText(left.value.value, right.value.value);
+  }
+
+  if (left.value.type === "error" && right.value.type === "error") {
+    return compareDisplayText(
+      getErrorDisplay(left.value.errorCode),
+      getErrorDisplay(right.value.errorCode),
+    );
+  }
+
+  return compareDisplayText(left.display, right.display);
 }
 
 export function tokenizeFormula(input: string): FormulaToken[] {
@@ -826,6 +865,12 @@ export function evaluateWorkbook(
     return sheet?.cells[rowIndex]?.[columnIndex] ?? "";
   }
 
+  function getCellStyle(address: CellAddress): WorkbookCellStyle | undefined {
+    const sheet = sheetById.get(address.sheetId);
+
+    return sheet?.cellStyles[createSheetCellStyleKey(address.rowIndex, address.columnIndex)];
+  }
+
   function recordDependencies(
     snapshot: SheetEvaluationSnapshot,
     cellKey: CellKey,
@@ -887,7 +932,7 @@ export function evaluateWorkbook(
 
         evaluation = {
           input,
-          display: input,
+          display: getDisplayForInputValue(input, value, getCellStyle(address)),
           isFormula: false,
           value,
           dependencies: EMPTY_DEPENDENCIES,
@@ -941,7 +986,7 @@ export function evaluateWorkbook(
 
     return {
       input,
-      display: getDisplayForValue(value),
+      display: getDisplayForValue(value, getCellStyle(address)),
       isFormula: true,
       value,
       dependencies: normalizedDependencies,
@@ -3296,7 +3341,19 @@ function isErrorValue(value: unknown): value is ErrorValue {
   return typeof value === "object" && value !== null && "type" in value && value.type === "error";
 }
 
-function getDisplayForValue(value: ScalarFormulaValue): string {
+function getDisplayForInputValue(
+  input: string,
+  value: ScalarFormulaValue,
+  style?: WorkbookCellStyle,
+): string {
+  if (value.type === "number" && style?.numberFormat) {
+    return formatWorkbookNumberDisplay(value.value, style.numberFormat);
+  }
+
+  return input;
+}
+
+function getDisplayForValue(value: ScalarFormulaValue, style?: WorkbookCellStyle): string {
   switch (value.type) {
     case "blank":
       return "";
@@ -3305,7 +3362,7 @@ function getDisplayForValue(value: ScalarFormulaValue): string {
     case "error":
       return getErrorDisplay(value.errorCode);
     case "number":
-      return formatNumericDisplay(value.value);
+      return formatWorkbookNumberDisplay(value.value, style?.numberFormat);
     case "text":
       return value.value;
   }
@@ -3438,6 +3495,17 @@ function getCellKeySheetId(cellKey: CellKey): string {
   const rowSeparator = cellKey.lastIndexOf(":", columnSeparator - 1);
 
   return rowSeparator < 0 ? "" : cellKey.slice(0, rowSeparator);
+}
+
+function createSheetCellStyleKey(rowIndex: number, columnIndex: number): string {
+  return `${rowIndex}:${columnIndex}`;
+}
+
+function compareDisplayText(left: string, right: string): number {
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
 function parseNumericLiteral(input: string): number | undefined {
