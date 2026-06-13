@@ -171,8 +171,7 @@ select {
 .table-sort-control {
   position: absolute;
   display: inline-grid;
-  grid-template-columns: 16.5px 16.5px;
-  gap: 1.5px;
+  grid-template-columns: 16.5px;
   pointer-events: auto;
 }
 

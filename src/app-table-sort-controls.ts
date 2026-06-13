@@ -79,3 +79,9 @@ export function createSortTableOperation(
     valueMode: "display",
   };
 }
+
+export function getNextTableSortDirection(
+  direction?: WorkbookTableSortDirection,
+): WorkbookTableSortDirection {
+  return direction === "ascending" ? "descending" : "ascending";
+}
