@@ -1445,6 +1445,75 @@ test("applyWorkbookTransaction keeps blank table sort values at the end", () => 
   );
 });
 
+test("addTable replaces fully contained tables and still rejects partial overlaps", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        name: "Sales",
+        range: {
+          columnCount: 3,
+          rowCount: 4,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-sales",
+        type: "addTable",
+      },
+    ],
+  }).state;
+
+  const expanded = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        name: "Sales",
+        range: {
+          columnCount: 4,
+          rowCount: 4,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-sales-expanded",
+        type: "addTable",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(expanded.tables, [
+    {
+      hasHeaderRow: true,
+      id: "table-sales-expanded",
+      name: "Sales",
+      range: {
+        columnCount: 4,
+        rowCount: 4,
+        sheetId: workbook.activeSheetId,
+        startColumn: 0,
+        startRow: 0,
+      },
+    },
+  ]);
+
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(expanded, {
+        operations: [
+          {
+            name: "Partial",
+            range: {
+              columnCount: 2,
+              rowCount: 2,
+              startColumn: 3,
+              startRow: 0,
+            },
+            tableId: "table-partial",
+            type: "addTable",
+          },
+        ],
+      }),
+    /Table "Partial" overlaps table "Sales"\./,
+  );
+});
+
 test("applyWorkbookTransaction adjusts table ranges for structural row and column edits", () => {
   const workbook = applyWorkbookTransaction(createWorkbookState(), {
     operations: [

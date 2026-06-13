@@ -2058,17 +2058,32 @@ export function applyWorkbookTransaction(
 
       case "addTable": {
         const range = normalizeWorkbookTableRange(nextState, operation.range);
+        const replacedTableIds = new Set(
+          nextState.tables
+            .filter((table) => workbookTableRangeContains(range, table.range))
+            .map((table) => table.id),
+        );
+        const nextStateWithoutReplacedTables =
+          replacedTableIds.size === 0
+            ? nextState
+            : {
+                ...nextState,
+                tables: nextState.tables.filter((table) => !replacedTableIds.has(table.id)),
+              };
         const tableId =
           normalizeOptionalTableId(operation.tableId) ?? createTableId(nextState.nextTableNumber);
         const nextTableName =
           operation.name === undefined
-            ? getNextAvailableWorkbookTableName(nextState)
+            ? getNextAvailableWorkbookTableName(nextStateWithoutReplacedTables)
             : {
-                name: assertWorkbookTableNameAvailable(nextState, operation.name),
+                name: assertWorkbookTableNameAvailable(
+                  nextStateWithoutReplacedTables,
+                  operation.name,
+                ),
                 nextTableNumber: nextState.nextTableNumber + 1,
               };
 
-        if (findTableIndex(nextState, tableId) >= 0) {
+        if (findTableIndex(nextState, tableId) >= 0 && !replacedTableIds.has(tableId)) {
           throw new Error(`Table "${tableId}" already exists.`);
         }
 
@@ -2091,8 +2106,8 @@ export function applyWorkbookTransaction(
           ...(sortState ? { sortState } : {}),
         };
 
-        assertWorkbookTableRangeAvailable(nextState, nextTable);
-        nextState.tables = [...nextState.tables, nextTable];
+        assertWorkbookTableRangeAvailable(nextStateWithoutReplacedTables, nextTable);
+        nextState.tables = [...nextStateWithoutReplacedTables.tables, nextTable];
         nextState.nextTableNumber = Math.max(
           nextTableName.nextTableNumber,
           getNextWorkbookTableNumberForId(tableId),
