@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   createSortTableOperation,
+  getNextTableSortDirection,
   getVisibleTableHeaderSortTargets,
 } from "./app-table-sort-controls";
 import type { WorkbookTableSummary } from "./workbook-core";
@@ -96,4 +97,10 @@ test("createSortTableOperation builds the shared table sort transaction", () => 
     type: "sortTable",
     valueMode: "display",
   });
+});
+
+test("getNextTableSortDirection toggles active table sort direction", () => {
+  assert.equal(getNextTableSortDirection(), "ascending");
+  assert.equal(getNextTableSortDirection("ascending"), "descending");
+  assert.equal(getNextTableSortDirection("descending"), "ascending");
 });

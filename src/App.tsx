@@ -31,6 +31,7 @@ import { InstallationDialog } from "./InstallationDialog";
 import { RenameSheetDialog } from "./RenameSheetDialog";
 import {
   createSortTableOperation,
+  getNextTableSortDirection,
   getVisibleTableHeaderSortTargets,
   type TableHeaderSortTarget,
 } from "./app-table-sort-controls";
@@ -69,8 +70,7 @@ const DEFAULT_VISIBLE_COLUMN_COUNT = 10;
 const DEFAULT_VISIBLE_ROW_COUNT = 36;
 const DEFAULT_WORKBOOK_FILE_NAME = "Workbook.spready";
 const TABLE_SORT_BUTTON_SIZE = 16.5;
-const TABLE_SORT_CONTROL_GAP = 1.5;
-const TABLE_SORT_CONTROL_WIDTH = TABLE_SORT_BUTTON_SIZE * 2 + TABLE_SORT_CONTROL_GAP;
+const TABLE_SORT_CONTROL_WIDTH = TABLE_SORT_BUTTON_SIZE;
 const VISIBLE_COLUMN_PADDING = 4;
 const VISIBLE_ROW_PADDING = 24;
 
@@ -2465,52 +2465,42 @@ export default function App() {
           />
           {tableSortControls.length > 0 ? (
             <div className="table-sort-overlay" aria-label="Table sort controls">
-              {tableSortControls.map((control) => (
-                <div
-                  className="table-sort-control"
-                  key={`${control.tableId}:${control.columnIndex}`}
-                  style={{
-                    height: control.height,
-                    left: control.left,
-                    top: control.top,
-                    width: control.width,
-                  }}
-                  onPointerDown={(event) => {
-                    event.stopPropagation();
-                  }}
-                >
-                  <button
-                    aria-label={`Sort ${getColumnTitle(control.columnIndex)} ascending`}
-                    className={`table-sort-control__button${
-                      control.direction === "ascending" ? " is-active" : ""
-                    }`}
-                    title="Sort ascending"
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
+              {tableSortControls.map((control) => {
+                const iconDirection = control.direction ?? "ascending";
+                const nextDirection = getNextTableSortDirection(control.direction);
+
+                return (
+                  <div
+                    className="table-sort-control"
+                    key={`${control.tableId}:${control.columnIndex}`}
+                    style={{
+                      height: control.height,
+                      left: control.left,
+                      top: control.top,
+                      width: control.width,
+                    }}
+                    onPointerDown={(event) => {
                       event.stopPropagation();
-                      sortTableColumn(control.tableId, control.columnIndex, "ascending");
                     }}
                   >
-                    <span className="table-sort-control__icon table-sort-control__icon--ascending" />
-                  </button>
-                  <button
-                    aria-label={`Sort ${getColumnTitle(control.columnIndex)} descending`}
-                    className={`table-sort-control__button${
-                      control.direction === "descending" ? " is-active" : ""
-                    }`}
-                    title="Sort descending"
-                    type="button"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      sortTableColumn(control.tableId, control.columnIndex, "descending");
-                    }}
-                  >
-                    <span className="table-sort-control__icon table-sort-control__icon--descending" />
-                  </button>
-                </div>
-              ))}
+                    <button
+                      aria-label={`Sort ${getColumnTitle(control.columnIndex)} ${nextDirection}`}
+                      className={`table-sort-control__button${control.direction ? " is-active" : ""}`}
+                      title={`Sort ${nextDirection}`}
+                      type="button"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        sortTableColumn(control.tableId, control.columnIndex, nextDirection);
+                      }}
+                    >
+                      <span
+                        className={`table-sort-control__icon table-sort-control__icon--${iconDirection}`}
+                      />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
           {shouldRenderChartOverlay ? (
