@@ -827,6 +827,36 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
         ["Ann", "30"],
       ],
     );
+
+    await client.applyTransaction({
+      operations: [
+        {
+          range: {
+            columnCount: 3,
+            rowCount: 4,
+            startColumn: 0,
+            startRow: 0,
+          },
+          tableId: "table-scores-expanded",
+          type: "addTable",
+        },
+      ],
+    });
+
+    assert.deepEqual((await client.getSheetTables()).tables, [
+      {
+        hasHeaderRow: true,
+        id: "table-scores-expanded",
+        name: "Table 2",
+        range: {
+          columnCount: 3,
+          rowCount: 4,
+          sheetId: controller.getSummary().activeSheetId,
+          startColumn: 0,
+          startRow: 0,
+        },
+      },
+    ]);
   } finally {
     await client.close();
     await server.stop();

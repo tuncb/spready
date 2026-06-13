@@ -294,7 +294,7 @@ Supported transaction operations currently include:
 
 Sheet names supplied to `addSheet`, `renameSheet`, `replaceSheet`, and `replaceSheetFromCsv` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. When `addSheet` omits `name`, Spready generates the next non-conflicting `Sheet N` name.
 Column widths are sparse per-sheet pixel overrides. Omitted columns use the default width, and `setColumnWidth` with the default width clears the override.
-Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet and may not overlap another table. `sortTable` sorts body rows only; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated grid values. Formula strings move with sorted rows and are not rewritten.
+Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet. `addTable` replaces fully contained existing tables, while partial table overlaps are rejected. `sortTable` sorts body rows only; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated grid values. Formula strings move with sorted rows and are not rewritten.
 
 ## MCP surface
 

@@ -525,7 +525,7 @@ const transactionOperations = [
   {
     type: "addTable",
     description:
-      "Define a persistent rectangular table on a sheet. Table ranges must fit within a sheet and may not overlap another table.",
+      "Define a persistent rectangular table on a sheet. Table ranges must fit within a sheet; fully contained existing tables are replaced, while partial overlaps are rejected.",
   },
   {
     type: "clearRange",
@@ -878,7 +878,7 @@ const guideResource = {
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Sheet names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook.",
-    "Table names are trimmed, required when explicitly provided, unique case-insensitively across the workbook, and table ranges may not overlap.",
+    "Table names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. addTable replaces fully contained existing tables, but partial table overlaps are rejected.",
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
     "Use get_sheet_tables and get_table for table inspection. Define, rename, resize, delete, and sort tables through apply_transaction.",
     "sortTable sorts table body rows only. Raw mode sorts stored input strings; display mode sorts evaluated grid values. Formula strings move with rows and are not rewritten.",
