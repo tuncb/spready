@@ -68,6 +68,10 @@ function shouldLogControlRequest(method: string, durationMs: number) {
   );
 }
 
+function isServerNotRunningError(error: Error | undefined): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ERR_SERVER_NOT_RUNNING";
+}
+
 export class SpreadyControlServer {
   #clients = new Set<Socket>();
   #controller: WorkbookController;
@@ -132,12 +136,21 @@ export class SpreadyControlServer {
 
     this.#clients.clear();
 
-    if (!this.#server) {
+    const server = this.#server;
+
+    this.#server = undefined;
+
+    if (!server) {
       return;
     }
 
     await new Promise<void>((resolve, reject) => {
-      this.#server?.close((error) => {
+      server.close((error) => {
+        if (isServerNotRunningError(error)) {
+          resolve();
+          return;
+        }
+
         if (error) {
           reject(error);
           return;

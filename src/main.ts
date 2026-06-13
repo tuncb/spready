@@ -1257,6 +1257,16 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", () => {
-  void clearDiscoveredControlInfo();
-  void controlServer.stop();
+  void clearDiscoveredControlInfo().catch((error) => {
+    startupTimer.log(
+      "control-discovery-clear-failed",
+      error instanceof Error ? error.message : "unknown error",
+    );
+  });
+  void controlServer.stop().catch((error) => {
+    startupTimer.log(
+      "control-server-stop-failed",
+      error instanceof Error ? error.message : "unknown error",
+    );
+  });
 });

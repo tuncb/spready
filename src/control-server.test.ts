@@ -10,6 +10,16 @@ import { SpreadyControlServer } from "./control-server";
 import { WorkbookController } from "./workbook-controller";
 import { serializeWorkbookDocument } from "./workbook-document";
 
+test("SpreadyControlServer stop is idempotent after startup", async () => {
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
+
+  await server.start();
+
+  await server.stop();
+  await server.stop();
+});
+
 test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
