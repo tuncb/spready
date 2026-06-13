@@ -2113,11 +2113,6 @@ export default function App() {
       return;
     }
 
-    rawRangeCacheRef.current = null;
-    displayRangeCacheRef.current = null;
-    styleRangeCacheRef.current = null;
-    setViewNonce((current) => current + 1);
-
     exportPathRef.current = activeSheet.sourceFilePath;
 
     void loadVisibleRange(lastVisibleRegionRef.current);
