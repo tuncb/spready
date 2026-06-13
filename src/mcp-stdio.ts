@@ -613,7 +613,7 @@ const transactionOperations = [
   {
     type: "sortTable",
     description:
-      "Stably sort the body rows of a table by one or more sheet column indexes. valueMode raw sorts stored input; display sorts evaluated grid values.",
+      "Stably sort the body rows of a table by one or more sheet column indexes, placing blank sort values after nonblank values. valueMode raw sorts stored input; display sorts evaluated grid values.",
   },
   {
     type: "setSheetSourceFile",
@@ -881,7 +881,7 @@ const guideResource = {
     "Table names are trimmed, required when explicitly provided, unique case-insensitively across the workbook, and table ranges may not overlap.",
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
     "Use get_sheet_tables and get_table for table inspection. Define, rename, resize, delete, and sort tables through apply_transaction.",
-    "sortTable sorts table body rows only. Raw mode sorts stored input strings; display mode sorts evaluated grid values. Formula strings move with rows and are not rewritten.",
+    "sortTable sorts table body rows only. Blank sort values are placed after nonblank values. Raw mode sorts stored input strings; display mode sorts evaluated grid values. Formula strings move with rows and are not rewritten.",
     "Use get_undo_tree to inspect undo branches; undo moves to the parent node, redo follows the latest child unless nodeId selects a redo child, and checkout_undo_node jumps directly to any known history node.",
     "Use format_cells for common cell styling; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",

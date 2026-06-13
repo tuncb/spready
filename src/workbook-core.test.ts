@@ -9,6 +9,7 @@ import {
   applyWorkbookTransaction,
   buildCreateChartOperation,
   buildFormatCellsOperations,
+  compareWorkbookTableSortValues,
   createWorkbookChartSummary,
   createSheet,
   createWorkbookState,
@@ -162,6 +163,16 @@ test("getColumnTitle covers spreadsheet-style alphabet boundaries", () => {
   assert.equal(getColumnTitle(52), "BA");
   assert.equal(getColumnTitle(701), "ZZ");
   assert.equal(getColumnTitle(702), "AAA");
+});
+
+test("compareWorkbookTableSortValues keeps blank values after nonblank values", () => {
+  assert.equal(Math.sign(compareWorkbookTableSortValues("", "Alpha", "ascending")), 1);
+  assert.equal(Math.sign(compareWorkbookTableSortValues("Alpha", "", "ascending")), -1);
+  assert.equal(Math.sign(compareWorkbookTableSortValues(" ", "Alpha", "descending")), 1);
+  assert.equal(Math.sign(compareWorkbookTableSortValues("Alpha", "\t", "descending")), -1);
+  assert.equal(compareWorkbookTableSortValues("", " ", "descending"), 0);
+  assert.equal(Math.sign(compareWorkbookTableSortValues("10", "2", "ascending")), 1);
+  assert.equal(Math.sign(compareWorkbookTableSortValues("10", "2", "descending")), -1);
 });
 
 test("workbook chart helpers validate source range contracts and summarize status", () => {
@@ -1372,6 +1383,66 @@ test("applyWorkbookTransaction manages tables and sorts table body rows", () => 
     [[null], [{ bold: true }], [null], [null]],
   );
   assert.equal(getWorkbookSummary(sorted).tables[0]?.sortState?.valueMode, "raw");
+});
+
+test("applyWorkbookTransaction keeps blank table sort values at the end", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Note"],
+          ["Ada", "Host"],
+          ["Bea", ""],
+          ["Cam", "Finalist"],
+          ["Dee", " "],
+        ],
+      },
+      {
+        range: {
+          columnCount: 2,
+          rowCount: 5,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-notes",
+        type: "addTable",
+      },
+    ],
+  }).state;
+
+  const sorted = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        keys: [
+          {
+            columnIndex: 1,
+            direction: "descending",
+          },
+        ],
+        tableId: "table-notes",
+        type: "sortTable",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(
+    getSheetRange(sorted, {
+      columnCount: 2,
+      rowCount: 5,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["Name", "Note"],
+      ["Ada", "Host"],
+      ["Cam", "Finalist"],
+      ["Bea", ""],
+      ["Dee", " "],
+    ],
+  );
 });
 
 test("applyWorkbookTransaction adjusts table ranges for structural row and column edits", () => {

@@ -556,10 +556,11 @@ export class WorkbookController extends EventEmitter {
           const comparison = compareWorkbookTableSortValues(
             getCellEvaluation(snapshot, left.rowIndex, key.columnIndex).display,
             getCellEvaluation(snapshot, right.rowIndex, key.columnIndex).display,
+            key.direction,
           );
 
           if (comparison !== 0) {
-            return key.direction === "ascending" ? comparison : -comparison;
+            return comparison;
           }
         }
 

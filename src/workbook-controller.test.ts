@@ -298,12 +298,13 @@ test("WorkbookController sorts table rows by displayed formula values", () => {
           ["Bob", "=5+5"],
           ["Ann", "=20+10"],
           ["Cal", "=8+12"],
+          ["Dee", '=""'],
         ],
       },
       {
         range: {
           columnCount: 2,
-          rowCount: 4,
+          rowCount: 5,
           startColumn: 0,
           startRow: 0,
         },
@@ -332,7 +333,7 @@ test("WorkbookController sorts table rows by displayed formula values", () => {
   assert.deepEqual(
     controller.getSheetRange({
       columnCount: 2,
-      rowCount: 4,
+      rowCount: 5,
       startColumn: 0,
       startRow: 0,
     }).values,
@@ -341,6 +342,7 @@ test("WorkbookController sorts table rows by displayed formula values", () => {
       ["Ann", "=20+10"],
       ["Cal", "=8+12"],
       ["Bob", "=5+5"],
+      ["Dee", '=""'],
     ],
   );
   assert.equal(controller.getSheetTables().tables[0]?.sortState?.valueMode, "display");

@@ -3757,10 +3757,11 @@ function getSortedWorkbookTableBodyRows(
         const comparison = compareWorkbookTableSortValues(
           sheet.cells[left.rowIndex]?.[key.columnIndex] ?? "",
           sheet.cells[right.rowIndex]?.[key.columnIndex] ?? "",
+          key.direction,
         );
 
         if (comparison !== 0) {
-          return key.direction === "ascending" ? comparison : -comparison;
+          return comparison;
         }
       }
 
@@ -3794,7 +3795,11 @@ function normalizeWorkbookTableBodyRowOrder(
   return [...bodyRowOrder];
 }
 
-export function compareWorkbookTableSortValues(left: string, right: string): number {
+export function compareWorkbookTableSortValues(
+  left: string,
+  right: string,
+  direction: WorkbookTableSortDirection = "ascending",
+): number {
   const leftBlank = left.trim().length === 0;
   const rightBlank = right.trim().length === 0;
 
@@ -3810,13 +3815,15 @@ export function compareWorkbookTableSortValues(left: string, right: string): num
   const rightNumber = Number(right);
 
   if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
-    return leftNumber - rightNumber;
+    const comparison = leftNumber - rightNumber;
+    return direction === "ascending" ? comparison : -comparison;
   }
 
-  return left.localeCompare(right, undefined, {
+  const comparison = left.localeCompare(right, undefined, {
     numeric: true,
     sensitivity: "base",
   });
+  return direction === "ascending" ? comparison : -comparison;
 }
 
 function sortWorkbookTableCellStyles(

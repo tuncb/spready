@@ -756,12 +756,13 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
             ["Bob", "10"],
             ["Ann", "30"],
             ["Cal", "20"],
+            ["Dee", ""],
           ],
         },
         {
           range: {
             columnCount: 2,
-            rowCount: 4,
+            rowCount: 5,
             startColumn: 0,
             startRow: 0,
           },
@@ -795,7 +796,7 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
       name: "Table 1",
       range: {
         columnCount: 2,
-        rowCount: 4,
+        rowCount: 5,
         sheetId: controller.getSummary().activeSheetId,
         startColumn: 0,
         startRow: 0,
@@ -815,7 +816,7 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
       (
         await client.getSheetRange({
           columnCount: 2,
-          rowCount: 4,
+          rowCount: 5,
           startColumn: 0,
           startRow: 0,
         })
@@ -825,6 +826,7 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
         ["Bob", "10"],
         ["Cal", "20"],
         ["Ann", "30"],
+        ["Dee", ""],
       ],
     );
   } finally {
