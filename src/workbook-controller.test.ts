@@ -840,6 +840,90 @@ test("WorkbookController formats cells through the simplified style request cont
   );
 });
 
+test("WorkbookController display-mode table sorting uses evaluated numeric values", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Amount"],
+          ["large", "1000"],
+          ["small", "20"],
+          ["middle", "300"],
+        ],
+      },
+      {
+        hasHeaderRow: true,
+        range: {
+          columnCount: 2,
+          rowCount: 4,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-amounts",
+        type: "addTable",
+      },
+      {
+        columnCount: 1,
+        rowCount: 3,
+        startColumn: 1,
+        startRow: 1,
+        style: {
+          numberFormat: {
+            type: "number",
+            useGrouping: true,
+          },
+        },
+        type: "setRangeStyle",
+      },
+    ],
+  });
+
+  controller.applyTransaction({
+    operations: [
+      {
+        keys: [
+          {
+            columnIndex: 1,
+            direction: "ascending",
+          },
+        ],
+        tableId: "table-amounts",
+        type: "sortTable",
+        valueMode: "display",
+      },
+    ],
+  });
+
+  assert.deepEqual(
+    controller.getSheetRange({
+      columnCount: 2,
+      rowCount: 4,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["Name", "Amount"],
+      ["small", "20"],
+      ["middle", "300"],
+      ["large", "1000"],
+    ],
+  );
+  assert.deepEqual(
+    controller.getSheetDisplayRange({
+      columnCount: 1,
+      rowCount: 3,
+      startColumn: 1,
+      startRow: 1,
+    }).values,
+    [["20"], ["300"], ["1,000"]],
+  );
+});
+
 test("WorkbookController exposes persisted chart reads and normalized preview data", async () => {
   let workbook = applyWorkbookTransaction(createWorkbookState(), {
     operations: [

@@ -103,6 +103,73 @@ const sheetDisplayRangeSchema = z.object({
   values: z.array(z.array(z.string())),
 });
 
+const workbookCellNumberFormatSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("general"),
+  }),
+  z
+    .object({
+      decimalPlaces: z
+        .int()
+        .min(0)
+        .max(20)
+        .optional()
+        .describe("Exact number of digits after the decimal point, from 0 to 20."),
+      significantDigits: z
+        .int()
+        .min(1)
+        .max(21)
+        .optional()
+        .describe("Exact number of significant digits, from 1 to 21."),
+      type: z.literal("number"),
+      useGrouping: z
+        .boolean()
+        .optional()
+        .describe("Whether to use thousands separators when displaying the number."),
+    })
+    .refine(
+      (format) => !(format.decimalPlaces !== undefined && format.significantDigits !== undefined),
+      {
+        message: "Number format cannot set both decimalPlaces and significantDigits.",
+      },
+    ),
+  z
+    .object({
+      decimalPlaces: z
+        .int()
+        .min(0)
+        .max(20)
+        .optional()
+        .describe("Exact number of digits after the decimal point after multiplying by 100."),
+      significantDigits: z
+        .int()
+        .min(1)
+        .max(21)
+        .optional()
+        .describe("Exact number of significant digits after multiplying by 100."),
+      type: z.literal("percent"),
+      useGrouping: z
+        .boolean()
+        .optional()
+        .describe("Whether to use thousands separators when displaying the percentage value."),
+    })
+    .refine(
+      (format) => !(format.decimalPlaces !== undefined && format.significantDigits !== undefined),
+      {
+        message: "Number format cannot set both decimalPlaces and significantDigits.",
+      },
+    ),
+  z.object({
+    significantDigits: z
+      .int()
+      .min(1)
+      .max(21)
+      .optional()
+      .describe("Exact number of significant digits in scientific notation, from 1 to 21."),
+    type: z.literal("scientific"),
+  }),
+]);
+
 const workbookCellStyleSchema = z.object({
   backgroundColor: z.string().min(1).optional(),
   bold: z.boolean().optional(),
@@ -110,6 +177,7 @@ const workbookCellStyleSchema = z.object({
   fontSize: z.number().min(6).optional(),
   horizontalAlign: z.enum(["center", "left", "right"]).optional(),
   italic: z.boolean().optional(),
+  numberFormat: workbookCellNumberFormatSchema.optional(),
   textColor: z.string().min(1).optional(),
   wrapText: z.boolean().optional(),
 });
@@ -121,6 +189,7 @@ const workbookCellStylePatchSchema = z.object({
   fontSize: z.number().min(6).nullable().optional(),
   horizontalAlign: z.enum(["center", "left", "right"]).nullable().optional(),
   italic: z.boolean().nullable().optional(),
+  numberFormat: workbookCellNumberFormatSchema.nullable().optional(),
   textColor: z.string().min(1).nullable().optional(),
   wrapText: z.boolean().nullable().optional(),
 });
@@ -613,7 +682,7 @@ const transactionOperations = [
   {
     type: "sortTable",
     description:
-      "Stably sort the body rows of a table by one or more sheet column indexes. valueMode raw sorts stored input; display sorts evaluated grid values.",
+      "Stably sort the body rows of a table by one or more sheet column indexes. valueMode raw sorts stored input; display sorts evaluated typed values.",
   },
   {
     type: "setSheetSourceFile",
@@ -879,11 +948,11 @@ const guideResource = {
     "Read tools default to the active sheet when sheetId is omitted.",
     "Sheet names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook.",
     "Table names are trimmed, required when explicitly provided, unique case-insensitively across the workbook, and table ranges may not overlap.",
-    "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.",
+    "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated and formatted grid values, and get_sheet_style_range for rendered styles and number formats.",
     "Use get_sheet_tables and get_table for table inspection. Define, rename, resize, delete, and sort tables through apply_transaction.",
-    "sortTable sorts table body rows only. Raw mode sorts stored input strings; display mode sorts evaluated grid values. Formula strings move with rows and are not rewritten.",
+    "sortTable sorts table body rows only. Raw mode sorts stored input strings; display mode sorts evaluated typed values. Formula strings move with rows and are not rewritten.",
     "Use get_undo_tree to inspect undo branches; undo moves to the parent node, redo follows the latest child unless nodeId selects a redo child, and checkout_undo_node jumps directly to any known history node.",
-    "Use format_cells for common cell styling; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
+    "Use format_cells for common cell styling and number formatting; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
     "Use get_sheet_charts, get_chart, and get_chart_preview for chart inspection; preview payloads include a normalized dataset and derived ECharts option.",
     "Use create_chart for common chart creation; omit sourceRange to chart the chart owner sheet's used range, set sourceRange.sheetId to chart data from another sheet, and omit dimensions to use the first dimension as labels and remaining dimensions as values.",
     "Use apply_transaction chart operations when you need exact persisted chart specs, renames, layout changes, or deletes; chart previews remain derived read models.",
@@ -1069,7 +1138,7 @@ async function main() {
   const server = new McpServer(
     {
       name: "spready-stdio",
-      version: "0.0.4",
+      version: "0.0.5",
     },
     {
       capabilities: {
@@ -1079,7 +1148,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated grid values, get_sheet_style_range for rendered styles, use get_sheet_tables/get_table for table metadata, use format_cells for common style changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1517,7 +1586,7 @@ async function main() {
             name: "format_cells",
             readOnly: false,
             useWhen:
-              "Use this for common styling tasks instead of hand-building setCellStyle or setRangeStyle transactions.",
+              "Use this for common styling and number formatting tasks instead of hand-building setCellStyle or setRangeStyle transactions.",
           },
           {
             defaultsToActiveSheet: true,
@@ -1678,7 +1747,7 @@ async function main() {
         readOnlyHint: true,
       },
       description:
-        "Read a rectangular range of evaluated display values from a sheet. Use this for formula-aware grid reads.",
+        "Read a rectangular range of evaluated and formatted display values from a sheet. Use this for formula-aware grid reads.",
       inputSchema: z.object({
         columnCount: z.int().min(1).describe("Number of columns to read."),
         rowCount: z.int().min(1).describe("Number of rows to read."),
@@ -1703,7 +1772,8 @@ async function main() {
         openWorldHint: false,
         readOnlyHint: true,
       },
-      description: "Read a rectangular range of rendered cell styles from a sheet.",
+      description:
+        "Read a rectangular range of rendered cell styles and number formatting metadata from a sheet.",
       inputSchema: z.object({
         columnCount: z.int().min(1).describe("Number of columns to read."),
         rowCount: z.int().min(1).describe("Number of rows to read."),
@@ -1731,7 +1801,7 @@ async function main() {
         readOnlyHint: false,
       },
       description:
-        "Format one or more cell ranges. Merge mode preserves existing style properties; replace mode overwrites each target style; clear mode removes styles.",
+        "Format one or more cell ranges. Merge mode preserves existing style properties; replace mode overwrites each target style; clear mode removes styles. Set style.numberFormat for number, percent, or scientific display formats.",
       inputSchema: z.object({
         dryRun: z
           .boolean()
@@ -1757,7 +1827,7 @@ async function main() {
         style: workbookCellStylePatchSchema
           .optional()
           .describe(
-            "Style properties to apply. In merge mode, omitted properties are preserved and null or false clears a property.",
+            "Style properties to apply. In merge mode, omitted properties are preserved and null or false clears a property. numberFormat supports number, percent, and scientific display formats; use null or type general to clear it.",
           ),
       }),
       outputSchema: applyTransactionResultSchema,
@@ -2220,11 +2290,11 @@ async function main() {
                 "- If get_workbook_summary reports hasUnsavedChanges, save first or pass discardUnsavedChanges only if losing local changes is intended.\n" +
                 "- Use get_undo_tree before branch-aware undo or redo decisions.\n" +
                 "- Use zero-based row and column indexes.\n" +
-                "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated grid values, and get_sheet_style_range for rendered styles.\n" +
+                "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated and formatted grid values, and get_sheet_style_range for rendered styles and number formats.\n" +
                 "- Use get_sheet_tables and get_table for table metadata; use sortTable through apply_transaction for table sorting.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
                 "- Read only the ranges you need with get_used_range, get_sheet_range, get_sheet_display_range, or get_sheet_style_range.\n" +
-                "- Use format_cells for common cell styling changes; merge mode preserves existing style properties.\n" +
+                "- Use format_cells for common cell styling and number format changes; merge mode preserves existing style properties.\n" +
                 "- Use create_chart for common chart creation from a used range or explicit sourceRange.\n" +
                 "- Use apply_transaction for writes, preferably as one batched request.\n" +
                 "- Pass expectedVersion on apply_transaction when a task must reject stale writes after concurrent edits.\n" +

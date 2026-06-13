@@ -346,6 +346,32 @@ export interface SheetDisplayRangeResult {
 
 export type WorkbookCellHorizontalAlign = "center" | "left" | "right";
 
+export type WorkbookCellNumberFormat =
+  | {
+      decimalPlaces?: never;
+      significantDigits?: never;
+      type: "general";
+      useGrouping?: never;
+    }
+  | {
+      decimalPlaces?: number;
+      significantDigits?: number;
+      type: "number";
+      useGrouping?: boolean;
+    }
+  | {
+      decimalPlaces?: number;
+      significantDigits?: number;
+      type: "percent";
+      useGrouping?: boolean;
+    }
+  | {
+      decimalPlaces?: never;
+      significantDigits?: number;
+      type: "scientific";
+      useGrouping?: never;
+    };
+
 export interface WorkbookCellStyle {
   backgroundColor?: string;
   bold?: boolean;
@@ -353,6 +379,7 @@ export interface WorkbookCellStyle {
   fontSize?: number;
   horizontalAlign?: WorkbookCellHorizontalAlign;
   italic?: boolean;
+  numberFormat?: WorkbookCellNumberFormat;
   textColor?: string;
   wrapText?: boolean;
 }
@@ -364,6 +391,7 @@ export interface WorkbookCellStylePatch {
   fontSize?: number | null;
   horizontalAlign?: WorkbookCellHorizontalAlign | null;
   italic?: boolean | null;
+  numberFormat?: WorkbookCellNumberFormat | null;
   textColor?: string | null;
   wrapText?: boolean | null;
 }
@@ -4146,9 +4174,65 @@ export function cloneWorkbookCellStyle(style: WorkbookCellStyle): WorkbookCellSt
     ...(style.fontSize !== undefined ? { fontSize: style.fontSize } : {}),
     ...(style.horizontalAlign ? { horizontalAlign: style.horizontalAlign } : {}),
     ...(style.italic ? { italic: true } : {}),
+    ...(style.numberFormat
+      ? { numberFormat: cloneWorkbookCellNumberFormat(style.numberFormat) }
+      : {}),
     ...(style.textColor ? { textColor: style.textColor } : {}),
     ...(style.wrapText ? { wrapText: true } : {}),
   };
+}
+
+export function formatWorkbookNumberDisplay(
+  value: number,
+  numberFormat?: WorkbookCellNumberFormat,
+): string {
+  const normalizedValue = Object.is(value, -0) ? 0 : value;
+
+  if (!Number.isFinite(normalizedValue)) {
+    return String(normalizedValue);
+  }
+
+  const normalizedFormat = normalizeWorkbookCellNumberFormat(numberFormat);
+
+  if (!normalizedFormat) {
+    return String(normalizedValue);
+  }
+
+  if (normalizedFormat.type === "scientific") {
+    const formatted =
+      normalizedFormat.significantDigits === undefined
+        ? normalizedValue.toExponential()
+        : normalizedValue.toExponential(normalizedFormat.significantDigits - 1);
+
+    return formatted.replace("e", "E");
+  }
+
+  const displayValue =
+    normalizedFormat.type === "percent" ? normalizedValue * 100 : normalizedValue;
+  const formatted = new Intl.NumberFormat("en-US", {
+    ...(normalizedFormat.decimalPlaces !== undefined
+      ? {
+          maximumFractionDigits: normalizedFormat.decimalPlaces,
+          minimumFractionDigits: normalizedFormat.decimalPlaces,
+        }
+      : normalizedFormat.significantDigits !== undefined
+        ? {
+            maximumSignificantDigits: normalizedFormat.significantDigits,
+            minimumSignificantDigits: normalizedFormat.significantDigits,
+          }
+        : {
+            maximumFractionDigits: 20,
+          }),
+    useGrouping: normalizedFormat.useGrouping ?? false,
+  }).format(displayValue);
+
+  return normalizedFormat.type === "percent" ? `${formatted}%` : formatted;
+}
+
+function cloneWorkbookCellNumberFormat(
+  numberFormat: WorkbookCellNumberFormat,
+): WorkbookCellNumberFormat {
+  return { ...numberFormat };
 }
 
 function normalizeWorkbookCellStyle(style?: WorkbookCellStyle): WorkbookCellStyle | undefined {
@@ -4190,6 +4274,12 @@ function normalizeWorkbookCellStyle(style?: WorkbookCellStyle): WorkbookCellStyl
     normalized.italic = true;
   }
 
+  const numberFormat = normalizeWorkbookCellNumberFormat(style.numberFormat);
+
+  if (numberFormat) {
+    normalized.numberFormat = numberFormat;
+  }
+
   if (style.textColor?.trim()) {
     normalized.textColor = style.textColor.trim();
   }
@@ -4199,6 +4289,82 @@ function normalizeWorkbookCellStyle(style?: WorkbookCellStyle): WorkbookCellStyl
   }
 
   return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function normalizeWorkbookCellNumberFormat(
+  numberFormat?: WorkbookCellNumberFormat,
+): WorkbookCellNumberFormat | undefined {
+  if (!numberFormat || numberFormat.type === "general") {
+    return undefined;
+  }
+
+  switch (numberFormat.type) {
+    case "number":
+    case "percent": {
+      const normalized: Extract<WorkbookCellNumberFormat, { type: "number" | "percent" }> = {
+        type: numberFormat.type,
+      };
+
+      normalizeNumberFormatDigits(numberFormat, normalized);
+
+      if (numberFormat.useGrouping !== undefined) {
+        normalized.useGrouping = numberFormat.useGrouping === true;
+      }
+
+      return normalized;
+    }
+    case "scientific": {
+      const normalized: Extract<WorkbookCellNumberFormat, { type: "scientific" }> = {
+        type: "scientific",
+      };
+
+      if (numberFormat.decimalPlaces !== undefined) {
+        throw new Error("Cell scientific number format cannot set decimalPlaces.");
+      }
+
+      normalizeNumberFormatDigits(numberFormat, normalized);
+      return normalized;
+    }
+  }
+}
+
+function normalizeNumberFormatDigits(
+  source: {
+    decimalPlaces?: number;
+    significantDigits?: number;
+  },
+  target: {
+    decimalPlaces?: number;
+    significantDigits?: number;
+  },
+) {
+  if (source.decimalPlaces !== undefined && source.significantDigits !== undefined) {
+    throw new Error("Cell number format cannot set both decimalPlaces and significantDigits.");
+  }
+
+  if (source.decimalPlaces !== undefined) {
+    if (
+      !Number.isInteger(source.decimalPlaces) ||
+      source.decimalPlaces < 0 ||
+      source.decimalPlaces > 20
+    ) {
+      throw new Error("Cell number format decimalPlaces must be an integer from 0 to 20.");
+    }
+
+    target.decimalPlaces = source.decimalPlaces;
+  }
+
+  if (source.significantDigits !== undefined) {
+    if (
+      !Number.isInteger(source.significantDigits) ||
+      source.significantDigits < 1 ||
+      source.significantDigits > 21
+    ) {
+      throw new Error("Cell number format significantDigits must be an integer from 1 to 21.");
+    }
+
+    target.significantDigits = source.significantDigits;
+  }
 }
 
 function patchWorkbookCellStyle(
@@ -4232,6 +4398,15 @@ function patchWorkbookCellStyle(
   }
 
   applyBooleanStylePatch(nextStyle, "italic", patch.italic);
+
+  if (patch.numberFormat !== undefined) {
+    if (patch.numberFormat === null || patch.numberFormat.type === "general") {
+      delete nextStyle.numberFormat;
+    } else {
+      nextStyle.numberFormat = patch.numberFormat;
+    }
+  }
+
   applyStringStylePatch(nextStyle, "textColor", patch.textColor);
   applyBooleanStylePatch(nextStyle, "wrapText", patch.wrapText);
 
@@ -4283,8 +4458,24 @@ function workbookCellStylesEqual(left?: WorkbookCellStyle, right?: WorkbookCellS
     normalizedLeft?.fontSize === normalizedRight?.fontSize &&
     normalizedLeft?.horizontalAlign === normalizedRight?.horizontalAlign &&
     normalizedLeft?.italic === normalizedRight?.italic &&
+    workbookCellNumberFormatsEqual(normalizedLeft?.numberFormat, normalizedRight?.numberFormat) &&
     normalizedLeft?.textColor === normalizedRight?.textColor &&
     normalizedLeft?.wrapText === normalizedRight?.wrapText
+  );
+}
+
+function workbookCellNumberFormatsEqual(
+  left?: WorkbookCellNumberFormat,
+  right?: WorkbookCellNumberFormat,
+): boolean {
+  const normalizedLeft = normalizeWorkbookCellNumberFormat(left);
+  const normalizedRight = normalizeWorkbookCellNumberFormat(right);
+
+  return (
+    normalizedLeft?.type === normalizedRight?.type &&
+    normalizedLeft?.decimalPlaces === normalizedRight?.decimalPlaces &&
+    normalizedLeft?.significantDigits === normalizedRight?.significantDigits &&
+    normalizedLeft?.useGrouping === normalizedRight?.useGrouping
   );
 }
 

@@ -8,7 +8,6 @@ import {
   buildCreateChartOperation,
   buildFormatCellsOperations,
   buildPasteRangeOperations,
-  compareWorkbookTableSortValues,
   createClipboardRangePayload,
   cloneWorkbookChart,
   cloneWorkbookTable,
@@ -70,6 +69,7 @@ import {
   type WorkbookUndoTree,
 } from "./workbook-core";
 import {
+  compareCellEvaluationSortValues,
   evaluateWorkbook,
   getCellEvaluation,
   type SheetEvaluationSnapshot,
@@ -553,9 +553,9 @@ export class WorkbookController extends EventEmitter {
     return rows
       .sort((left, right) => {
         for (const key of operation.keys) {
-          const comparison = compareWorkbookTableSortValues(
-            getCellEvaluation(snapshot, left.rowIndex, key.columnIndex).display,
-            getCellEvaluation(snapshot, right.rowIndex, key.columnIndex).display,
+          const comparison = compareCellEvaluationSortValues(
+            getCellEvaluation(snapshot, left.rowIndex, key.columnIndex),
+            getCellEvaluation(snapshot, right.rowIndex, key.columnIndex),
           );
 
           if (comparison !== 0) {

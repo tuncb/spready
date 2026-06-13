@@ -105,9 +105,30 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
       ],
       style: {
         italic: true,
+        numberFormat: {
+          decimalPlaces: 1,
+          type: "number",
+          useGrouping: true,
+        },
       },
     });
+    await client.applyTransaction({
+      operations: [
+        {
+          columnIndex: 0,
+          rowIndex: 0,
+          type: "setCell",
+          value: "1234",
+        },
+      ],
+    });
     const formattedStyleRange = await client.getSheetStyleRange({
+      columnCount: 1,
+      rowCount: 1,
+      startColumn: 0,
+      startRow: 0,
+    });
+    const formattedDisplayRange = await client.getSheetDisplayRange({
       columnCount: 1,
       rowCount: 1,
       startColumn: 0,
@@ -147,7 +168,19 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.deepEqual(displayRange.values, [["", "", ""]]);
     assert.deepEqual(styleRange.styles, [[null]]);
     assert.equal(formatDryRun.changed, true);
-    assert.deepEqual(formattedStyleRange.styles, [[{ italic: true }]]);
+    assert.deepEqual(formattedDisplayRange.values, [["1,234.0"]]);
+    assert.deepEqual(formattedStyleRange.styles, [
+      [
+        {
+          italic: true,
+          numberFormat: {
+            decimalPlaces: 1,
+            type: "number",
+            useGrouping: true,
+          },
+        },
+      ],
+    ]);
     assert.deepEqual(cellData, {
       columnIndex: 2,
       display: "",

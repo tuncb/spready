@@ -81,6 +81,10 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
         style: {
           italic: true,
           horizontalAlign: "right",
+          numberFormat: {
+            decimalPlaces: 1,
+            type: "percent",
+          },
         },
         type: "setCellStyle",
       },
@@ -225,6 +229,10 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
     "0:1": {
       horizontalAlign: "right",
       italic: true,
+      numberFormat: {
+        decimalPlaces: 1,
+        type: "percent",
+      },
     },
   });
   assert.equal(parsed.sheets[1].cells[3][2], "");

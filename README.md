@@ -161,7 +161,7 @@ For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, yo
 
 `copyRange` returns one rectangular range as tab-delimited text using raw input or displayed values. Its structured clipboard payload also includes copied cell styles and any complete table definitions contained by the range. `cutRange` returns the same clipboard payloads and clears the source cells/styles through the controller in one mutation; full-table cuts remove the table definition, while partial table cuts clear stale table sort state and header cuts remove the table metadata.
 
-`formatCells` formats one or more ranges. Its default `merge` mode preserves existing style properties while applying the requested changes; `replace` overwrites each target cell style, and `clear` removes styles.
+`formatCells` formats one or more ranges. Its default `merge` mode preserves existing style properties while applying the requested changes; `replace` overwrites each target cell style, and `clear` removes styles. Cell styles include text styling, colors, alignment, wrapping, and number display formats such as fixed decimals, significant digits, percentages, and scientific notation.
 
 `createChart` creates an embedded chart with defaults for source headers, series layout, dimensions, and embedded layout. If `sourceRange` is omitted, the chart owner sheet's used range is used. Set `sourceRange.sheetId` to chart data from another sheet. Use `applyTransaction` with `addChart`, `setChartSpec`, and `setChartLayout` when you need the full persisted chart contract.
 
@@ -294,7 +294,7 @@ Supported transaction operations currently include:
 
 Sheet names supplied to `addSheet`, `renameSheet`, `replaceSheet`, and `replaceSheetFromCsv` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. When `addSheet` omits `name`, Spready generates the next non-conflicting `Sheet N` name.
 Column widths are sparse per-sheet pixel overrides. Omitted columns use the default width, and `setColumnWidth` with the default width clears the override.
-Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet and may not overlap another table. `sortTable` sorts body rows only; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated grid values. Formula strings move with sorted rows and are not rewritten.
+Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet and may not overlap another table. `sortTable` sorts body rows only; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated typed values. Formula strings move with sorted rows and are not rewritten.
 
 ## MCP surface
 
@@ -332,10 +332,10 @@ The stdio MCP wrapper currently exposes:
 - `apply_transaction`
 
 `get_sheet_range` returns raw stored cell input, including formula strings like `=A1+B1`.
-`get_sheet_display_range` returns evaluated display values for the grid view.
-`get_sheet_style_range` returns sparse rendered cell styles for the grid view.
+`get_sheet_display_range` returns evaluated and formatted display values for the grid view.
+`get_sheet_style_range` returns sparse rendered cell styles and number formatting metadata for the grid view.
 `get_sheet_tables` returns persistent table definitions for a sheet, and `get_table` returns one table by id.
-`format_cells` applies common cell styling without requiring callers to build transaction operations. Merge mode preserves omitted style properties.
+`format_cells` applies common cell styling and number formatting without requiring callers to build transaction operations. Merge mode preserves omitted style properties.
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
 `open_spready_app` now returns success only after TCP reports that an Electron frontend window is visible.
