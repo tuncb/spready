@@ -752,6 +752,12 @@ function buildAppMenu() {
       label: "Help",
       submenu: [
         {
+          accelerator: "CmdOrCtrl+Shift+I",
+          label: "Toggle Developer Tools",
+          role: "toggleDevTools",
+        },
+        { type: "separator" },
+        {
           label: "About...",
           click: () => {
             runMenuCommand(() => showAboutDialog());
