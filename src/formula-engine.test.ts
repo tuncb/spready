@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { evaluateSheet, evaluateWorkbook, getCellEvaluation, type CellKey } from "./formula-engine";
-import { normalizeSheet, type WorkbookSheet } from "./workbook-core";
+import { normalizeSheet, type WorkbookSheet, type WorkbookState } from "./workbook-core";
 
 function createSheet(rows: string[][]): WorkbookSheet {
   return {
@@ -66,6 +66,99 @@ test("evaluateSheet records direct precedents and dependents for formula cells",
     cellKey(0, 1),
   ]);
   assert.deepEqual(getDependents(snapshot.dependents.get(cellKey(0, 2)) ?? []), [cellKey(0, 3)]);
+});
+
+test("evaluateWorkbook supports table structured references", () => {
+  const sheet = createSheet([
+    ["Name", "Score", "Quantity", "Price", "Revenue"],
+    ["Bob", "10", "2", "5", "=[@Score]*2"],
+    ["Ann", "30", "3", "7", "=[@Quantity]*[@Price]"],
+    ["Cal", "20", "4", "11", "=SUM(Table1[Score])"],
+    ["Dee", "40", "5", "13", "=SUM(Table1[[#Data],[Score]])"],
+  ]);
+  const workbook: Pick<WorkbookState, "sheets" | "tables"> = {
+    sheets: [sheet],
+    tables: [
+      {
+        hasHeaderRow: true,
+        id: "table-1",
+        name: "Table1",
+        range: {
+          columnCount: 5,
+          rowCount: 5,
+          sheetId: sheet.id,
+          startColumn: 0,
+          startRow: 0,
+        },
+      },
+    ],
+  };
+  const snapshot = evaluateWorkbook(workbook, 13).get(sheet.id);
+
+  assert.ok(snapshot);
+  assert.equal(getCellEvaluation(snapshot, 1, 4).display, "20");
+  assert.equal(getCellEvaluation(snapshot, 2, 4).display, "21");
+  assert.equal(getCellEvaluation(snapshot, 3, 4).display, "100");
+  assert.equal(getCellEvaluation(snapshot, 4, 4).display, "100");
+});
+
+test("evaluateWorkbook supports quoted table names in structured references", () => {
+  const sheet = createSheet([
+    ["Name", "Score", "Total"],
+    ["Bob", "10", "=SUM('Table 1'[Score])"],
+    ["Ann", "30", ""],
+  ]);
+  const workbook: Pick<WorkbookState, "sheets" | "tables"> = {
+    sheets: [sheet],
+    tables: [
+      {
+        hasHeaderRow: true,
+        id: "table-1",
+        name: "Table 1",
+        range: {
+          columnCount: 3,
+          rowCount: 3,
+          sheetId: sheet.id,
+          startColumn: 0,
+          startRow: 0,
+        },
+      },
+    ],
+  };
+  const snapshot = evaluateWorkbook(workbook, 15).get(sheet.id);
+
+  assert.ok(snapshot);
+  assert.equal(getCellEvaluation(snapshot, 1, 2).display, "40");
+});
+
+test("evaluateWorkbook supports current-row structured reference ranges", () => {
+  const sheet = createSheet([
+    ["Q1", "Q2", "Q3", "Q4", "Total"],
+    ["1", "2", "3", "4", "=SUM([@[Q1]:[Q4]])"],
+    ["10", "20", "30", "40", "=SUM([@[Q1]:[Q4]])"],
+  ]);
+  const workbook: Pick<WorkbookState, "sheets" | "tables"> = {
+    sheets: [sheet],
+    tables: [
+      {
+        hasHeaderRow: true,
+        id: "table-1",
+        name: "Table1",
+        range: {
+          columnCount: 5,
+          rowCount: 3,
+          sheetId: sheet.id,
+          startColumn: 0,
+          startRow: 0,
+        },
+      },
+    ],
+  };
+  const snapshot = evaluateWorkbook(workbook, 17).get(sheet.id);
+
+  assert.ok(snapshot);
+  assert.equal(getCellEvaluation(snapshot, 1, 4).display, "10");
+  assert.equal(getCellEvaluation(snapshot, 2, 4).display, "100");
 });
 
 test("evaluateSheet supports text, boolean, comparison, exponent, percent, and error literals", () => {

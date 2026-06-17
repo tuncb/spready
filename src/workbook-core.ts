@@ -2763,18 +2763,35 @@ export function applyWorkbookTransaction(
         const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
         ensureSheetSize(sheet, operation.rowIndex + 1, operation.columnIndex + 1);
 
-        if (sheet.cells[operation.rowIndex][operation.columnIndex] === operation.value) {
+        let rangeChanged = false;
+
+        if (sheet.cells[operation.rowIndex][operation.columnIndex] !== operation.value) {
+          sheet.cells[operation.rowIndex][operation.columnIndex] = operation.value;
+          rangeChanged = true;
+        }
+
+        const calculatedColumnFillRange = fillWorkbookTableCalculatedColumn(
+          nextState,
+          sheet,
+          operation.rowIndex,
+          operation.columnIndex,
+          operation.value,
+        );
+
+        if (!rangeChanged && !calculatedColumnFillRange) {
           break;
         }
 
-        sheet.cells[operation.rowIndex][operation.columnIndex] = operation.value;
-        clearWorkbookTableSortStatesInRange(nextState, {
-          columnCount: 1,
-          rowCount: 1,
-          sheetId: sheet.id,
-          startColumn: operation.columnIndex,
-          startRow: operation.rowIndex,
-        });
+        clearWorkbookTableSortStatesInRange(
+          nextState,
+          calculatedColumnFillRange ?? {
+            columnCount: 1,
+            rowCount: 1,
+            sheetId: sheet.id,
+            startColumn: operation.columnIndex,
+            startRow: operation.rowIndex,
+          },
+        );
         changed = true;
         break;
       }
@@ -3912,6 +3929,70 @@ function sortWorkbookTableCellStyles(
   }
 
   return nextStyles;
+}
+
+function fillWorkbookTableCalculatedColumn(
+  workbook: WorkbookState,
+  sheet: WorkbookSheet,
+  rowIndex: number,
+  columnIndex: number,
+  value: string,
+): WorkbookTableRange | undefined {
+  if (!isFormulaInput(value) || !containsCurrentRowStructuredReference(value)) {
+    return undefined;
+  }
+
+  const table = workbook.tables.find((entry) => {
+    if (
+      entry.range.sheetId !== sheet.id ||
+      columnIndex < entry.range.startColumn ||
+      columnIndex >= entry.range.startColumn + entry.range.columnCount
+    ) {
+      return false;
+    }
+
+    const headerOffset = entry.hasHeaderRow ? 1 : 0;
+    const bodyStartRow = entry.range.startRow + headerOffset;
+    const bodyEndRow = entry.range.startRow + entry.range.rowCount;
+
+    return rowIndex >= bodyStartRow && rowIndex < bodyEndRow;
+  });
+
+  if (!table) {
+    return undefined;
+  }
+
+  const headerOffset = table.hasHeaderRow ? 1 : 0;
+  const bodyStartRow = table.range.startRow + headerOffset;
+  const bodyRowCount = table.range.rowCount - headerOffset;
+  let changed = false;
+
+  for (let bodyRowOffset = 0; bodyRowOffset < bodyRowCount; bodyRowOffset += 1) {
+    const targetRowIndex = bodyStartRow + bodyRowOffset;
+
+    ensureSheetSize(sheet, targetRowIndex + 1, columnIndex + 1);
+
+    if (sheet.cells[targetRowIndex][columnIndex] === value) {
+      continue;
+    }
+
+    sheet.cells[targetRowIndex][columnIndex] = value;
+    changed = true;
+  }
+
+  return changed
+    ? {
+        columnCount: 1,
+        rowCount: bodyRowCount,
+        sheetId: sheet.id,
+        startColumn: columnIndex,
+        startRow: bodyStartRow,
+      }
+    : undefined;
+}
+
+function containsCurrentRowStructuredReference(value: string): boolean {
+  return /\[\s*@/u.test(value);
 }
 
 function createWorkbookSheet(

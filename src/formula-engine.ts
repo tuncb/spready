@@ -96,6 +96,7 @@ type FormulaToken =
   | { type: "rightParen" }
   | { type: "sheetName"; value: string }
   | { type: "space" }
+  | { type: "structuredReference"; value: string }
   | { type: "text"; value: string };
 
 type FormulaAst =
@@ -115,6 +116,7 @@ type FormulaAst =
     }
   | { type: "range"; start: FormulaReferenceAddress; end: FormulaReferenceAddress }
   | { type: "reference"; sheetName?: string; rowIndex: number; columnIndex: number }
+  | { type: "structuredReference"; tableName?: string; specifier: string }
   | { type: "union"; left: FormulaAst; right: FormulaAst }
   | { type: "unary"; operator: "+" | "-"; operand: FormulaAst };
 
@@ -124,6 +126,13 @@ type FunctionArgumentValue = {
 };
 
 type FormulaFunctionHandler = (args: FormulaAst[], dependencies: Set<CellKey>) => FormulaValue;
+
+type StructuredReferenceSelection = {
+  columnEnd?: string;
+  columnStart?: string;
+  currentRow: boolean;
+  dataOnly: boolean;
+};
 
 const BLANK_VALUE: BlankValue = {
   type: "blank",
@@ -320,6 +329,17 @@ export function tokenizeFormula(input: string): FormulaToken[] {
       continue;
     }
 
+    if (character === "[") {
+      const { nextIndex, value } = readStructuredReferenceSpecifier(expression, index);
+
+      tokens.push({
+        type: "structuredReference",
+        value,
+      });
+      index = nextIndex;
+      continue;
+    }
+
     if (/[A-Za-z_\\]/.test(character)) {
       const identifierMatch = /^[A-Za-z_\\][A-Za-z0-9_.]*/.exec(expression.slice(index));
 
@@ -378,7 +398,10 @@ export function parseFormula(input: string): FormulaAst {
 
   function canStartReferenceTerm(token: FormulaToken | undefined): boolean {
     return (
-      token?.type === "identifier" || token?.type === "leftParen" || token?.type === "sheetName"
+      token?.type === "identifier" ||
+      token?.type === "leftParen" ||
+      token?.type === "sheetName" ||
+      token?.type === "structuredReference"
     );
   }
 
@@ -663,6 +686,18 @@ export function parseFormula(input: string): FormulaAst {
     if (token.type === "identifier") {
       index += 1;
 
+      const structuredReferenceToken = tokens[index];
+
+      if (structuredReferenceToken?.type === "structuredReference") {
+        index += 1;
+
+        return {
+          type: "structuredReference",
+          tableName: token.value,
+          specifier: structuredReferenceToken.value,
+        };
+      }
+
       if (tokens[index]?.type === "bang") {
         return parseSheetQualifiedReference(token.value);
       }
@@ -699,8 +734,30 @@ export function parseFormula(input: string): FormulaAst {
       };
     }
 
+    if (token.type === "structuredReference") {
+      index += 1;
+
+      return {
+        type: "structuredReference",
+        specifier: token.value,
+      };
+    }
+
     if (token.type === "sheetName") {
       index += 1;
+
+      const structuredReferenceToken = tokens[index];
+
+      if (structuredReferenceToken?.type === "structuredReference") {
+        index += 1;
+
+        return {
+          type: "structuredReference",
+          tableName: token.value,
+          specifier: structuredReferenceToken.value,
+        };
+      }
+
       return parseSheetQualifiedReference(token.value);
     }
 
@@ -799,6 +856,7 @@ export function parseFormula(input: string): FormulaAst {
       ast.type === "intersection" ||
       ast.type === "range" ||
       ast.type === "reference" ||
+      ast.type === "structuredReference" ||
       ast.type === "union"
     );
   }
@@ -812,6 +870,7 @@ export function evaluateSheet(
   return evaluateWorkbookSheet(
     {
       sheets: [sheet],
+      tables: [],
     },
     sheet.id,
     workbookVersion,
@@ -820,7 +879,7 @@ export function evaluateSheet(
 }
 
 export function evaluateWorkbookSheet(
-  workbook: Pick<WorkbookState, "sheets">,
+  workbook: Pick<WorkbookState, "sheets"> & Partial<Pick<WorkbookState, "tables">>,
   sheetId: string,
   workbookVersion: number,
   options: FormulaEvaluationOptions = {},
@@ -832,13 +891,17 @@ export function evaluateWorkbookSheet(
 }
 
 export function evaluateWorkbook(
-  workbook: Pick<WorkbookState, "sheets">,
+  workbook: Pick<WorkbookState, "sheets"> & Partial<Pick<WorkbookState, "tables">>,
   workbookVersion: number,
   options: FormulaEvaluationOptions = {},
 ): Map<string, SheetEvaluationSnapshot> {
   const sheetById = new Map(workbook.sheets.map((sheet) => [sheet.id, sheet]));
   const sheetIdByName = new Map(
     workbook.sheets.map((sheet) => [getSheetNameKey(sheet.name), sheet.id]),
+  );
+  const workbookTables = workbook.tables ?? [];
+  const tableByName = new Map(
+    workbookTables.map((table) => [getStructuredReferenceNameKey(table.name), table]),
   );
   const snapshots = new Map<string, SheetEvaluationSnapshot>(
     workbook.sheets.map((sheet) => [
@@ -1026,6 +1089,8 @@ export function evaluateWorkbook(
 
         return createRangeValue(address, address, dependencies);
       }
+      case "structuredReference":
+        return evaluateStructuredReference(ast, dependencies);
       case "unary": {
         const numericOperand = coerceToNumber(evaluateAst(ast.operand, dependencies));
 
@@ -1307,6 +1372,87 @@ export function evaluateWorkbook(
       areas,
       cells: areas[0],
     };
+  }
+
+  function evaluateStructuredReference(
+    ast: Extract<FormulaAst, { type: "structuredReference" }>,
+    dependencies: Set<CellKey>,
+  ): RangeValue | ErrorValue {
+    const selection = parseStructuredReferenceSelection(ast.specifier);
+
+    if (isErrorValue(selection)) {
+      return selection;
+    }
+
+    const currentCell = getCurrentFormulaCell();
+
+    if (isErrorValue(currentCell)) {
+      return currentCell;
+    }
+
+    const table =
+      ast.tableName === undefined
+        ? workbookTables.find((entry) => workbookTableContainsCell(entry, currentCell))
+        : tableByName.get(getStructuredReferenceNameKey(ast.tableName));
+
+    if (!table) {
+      return createErrorValue("REF");
+    }
+
+    const sheet = sheetById.get(table.range.sheetId);
+
+    if (!sheet) {
+      return createErrorValue("REF");
+    }
+
+    const headerOffset = table.hasHeaderRow ? 1 : 0;
+    const bodyStartRow = table.range.startRow + headerOffset;
+    const bodyRowCount = table.range.rowCount - headerOffset;
+    const bodyEndRow = bodyStartRow + bodyRowCount - 1;
+
+    if (bodyRowCount <= 0) {
+      return createErrorValue("REF");
+    }
+
+    const startColumn =
+      selection.columnStart === undefined
+        ? table.range.startColumn
+        : resolveStructuredReferenceColumn(sheet, table, selection.columnStart);
+
+    if (isErrorValue(startColumn)) {
+      return startColumn;
+    }
+
+    const endColumn =
+      selection.columnEnd === undefined
+        ? startColumn
+        : resolveStructuredReferenceColumn(sheet, table, selection.columnEnd);
+
+    if (isErrorValue(endColumn)) {
+      return endColumn;
+    }
+
+    const currentRow = currentCell.rowIndex;
+    const startRow = selection.currentRow ? currentRow : bodyStartRow;
+    const endRow = selection.currentRow ? currentRow : bodyEndRow;
+
+    if (selection.currentRow && (currentRow < bodyStartRow || currentRow > bodyEndRow)) {
+      return createErrorValue("REF");
+    }
+
+    return createRangeValue(
+      {
+        sheetId: table.range.sheetId,
+        rowIndex: startRow,
+        columnIndex: startColumn,
+      },
+      {
+        sheetId: table.range.sheetId,
+        rowIndex: endRow,
+        columnIndex: endColumn,
+      },
+      dependencies,
+    );
   }
 
   function recordRangeDependencies(areas: readonly RangeArea[], dependencies: Set<CellKey>) {
@@ -3315,6 +3461,39 @@ function readQuotedSheetName(
   throw new Error("Formula sheet name is missing a closing quote.");
 }
 
+function readStructuredReferenceSpecifier(
+  expression: string,
+  startIndex: number,
+): { value: string; nextIndex: number } {
+  let depth = 0;
+  let index = startIndex;
+
+  while (index < expression.length) {
+    const character = expression[index];
+
+    if (character === "[") {
+      depth += 1;
+    } else if (character === "]") {
+      depth -= 1;
+
+      if (depth === 0) {
+        return {
+          value: expression.slice(startIndex, index + 1),
+          nextIndex: index + 1,
+        };
+      }
+    }
+
+    if (depth < 0) {
+      break;
+    }
+
+    index += 1;
+  }
+
+  throw new Error("Formula structured reference is missing a closing bracket.");
+}
+
 function createErrorEvaluation(
   input: string,
   errorCode: FormulaErrorCode,
@@ -3488,6 +3667,218 @@ function isCellReferenceIdentifier(value: string): boolean {
 
 function getSheetNameKey(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function getStructuredReferenceNameKey(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function parseStructuredReferenceSelection(
+  specifier: string,
+): StructuredReferenceSelection | ErrorValue {
+  const inner = unwrapStructuredReferencePart(specifier);
+
+  if (inner === undefined) {
+    return createErrorValue("REF");
+  }
+
+  const selection: StructuredReferenceSelection = {
+    currentRow: false,
+    dataOnly: false,
+  };
+  const parts = splitStructuredReferenceTopLevel(inner, ",");
+
+  for (const rawPart of parts) {
+    const part = normalizeStructuredReferencePart(rawPart);
+
+    if (part.length === 0) {
+      return createErrorValue("REF");
+    }
+
+    if (part.toUpperCase() === "#DATA") {
+      selection.dataOnly = true;
+      continue;
+    }
+
+    if (part.toUpperCase() === "#THIS ROW" || part === "@") {
+      selection.currentRow = true;
+      continue;
+    }
+
+    const columnRange = parseStructuredReferenceColumnRange(part);
+
+    if (!columnRange) {
+      return createErrorValue("REF");
+    }
+
+    selection.currentRow = selection.currentRow || columnRange.currentRow;
+    selection.columnStart = columnRange.columnStart;
+    selection.columnEnd = columnRange.columnEnd;
+  }
+
+  return selection;
+}
+
+function parseStructuredReferenceColumnRange(
+  value: string,
+): { columnStart: string; columnEnd?: string; currentRow: boolean } | undefined {
+  const parts = splitStructuredReferenceTopLevel(value, ":");
+
+  if (parts.length < 1 || parts.length > 2) {
+    return undefined;
+  }
+
+  const start = parseStructuredReferenceColumnPart(parts[0]);
+  const end = parts[1] === undefined ? undefined : parseStructuredReferenceColumnPart(parts[1]);
+
+  if (!start || (parts[1] !== undefined && !end)) {
+    return undefined;
+  }
+
+  return {
+    columnStart: start.columnName,
+    columnEnd: end?.columnName,
+    currentRow: start.currentRow || (end?.currentRow ?? false),
+  };
+}
+
+function parseStructuredReferenceColumnPart(
+  value: string,
+): { columnName: string; currentRow: boolean } | undefined {
+  let part = value.trim();
+  let currentRow = false;
+
+  if (part.startsWith("@")) {
+    currentRow = true;
+    part = part.slice(1).trim();
+  }
+
+  const unwrapped = unwrapStructuredReferencePart(part);
+
+  if (unwrapped !== undefined) {
+    part = unwrapped.trim();
+  }
+
+  if (part.startsWith("@")) {
+    currentRow = true;
+    part = part.slice(1).trim();
+  }
+
+  if (part.length === 0 || part.startsWith("#")) {
+    return undefined;
+  }
+
+  return {
+    columnName: part,
+    currentRow,
+  };
+}
+
+function normalizeStructuredReferencePart(value: string): string {
+  const trimmed = value.trim();
+  const unwrapped = unwrapStructuredReferencePart(trimmed);
+
+  return unwrapped === undefined ? trimmed : unwrapped.trim();
+}
+
+function unwrapStructuredReferencePart(value: string): string | undefined {
+  const trimmed = value.trim();
+
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+    return undefined;
+  }
+
+  let depth = 0;
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const character = trimmed[index];
+
+    if (character === "[") {
+      depth += 1;
+    } else if (character === "]") {
+      depth -= 1;
+
+      if (depth === 0 && index !== trimmed.length - 1) {
+        return undefined;
+      }
+    }
+
+    if (depth < 0) {
+      return undefined;
+    }
+  }
+
+  return depth === 0 ? trimmed.slice(1, -1) : undefined;
+}
+
+function splitStructuredReferenceTopLevel(value: string, separator: "," | ":"): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let startIndex = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+
+    if (character === "[") {
+      depth += 1;
+    } else if (character === "]") {
+      depth -= 1;
+    } else if (character === separator && depth === 0) {
+      parts.push(value.slice(startIndex, index));
+      startIndex = index + 1;
+    }
+  }
+
+  parts.push(value.slice(startIndex));
+  return parts;
+}
+
+function workbookTableContainsCell(
+  table: WorkbookState["tables"][number],
+  cell: CellAddress,
+): boolean {
+  return (
+    table.range.sheetId === cell.sheetId &&
+    cell.rowIndex >= table.range.startRow &&
+    cell.rowIndex < table.range.startRow + table.range.rowCount &&
+    cell.columnIndex >= table.range.startColumn &&
+    cell.columnIndex < table.range.startColumn + table.range.columnCount
+  );
+}
+
+function resolveStructuredReferenceColumn(
+  sheet: WorkbookSheet,
+  table: WorkbookState["tables"][number],
+  columnName: string,
+): number | ErrorValue {
+  const matches: number[] = [];
+  const expectedKey = getStructuredReferenceNameKey(columnName);
+
+  for (let columnOffset = 0; columnOffset < table.range.columnCount; columnOffset += 1) {
+    const columnIndex = table.range.startColumn + columnOffset;
+    const tableColumnName = getStructuredReferenceTableColumnName(sheet, table, columnOffset);
+
+    if (getStructuredReferenceNameKey(tableColumnName) === expectedKey) {
+      matches.push(columnIndex);
+    }
+  }
+
+  return matches.length === 1 ? matches[0] : createErrorValue("REF");
+}
+
+function getStructuredReferenceTableColumnName(
+  sheet: WorkbookSheet,
+  table: WorkbookState["tables"][number],
+  columnOffset: number,
+): string {
+  if (!table.hasHeaderRow) {
+    return `Column${columnOffset + 1}`;
+  }
+
+  const headerValue =
+    sheet.cells[table.range.startRow]?.[table.range.startColumn + columnOffset]?.trim() ?? "";
+
+  return headerValue.length > 0 ? headerValue : `Column${columnOffset + 1}`;
 }
 
 function getCellKeySheetId(cellKey: CellKey): string {

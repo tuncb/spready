@@ -1442,6 +1442,55 @@ test("applyWorkbookTransaction manages tables and sorts table body rows", () => 
   assert.equal(getWorkbookSummary(sorted).tables[0]?.sortState?.valueMode, "raw");
 });
 
+test("applyWorkbookTransaction fills current-row structured formulas as calculated columns", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Score", "Double"],
+          ["Bob", "10", ""],
+          ["Ann", "30", ""],
+          ["Cal", "20", ""],
+        ],
+      },
+      {
+        range: {
+          columnCount: 3,
+          rowCount: 4,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-scores",
+        type: "addTable",
+      },
+      {
+        columnIndex: 2,
+        rowIndex: 2,
+        type: "setCell",
+        value: "=[@Score]*2",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(
+    getSheetRange(workbook, {
+      columnCount: 3,
+      rowCount: 4,
+      startColumn: 0,
+      startRow: 0,
+    }).values,
+    [
+      ["Name", "Score", "Double"],
+      ["Bob", "10", "=[@Score]*2"],
+      ["Ann", "30", "=[@Score]*2"],
+      ["Cal", "20", "=[@Score]*2"],
+    ],
+  );
+});
+
 test("applyWorkbookTransaction keeps blank table sort values at the end", () => {
   const workbook = applyWorkbookTransaction(createWorkbookState(), {
     operations: [

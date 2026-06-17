@@ -902,6 +902,41 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
         },
       },
     ]);
+
+    await client.applyTransaction({
+      operations: [
+        {
+          columnIndex: 2,
+          rowIndex: 0,
+          type: "setCell",
+          value: "Double",
+        },
+        {
+          columnIndex: 2,
+          rowIndex: 1,
+          type: "setCell",
+          value: "=[@Score]*2",
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      (
+        await client.getSheetDisplayRange({
+          columnCount: 3,
+          rowCount: 5,
+          startColumn: 0,
+          startRow: 0,
+        })
+      ).values,
+      [
+        ["Name", "Score", "Double"],
+        ["Bob", "10", "20"],
+        ["Cal", "20", "40"],
+        ["Ann", "30", "60"],
+        ["Dee", "", "0"],
+      ],
+    );
   } finally {
     await client.close();
     await server.stop();
