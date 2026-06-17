@@ -407,7 +407,9 @@ export class WorkbookController extends EventEmitter {
 
     if (execution.changed && !request.dryRun) {
       this.#recordHistoryNode(nextState);
-      this.#commitState(nextState);
+      this.#commitState(nextState, {
+        preserveEvaluationSnapshots: shouldPreserveEvaluationSnapshots(preparedRequest.operations),
+      });
     }
 
     return {
@@ -604,9 +606,18 @@ export class WorkbookController extends EventEmitter {
     }));
   }
 
-  #commitState(nextState: WorkbookState) {
+  #commitState(nextState: WorkbookState, options: { preserveEvaluationSnapshots?: boolean } = {}) {
     this.#state = nextState;
-    this.#sheetEvaluationSnapshots.clear();
+
+    if (options.preserveEvaluationSnapshots) {
+      this.#sheetEvaluationSnapshots = retagEvaluationSnapshots(
+        this.#sheetEvaluationSnapshots,
+        nextState.version,
+      );
+    } else {
+      this.#sheetEvaluationSnapshots.clear();
+    }
+
     this.emit("changed", getWorkbookSummary(this.#state));
   }
 
@@ -770,6 +781,27 @@ export class WorkbookController extends EventEmitter {
     this.#nextHistoryNodeNumber += 1;
     return nodeId;
   }
+}
+
+function shouldPreserveEvaluationSnapshots(operations: readonly WorkbookTransactionOperation[]) {
+  return (
+    operations.length > 0 && operations.every((operation) => operation.type === "setActiveSheet")
+  );
+}
+
+function retagEvaluationSnapshots(
+  snapshots: Map<string, SheetEvaluationSnapshot>,
+  workbookVersion: number,
+) {
+  return new Map(
+    [...snapshots].map(([sheetId, snapshot]) => [
+      sheetId,
+      {
+        ...snapshot,
+        workbookVersion,
+      },
+    ]),
+  );
 }
 
 function compareDisplayTableSortValues(
