@@ -112,6 +112,8 @@ async function main() {
     mcpExecutableName,
   );
   const stagingDir = path.join(repoRoot, "out", "release", bundleSlug);
+  const manualsSourceDir = path.join(repoRoot, "manuals");
+  const manualsTargetDir = path.join(stagingDir, "manuals");
   const appTargetName = getExecutableName(productName, platform);
   const mcpConfigPath = path.join(stagingDir, "spready.mcp.json");
   const notesPath = path.join(stagingDir, "MCP-README.txt");
@@ -132,10 +134,14 @@ async function main() {
 
   await stat(packagedAppDir);
   await stat(mcpExecutablePath);
+  await stat(manualsSourceDir);
   await rm(stagingDir, { force: true, recursive: true });
   await mkdir(stagingDir, { recursive: true });
 
   await copyDirectoryContents(packagedAppDir, stagingDir);
+  await cp(manualsSourceDir, manualsTargetDir, {
+    recursive: true,
+  });
   await cp(mcpExecutablePath, path.join(stagingDir, mcpExecutableName), {
     recursive: false,
   });
