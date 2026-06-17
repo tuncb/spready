@@ -424,6 +424,7 @@ export class InstallerService {
     spawnPowerShellScript(
       buildFinishUpdateScript({
         installDirectory: status.installDirectory,
+        latestVersion: formatVersionNumber(release.version),
         pid: process.pid,
         restart: request.restart ?? true,
         stagedDirectory: stagingDirectory,
@@ -700,16 +701,36 @@ function quotePowerShellString(value: string) {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function buildUninstallScript(pid: number, installDirectory: string) {
+export function buildWaitForProcessExitScript(pid: number, timeoutSeconds = 60) {
+  return [
+    `$deadline = (Get-Date).AddSeconds(${timeoutSeconds})`,
+    `while ((Get-Process -Id ${pid} -ErrorAction SilentlyContinue) -and ((Get-Date) -lt $deadline)) {`,
+    "  Start-Sleep -Milliseconds 250",
+    "}",
+    `if (Get-Process -Id ${pid} -ErrorAction SilentlyContinue) {`,
+    `  throw '${APP_NAME} did not exit within ${timeoutSeconds} seconds.'`,
+    "}",
+  ].join("\n");
+}
+
+export function buildUninstallScript(pid: number, installDirectory: string) {
   return [
     "$ErrorActionPreference = 'SilentlyContinue'",
-    `Wait-Process -Id ${pid} -Timeout 60`,
+    buildWaitForProcessExitScript(pid),
     `Remove-Item -LiteralPath ${quotePowerShellString(installDirectory)} -Recurse -Force`,
   ].join("\n");
 }
 
-function buildFinishUpdateScript(args: {
+function indentPowerShellScript(script: string) {
+  return script
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
+}
+
+export function buildFinishUpdateScript(args: {
   installDirectory: string;
+  latestVersion: string;
   pid: number;
   restart: boolean;
   stagedDirectory: string;
@@ -717,24 +738,86 @@ function buildFinishUpdateScript(args: {
 }) {
   const installedExecutablePath = getInstalledExecutablePath(args.installDirectory);
   const backupDirectory = `${args.installDirectory}.old-${Date.now()}`;
+  const updateLogPath = path.join(args.updateDirectory, "spready-update.log");
 
   return [
     "$ErrorActionPreference = 'Stop'",
-    `Wait-Process -Id ${args.pid} -Timeout 60`,
-    `if (Test-Path -LiteralPath ${quotePowerShellString(backupDirectory)}) { Remove-Item -LiteralPath ${quotePowerShellString(
+    "$ProgressPreference = 'SilentlyContinue'",
+    `$logPath = ${quotePowerShellString(updateLogPath)}`,
+    "function Write-SpreadyUpdateLog {",
+    "  param([string] $Message)",
+    "  $timestamp = Get-Date -Format o",
+    '  Add-Content -LiteralPath $logPath -Value "[$timestamp] $Message"',
+    "}",
+    "function Invoke-SpreadyUpdateStep {",
+    "  param([string] $Name, [scriptblock] $Action)",
+    "  $lastError = $null",
+    "  for ($attempt = 1; $attempt -le 40; $attempt += 1) {",
+    "    try {",
+    "      & $Action",
+    "      return",
+    "    } catch {",
+    "      $lastError = $_",
+    '      Write-SpreadyUpdateLog "$Name failed on attempt ${attempt}: $($_.Exception.Message)"',
+    "      Start-Sleep -Milliseconds 500",
+    "    }",
+    "  }",
+    "  throw $lastError",
+    "}",
+    "try {",
+    "  Write-SpreadyUpdateLog 'Waiting for Spready to exit.'",
+    indentPowerShellScript(buildWaitForProcessExitScript(args.pid)),
+    `  if (Test-Path -LiteralPath ${quotePowerShellString(backupDirectory)}) {`,
+    `    Invoke-SpreadyUpdateStep 'remove stale backup' { Remove-Item -LiteralPath ${quotePowerShellString(
       backupDirectory,
     )} -Recurse -Force }`,
-    `if (Test-Path -LiteralPath ${quotePowerShellString(args.installDirectory)}) { Rename-Item -LiteralPath ${quotePowerShellString(
+    "  }",
+    `  if (Test-Path -LiteralPath ${quotePowerShellString(args.installDirectory)}) {`,
+    `    Invoke-SpreadyUpdateStep 'rename current install' { Rename-Item -LiteralPath ${quotePowerShellString(
       args.installDirectory,
     )} -NewName ${quotePowerShellString(path.basename(backupDirectory))} -Force }`,
-    `Move-Item -LiteralPath ${quotePowerShellString(args.stagedDirectory)} -Destination ${quotePowerShellString(
-      args.installDirectory,
-    )} -Force`,
-    `if (Test-Path -LiteralPath ${quotePowerShellString(backupDirectory)}) { Remove-Item -LiteralPath ${quotePowerShellString(
+    "  }",
+    `  Invoke-SpreadyUpdateStep 'move staged update' { Move-Item -LiteralPath ${quotePowerShellString(
+      args.stagedDirectory,
+    )} -Destination ${quotePowerShellString(args.installDirectory)} -Force }`,
+    `  if (Test-Path -LiteralPath ${quotePowerShellString(backupDirectory)}) {`,
+    "    try {",
+    `      Remove-Item -LiteralPath ${quotePowerShellString(backupDirectory)} -Recurse -Force`,
+    "    } catch {",
+    '      Write-SpreadyUpdateLog "Old install cleanup failed: $($_.Exception.Message)"',
+    "    }",
+    "  }",
+    "  try {",
+    `    & reg.exe add ${quotePowerShellString(UNINSTALL_REGISTRY_KEY)} /v DisplayVersion /t REG_SZ /d ${quotePowerShellString(
+      args.latestVersion,
+    )} /f | Out-Null`,
+    "  } catch {",
+    '    Write-SpreadyUpdateLog "Registry version update failed: $($_.Exception.Message)"',
+    "  }",
+    args.restart
+      ? `  Start-Process -FilePath ${quotePowerShellString(installedExecutablePath)}`
+      : "",
+    "  try {",
+    `    Remove-Item -LiteralPath ${quotePowerShellString(args.updateDirectory)} -Recurse -Force`,
+    "  } catch {",
+    '    Write-SpreadyUpdateLog "Temporary update cleanup failed: $($_.Exception.Message)"',
+    "  }",
+    "} catch {",
+    '  Write-SpreadyUpdateLog "Update failed: $($_.Exception.Message)"',
+    `  if ((Test-Path -LiteralPath ${quotePowerShellString(
       backupDirectory,
-    )} -Recurse -Force }`,
-    args.restart ? `Start-Process -FilePath ${quotePowerShellString(installedExecutablePath)}` : "",
-    `Remove-Item -LiteralPath ${quotePowerShellString(args.updateDirectory)} -Recurse -Force`,
+    )}) -and -not (Test-Path -LiteralPath ${quotePowerShellString(args.installDirectory)})) {`,
+    "    try {",
+    `      Rename-Item -LiteralPath ${quotePowerShellString(backupDirectory)} -NewName ${quotePowerShellString(
+      path.basename(args.installDirectory),
+    )} -Force`,
+    "      Write-SpreadyUpdateLog 'Restored previous install after update failure.'",
+    "    } catch {",
+    '      Write-SpreadyUpdateLog "Previous install restore failed: $($_.Exception.Message)"',
+    "    }",
+    "  }",
+    "  exit 1",
+    "}",
   ]
     .filter(Boolean)
     .join("\n");

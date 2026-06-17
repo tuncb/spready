@@ -5,7 +5,9 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  buildFinishUpdateScript,
   buildStartMenuShortcutDetails,
+  buildWaitForProcessExitScript,
   extractSha256FromDigest,
   extractSha256FromText,
   getDefaultInstallDirectory,
@@ -247,4 +249,31 @@ test("runWithAsarFilesystemDisabled restores the ASAR filesystem flag after fail
       processWithAsarFlag.noAsar = originalNoAsar;
     }
   }
+});
+
+test("update script tolerates the app process already being closed", () => {
+  const script = buildWaitForProcessExitScript(12345);
+
+  assert.match(script, /Get-Process -Id 12345 -ErrorAction SilentlyContinue/u);
+  assert.doesNotMatch(script, /Wait-Process/u);
+});
+
+test("finish update script retries replacement and restores previous install on failure", () => {
+  const script = buildFinishUpdateScript({
+    installDirectory: "C:\\Users\\person\\AppData\\Local\\Programs\\Spready",
+    latestVersion: "1.2.3",
+    pid: 12345,
+    restart: true,
+    stagedDirectory: "C:\\Temp\\spready-update\\stage",
+    updateDirectory: "C:\\Temp\\spready-update",
+  });
+
+  assert.match(script, /Invoke-SpreadyUpdateStep 'rename current install'/u);
+  assert.match(script, /Invoke-SpreadyUpdateStep 'move staged update'/u);
+  assert.match(script, /Restored previous install after update failure/u);
+  assert.match(
+    script,
+    /reg\.exe add 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spready' \/v DisplayVersion/u,
+  );
+  assert.match(script, /Start-Process -FilePath/u);
 });
