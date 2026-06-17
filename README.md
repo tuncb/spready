@@ -305,6 +305,8 @@ The stdio MCP wrapper currently exposes:
 - `get_spready_connection_status`
 - `open_spready_app`
 - `describe_capabilities`
+- `list_manuals`
+- `read_manual`
 - `get_workbook_summary`
 - `create_new_workbook`
 - `get_used_range`
@@ -339,6 +341,9 @@ The stdio MCP wrapper currently exposes:
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
 `open_spready_app` now returns success only after TCP reports that an Electron frontend window is visible.
+`list_manuals` returns the bundled manuals directory, each Markdown manual's absolute path, and
+ready-to-use `read_manual` arguments. Clients with local filesystem access can read those files
+directly; clients without that access can call `read_manual` with a listed relative path.
 `copy_range` and `cut_range` return structured clipboard payloads with raw/display values, styles, and complete table definitions. `paste_range` accepts those payloads to recreate copied tables, or plain text/values for cell-only paste.
 
 Display reads evaluate the workbook formula engine used by the app UI, including arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, reference intersection, parenthesized reference union, core math/logical/text functions such as `LN`, date/time functions such as `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, and `DAY`, and lookup functions such as `INDEX`, `MATCH`, `XLOOKUP`, and `VLOOKUP`.

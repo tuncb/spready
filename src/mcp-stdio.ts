@@ -15,6 +15,13 @@ import {
   formatReadyStartupLog,
 } from "./mcp-stdio-log";
 import { getMcpStdioHelpText, parseMcpStartupOptions } from "./mcp-startup";
+import {
+  DEFAULT_MANUAL_READ_MAX_BYTES,
+  findManualsDirectory,
+  listManuals,
+  MAX_MANUAL_READ_BYTES,
+  readManual,
+} from "./mcp-manuals";
 import { createStartupLogSink, STARTUP_TIMING_LOG_FILE_PATH, StartupTimer } from "./startup-timing";
 import {
   chartGuideTools,
@@ -576,6 +583,29 @@ const openSpreadyAppResultSchema = connectionStatusSchema.extend({
   launched: z.boolean(),
 });
 
+const manualEntrySchema = z.object({
+  absolutePath: z.string(),
+  path: z.string(),
+  readTool: z.object({
+    arguments: z.object({
+      path: z.string(),
+    }),
+    name: z.literal("read_manual"),
+  }),
+  title: z.string().optional(),
+});
+
+const listManualsResultSchema = z.object({
+  manuals: z.array(manualEntrySchema),
+  manualsDirectory: z.string(),
+});
+
+const readManualResultSchema = z.object({
+  path: z.string(),
+  text: z.string(),
+  truncated: z.boolean(),
+});
+
 const WORKBOOK_SUMMARY_RESOURCE_URI = "spready://workbook/summary";
 const SERVER_GUIDE_RESOURCE_URI = "spready://guide";
 const WORKBOOK_TASK_PROMPT_NAME = "spready_workbook_task";
@@ -775,6 +805,20 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: false,
+      description:
+        "List bundled Spready manuals and return both installed filesystem paths and read_manual arguments.",
+      name: "list_manuals",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description:
+        "Read one bundled Spready manual by relative path when direct filesystem access is unavailable or inconvenient.",
+      name: "read_manual",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: false,
       description: "Return workbook metadata including active sheet, version, and sheet sizes.",
       name: "get_workbook_summary",
       readOnly: true,
@@ -966,6 +1010,7 @@ const guideResource = {
     "Use get_workbook_summary before large edits so you know which sheet ids and sizes exist.",
     "Use get_used_range or get_sheet_range instead of reading an entire large sheet.",
     "Use paste_range, cut_range, and clear_range for explicit clipboard-like range edits without relying on UI selection state.",
+    "For deeper Spready documentation, call list_manuals. If your client can read the returned manualsDirectory or absolutePath values directly, you may use those files. Otherwise call read_manual with a listed relative path.",
     "Prefer one apply_transaction call with batched operations over repeated single-cell writes.",
     "Use dryRun on apply_transaction to validate risky changes before mutating the workbook.",
     "Use expectedVersion on apply_transaction when the task should fail instead of overwriting concurrent workbook changes.",
@@ -1003,6 +1048,8 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 
 - get_spready_connection_status: Return whether this MCP wrapper is connected to a Spready desktop app.
 - open_spready_app: Connect to a running Spready desktop app, or launch one, show the frontend window, and connect to its TCP control server.
+- list_manuals: List bundled Spready manuals and return installed filesystem paths plus read_manual arguments.
+- read_manual: Read one bundled Spready manual by relative path when direct filesystem access is unavailable or inconvenient.
 - get_workbook_summary: Return workbook metadata including active sheet, version, and sheet sizes.
 - create_new_workbook: Create a new blank workbook and replace the in-app workbook state.
 - open_workbook_file: Open a native Spready workbook file and replace the in-app workbook state.
@@ -1148,7 +1195,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide, use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1226,6 +1273,46 @@ async function main() {
         ],
       };
     },
+  );
+
+  server.registerTool(
+    "list_manuals",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description:
+        "List bundled Spready manuals. If your client can read local files, use manualsDirectory or absolutePath directly; otherwise use read_manual with a listed relative path.",
+      outputSchema: listManualsResultSchema,
+    },
+    async () => createTextResult(await listManuals(await findManualsDirectory())),
+  );
+
+  server.registerTool(
+    "read_manual",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description:
+        "Read one bundled Spready manual by relative path, such as formula.md. Use this when direct filesystem access to the manuals folder is unavailable.",
+      inputSchema: z.object({
+        maxBytes: z
+          .int()
+          .min(1_000)
+          .max(MAX_MANUAL_READ_BYTES)
+          .optional()
+          .describe(
+            `Maximum number of characters to return. Defaults to ${DEFAULT_MANUAL_READ_MAX_BYTES}.`,
+          ),
+        path: z.string().min(1).describe("Relative path from list_manuals, such as formula.md."),
+      }),
+      outputSchema: readManualResultSchema,
+    },
+    async ({ maxBytes, path }) =>
+      createTextResult(await readManual(await findManualsDirectory(), path, maxBytes)),
   );
 
   server.registerTool(
@@ -1481,6 +1568,24 @@ async function main() {
             readOnly: false,
             useWhen:
               "Use this when connection status is disconnected or a workbook tool says Spready is not connected.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "List bundled Spready manuals and return both installed filesystem paths and read_manual arguments.",
+            name: "list_manuals",
+            readOnly: true,
+            useWhen:
+              "Use this when you need deeper Spready documentation or want to discover whether direct filesystem manual access is possible.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Read one bundled Spready manual by relative path when direct filesystem access is unavailable or inconvenient.",
+            name: "read_manual",
+            readOnly: true,
+            useWhen:
+              "Use this with a path returned by list_manuals when you need detailed docs through MCP.",
           },
           {
             defaultsToActiveSheet: false,
