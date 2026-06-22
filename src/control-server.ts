@@ -337,6 +337,8 @@ export class SpreadyControlServer {
         return this.getInfo();
       case "getAppStatus":
         return this.#getAppStatus();
+      case "getConsoleOutput":
+        return this.#controller.getConsoleOutput();
       case "getSheetCsv":
         return this.#controller.getSheetCsv((params as { sheetId?: string } | undefined)?.sheetId);
       case "getSheetCharts":
@@ -397,6 +399,7 @@ export class SpreadyControlServer {
           "getChart",
           "getChartPreview",
           "getAppStatus",
+          "getConsoleOutput",
           "getControlInfo",
           "getSheetCsv",
           "getSheetCharts",

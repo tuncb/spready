@@ -101,6 +101,10 @@ export interface WorkbookSummary {
   tables: WorkbookTableSummary[];
 }
 
+export interface WorkbookConsoleOutputResult {
+  text: string;
+}
+
 export type WorkbookTableSortDirection = "ascending" | "descending";
 
 export type WorkbookTableSortValueMode = "display" | "raw";

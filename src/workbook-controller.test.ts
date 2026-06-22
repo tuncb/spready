@@ -76,6 +76,46 @@ test("WorkbookController exposes raw range reads separately from display-range a
   assert.equal(controller.getSummary().hasUnsavedChanges, true);
 });
 
+test("WorkbookController formats a formula-aware whole-workbook console output", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Name", "Value", "Total"],
+          ["North", "5", "=B2*2"],
+        ],
+      },
+      {
+        activate: false,
+        name: "Empty",
+        type: "addSheet",
+      },
+    ],
+  });
+
+  assert.equal(
+    controller.getConsoleOutput().text,
+    [
+      "Workbook: (unsaved workbook)",
+      "Sheets: 2",
+      "",
+      "Sheet: Sheet 1 (A1:C2)",
+      "     A      B      C",
+      "  1  Name   Value  Total",
+      "  2  North  5      10",
+      "",
+      "Sheet: Empty (empty)",
+      "  (empty)",
+      "",
+    ].join("\n"),
+  );
+});
+
 test("WorkbookController exposes expanded formula compatibility through the same raw and display reads", () => {
   const controller = new WorkbookController();
 

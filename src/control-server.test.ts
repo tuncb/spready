@@ -144,6 +144,7 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
       startColumn: 0,
       startRow: 0,
     });
+    const consoleOutput = await client.getConsoleOutput();
     const cellData = await client.getCellData({
       columnIndex: 2,
       rowIndex: 0,
@@ -159,6 +160,7 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.ok(methods.includes("clearRange"));
     assert.ok(methods.includes("getSheetStyleRange"));
     assert.ok(methods.includes("formatCells"));
+    assert.ok(methods.includes("getConsoleOutput"));
     assert.ok(methods.includes("getUndoTree"));
     assert.ok(methods.includes("undo"));
     assert.ok(methods.includes("redo"));
@@ -179,6 +181,8 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.deepEqual(styleRange.styles, [[null]]);
     assert.equal(formatDryRun.changed, true);
     assert.deepEqual(formattedDisplayRange.values, [["1,234.0"]]);
+    assert.match(consoleOutput.text, /Sheet: Sheet 1 \(A1\)/);
+    assert.match(consoleOutput.text, /1\s+1,234\.0/);
     assert.deepEqual(formattedStyleRange.styles, [
       [
         {

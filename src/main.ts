@@ -15,6 +15,7 @@ import {
 } from "electron";
 import started from "electron-squirrel-startup";
 
+import { getMainHelpText, parseMainStartupOptions } from "./app-startup";
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
 import {
   SPREADY_CLIPBOARD_FORMAT,
@@ -51,6 +52,7 @@ const DEFAULT_CONTROL_HOST = "127.0.0.1";
 const DEFAULT_CONTROL_PORT = 45731;
 
 const workbookController = new WorkbookController();
+const mainStartupOptions = parseMainStartupOptions(process.argv.slice(1));
 const configuredControlPort = Number.parseInt(
   process.env.SPREADY_CONTROL_PORT ?? `${DEFAULT_CONTROL_PORT}`,
   10,
@@ -58,6 +60,8 @@ const configuredControlPort = Number.parseInt(
 let isChartDialogOpen = false;
 let isAppShowRequested = false;
 const isInstallerUninstallCommand = process.argv.includes("--spready-uninstall");
+const isConsoleExitMode =
+  mainStartupOptions.help || mainStartupOptions.consoleOutputFilePath !== undefined;
 
 if (started) {
   app.quit();
@@ -80,10 +84,14 @@ const installerService = new InstallerService({
 });
 
 const startupTimer = new StartupTimer("spready-main", createStartupLogSink(console.log));
-startupTimer.log(
-  "process-start",
-  `pid=${process.pid} port=${Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort} logFile=${STARTUP_TIMING_LOG_FILE_PATH}`,
-);
+if (!isConsoleExitMode) {
+  startupTimer.log(
+    "process-start",
+    `pid=${process.pid} port=${
+      Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort
+    } logFile=${STARTUP_TIMING_LOG_FILE_PATH}`,
+  );
+}
 
 type StartupTimingMessage = {
   detail?: unknown;
@@ -1194,10 +1202,34 @@ ipcMain.handle("workbook:get-used-range", (_event, args?: { sheetId?: string }) 
 );
 
 workbookController.on("changed", () => {
+  if (isConsoleExitMode) {
+    return;
+  }
+
   broadcastWorkbookChanged();
 });
 
-if (isInstallerUninstallCommand) {
+async function runConsoleOutputMode(filePath: string) {
+  await workbookController.openWorkbookFile({
+    discardUnsavedChanges: true,
+    filePath,
+  });
+  process.stdout.write(workbookController.getConsoleOutput().text);
+}
+
+if (mainStartupOptions.help) {
+  console.log(getMainHelpText(process.argv[0] ?? "spready"));
+  app.exit(0);
+} else if (mainStartupOptions.consoleOutputFilePath) {
+  runConsoleOutputMode(mainStartupOptions.consoleOutputFilePath)
+    .then(() => {
+      app.exit(0);
+    })
+    .catch((error: unknown) => {
+      console.error(error instanceof Error ? error.message : "Console output failed.");
+      app.exit(1);
+    });
+} else if (isInstallerUninstallCommand) {
   app
     .whenReady()
     .then(() => installerService.startUninstall())

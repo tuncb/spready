@@ -61,6 +61,7 @@ import {
   type WorkbookHistoryRequest,
   type WorkbookHistoryResult,
   type WorkbookRedoRequest,
+  type WorkbookConsoleOutputResult,
   type WorkbookState,
   type WorkbookTable,
   type WorkbookSummary,
@@ -68,6 +69,7 @@ import {
   type WorkbookTransactionOperation,
   type WorkbookUndoTree,
 } from "./workbook-core";
+import { formatWorkbookConsoleOutput } from "./workbook-console-output";
 import {
   compareCellEvaluationSortValues,
   evaluateWorkbook,
@@ -272,6 +274,34 @@ export class WorkbookController extends EventEmitter {
 
   getUsedRange(sheetId?: string): UsedRangeResult {
     return getSheetUsedRange(this.#state, sheetId);
+  }
+
+  getConsoleOutput(): WorkbookConsoleOutputResult {
+    const summary = this.getSummary();
+    const sheets = summary.sheets.map((sheet) => {
+      const usedRange = this.getUsedRange(sheet.id);
+
+      return {
+        ...(usedRange.rowCount > 0 && usedRange.columnCount > 0
+          ? {
+              displayRange: this.getSheetDisplayRange({
+                columnCount: usedRange.columnCount,
+                rowCount: usedRange.rowCount,
+                sheetId: sheet.id,
+                startColumn: usedRange.startColumn,
+                startRow: usedRange.startRow,
+              }),
+            }
+          : {}),
+        sheetId: sheet.id,
+        sheetName: sheet.name,
+        usedRange,
+      };
+    });
+
+    return {
+      text: formatWorkbookConsoleOutput(summary, sheets),
+    };
   }
 
   copyRange(request: CopyRangeRequest): CopyRangeResult {

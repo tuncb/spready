@@ -31,6 +31,7 @@ import type {
   SheetRangeResult,
   SheetStyleRangeResult,
   UsedRangeResult,
+  WorkbookConsoleOutputResult,
   WorkbookFileOperationResult,
   WorkbookHistoryCheckoutRequest,
   WorkbookHistoryRequest,
@@ -260,6 +261,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async getWorkbookSummary() {
     return this.call<WorkbookSummary>("getWorkbookSummary");
+  }
+
+  async getConsoleOutput() {
+    return this.call<WorkbookConsoleOutputResult>("getConsoleOutput");
   }
 
   async getAppStatus() {

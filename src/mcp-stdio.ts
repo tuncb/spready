@@ -558,6 +558,10 @@ const workbookFileOperationResultSchema = z.object({
   version: z.int().min(0),
 });
 
+const workbookConsoleOutputResultSchema = z.object({
+  text: z.string(),
+});
+
 const controlTargetSchema = z.object({
   host: z.string(),
   port: z.int().min(1).max(65535),
@@ -825,6 +829,12 @@ const guideResource = {
     },
     {
       defaultsToActiveSheet: false,
+      description: "Return a formula-aware human-readable text dump of every sheet's used cells.",
+      name: "get_workbook_console_output",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: false,
       description: "Return the current workbook undo tree, including current and saved nodes.",
       name: "get_undo_tree",
       readOnly: true,
@@ -989,6 +999,7 @@ const guideResource = {
     "Use create_new_workbook for a fresh blank workbook.",
     "Use open_workbook_file and save_workbook_file for full multi-sheet workbook persistence.",
     "Check hasUnsavedChanges in get_workbook_summary before replacing the current workbook.",
+    "Use get_workbook_console_output when you need a single human-readable dump of every sheet's used cells with evaluated display values.",
     "Read tools default to the active sheet when sheetId is omitted.",
     "Sheet names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook.",
     "Table names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. addTable replaces fully contained existing tables, but partial table overlaps are rejected.",
@@ -1051,6 +1062,7 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 - list_manuals: List bundled Spready manuals and return installed filesystem paths plus read_manual arguments.
 - read_manual: Read one bundled Spready manual by relative path when direct filesystem access is unavailable or inconvenient.
 - get_workbook_summary: Return workbook metadata including active sheet, version, and sheet sizes.
+- get_workbook_console_output: Return a formula-aware human-readable text dump of every sheet's used cells.
 - create_new_workbook: Create a new blank workbook and replace the in-app workbook state.
 - open_workbook_file: Open a native Spready workbook file and replace the in-app workbook state.
 - save_workbook_file: Save the current workbook as a native Spready workbook file.
@@ -1185,7 +1197,7 @@ async function main() {
   const server = new McpServer(
     {
       name: "spready-stdio",
-      version: "0.0.5",
+      version: "0.0.6",
     },
     {
       capabilities: {
@@ -1195,7 +1207,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use get_workbook_console_output for a formula-aware human-readable dump, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1362,6 +1374,20 @@ async function main() {
     },
     async () =>
       createTextResult(await controlConnection.requireConnectedClient().getWorkbookSummary()),
+  );
+
+  server.registerTool(
+    "get_workbook_console_output",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description: "Return a formula-aware human-readable text dump of every sheet's used cells.",
+      outputSchema: workbookConsoleOutputResultSchema,
+    },
+    async () =>
+      createTextResult(await controlConnection.requireConnectedClient().getConsoleOutput()),
   );
 
   server.registerTool(
@@ -1595,6 +1621,15 @@ async function main() {
             readOnly: true,
             useWhen:
               "Always use this first before exploring or editing a workbook, and inspect hasUnsavedChanges before replacing it.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Return a formula-aware human-readable text dump of every sheet's used cells.",
+            name: "get_workbook_console_output",
+            readOnly: true,
+            useWhen:
+              "Use this when a task needs a compact whole-workbook text view for reading or logging.",
           },
           {
             defaultsToActiveSheet: false,
@@ -2393,6 +2428,7 @@ async function main() {
                 "- Use open_workbook_file when the task starts from an existing .spready workbook.\n" +
                 "- Start with get_workbook_summary.\n" +
                 "- If get_workbook_summary reports hasUnsavedChanges, save first or pass discardUnsavedChanges only if losing local changes is intended.\n" +
+                "- Use get_workbook_console_output when you need a compact whole-workbook text view.\n" +
                 "- Use get_undo_tree before branch-aware undo or redo decisions.\n" +
                 "- Use zero-based row and column indexes.\n" +
                 "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated and formatted grid values, and get_sheet_style_range for rendered styles and number formats.\n" +
