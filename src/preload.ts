@@ -17,7 +17,6 @@ import type {
   InstallerOptions,
   InstallerStatus,
   PasteRangeRequest,
-  RecentWorkbooksResult,
   WorkbookChartPreview,
   WorkbookChartResult,
   SheetDisplayRangeResult,
@@ -250,18 +249,6 @@ contextBridge.exposeInMainWorld("appShell", {
   openCsvFile: () => ipcRenderer.invoke("dialog:open-csv-file") as Promise<OpenCsvFileResult>,
   openWorkbookFile: () =>
     ipcRenderer.invoke("dialog:open-workbook-file") as Promise<OpenWorkbookFileResult>,
-  getRecentWorkbooks: () =>
-    ipcRenderer.invoke("recent-workbooks:list") as Promise<RecentWorkbooksResult>,
-  addRecentWorkbook: (filePath: string) =>
-    ipcRenderer.invoke("recent-workbooks:add", {
-      filePath,
-    }) as Promise<RecentWorkbooksResult>,
-  removeRecentWorkbook: (filePath: string) =>
-    ipcRenderer.invoke("recent-workbooks:remove", {
-      filePath,
-    }) as Promise<RecentWorkbooksResult>,
-  clearRecentWorkbooks: () =>
-    ipcRenderer.invoke("recent-workbooks:clear") as Promise<RecentWorkbooksResult>,
   pasteRange: (request: PasteRangeRequest) =>
     ipcRenderer.invoke("workbook:paste-range", request) as Promise<ApplyTransactionResult>,
   saveCsvFile: (content: string, defaultPath?: string) =>

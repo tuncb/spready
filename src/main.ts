@@ -31,7 +31,6 @@ import { createStartupLogSink, STARTUP_TIMING_LOG_FILE_PATH, StartupTimer } from
 import { formatWorkbookWindowTitle } from "./window-title";
 import { WorkbookController } from "./workbook-controller";
 import type {
-  AddRecentWorkbookRequest,
   ApplyTransactionRequest,
   CellDataRequest,
   ControlAppStatus,
@@ -40,7 +39,6 @@ import type {
   InstallerOptions,
   InstallerCheckUpdatesRequest,
   PasteRangeRequest,
-  RemoveRecentWorkbookRequest,
   SheetRangeRequest,
   WorkbookHistoryRequest,
   WorkbookRedoRequest,
@@ -247,11 +245,7 @@ const controlServer = new SpreadyControlServer(
   DEFAULT_CONTROL_HOST,
   Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
   {
-    addRecentWorkbook: (request) => addRecentWorkbook(request.filePath),
-    clearRecentWorkbooks,
     getAppStatus: getControlAppStatus,
-    getRecentWorkbooks: () => recentWorkbooksStore.getRecentWorkbooks(),
-    removeRecentWorkbook: (request) => removeRecentWorkbook(request.filePath),
     showApp: showAppWindow,
     startupTimer,
   },
@@ -1354,18 +1348,6 @@ ipcMain.handle("workbook:get-summary", () => workbookController.getSummary());
 ipcMain.handle("workbook:get-used-range", (_event, args?: { sheetId?: string }) =>
   workbookController.getUsedRange(args?.sheetId),
 );
-
-ipcMain.handle("recent-workbooks:list", () => recentWorkbooksStore.getRecentWorkbooks());
-
-ipcMain.handle("recent-workbooks:add", (_event, args: AddRecentWorkbookRequest) =>
-  addRecentWorkbook(args.filePath),
-);
-
-ipcMain.handle("recent-workbooks:remove", (_event, args: RemoveRecentWorkbookRequest) =>
-  removeRecentWorkbook(args.filePath),
-);
-
-ipcMain.handle("recent-workbooks:clear", () => clearRecentWorkbooks());
 
 workbookController.on("changed", () => {
   if (isConsoleExitMode) {

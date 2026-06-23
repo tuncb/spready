@@ -1,10 +1,18 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-import type { RecentWorkbookEntry, RecentWorkbooksResult } from "./workbook-core";
-
 export const DEFAULT_RECENT_WORKBOOKS_FILE_NAME = "spready-recents.toml";
 export const DEFAULT_MAX_RECENT_WORKBOOKS = 10;
+
+export interface RecentWorkbookEntry {
+  filePath: string;
+  lastOpenedAt: string;
+}
+
+export interface RecentWorkbooksResult {
+  filePath: string;
+  workbooks: RecentWorkbookEntry[];
+}
 
 type RecentWorkbooksStoreOptions = {
   clock?: () => Date;

@@ -15,7 +15,6 @@ import type {
   InstallerOptions,
   InstallerStatus,
   PasteRangeRequest,
-  RecentWorkbooksResult,
   WorkbookChartPreview,
   WorkbookChartResult,
   SheetDisplayRangeResult,
@@ -100,10 +99,6 @@ declare global {
       onWorkbookChanged: (listener: (summary: WorkbookSummary) => void) => () => void;
       openCsvFile: () => Promise<OpenCsvFileResult>;
       openWorkbookFile: () => Promise<OpenWorkbookFileResult>;
-      getRecentWorkbooks: () => Promise<RecentWorkbooksResult>;
-      addRecentWorkbook: (filePath: string) => Promise<RecentWorkbooksResult>;
-      removeRecentWorkbook: (filePath: string) => Promise<RecentWorkbooksResult>;
-      clearRecentWorkbooks: () => Promise<RecentWorkbooksResult>;
       pasteRange: (request: PasteRangeRequest) => Promise<ApplyTransactionResult>;
       saveCsvFile: (content: string, defaultPath?: string) => Promise<SaveCsvFileResult>;
       setChartDialogOpen: (isOpen: boolean) => Promise<void>;
