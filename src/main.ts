@@ -26,10 +26,12 @@ import {
 import { SpreadyControlServer } from "./control-server";
 import { clearDiscoveredControlInfo, writeDiscoveredControlInfo } from "./control-discovery";
 import { InstallerService } from "./installer-service";
+import { getDefaultRecentWorkbooksFilePath, RecentWorkbooksStore } from "./recent-workbooks";
 import { createStartupLogSink, STARTUP_TIMING_LOG_FILE_PATH, StartupTimer } from "./startup-timing";
 import { formatWorkbookWindowTitle } from "./window-title";
 import { WorkbookController } from "./workbook-controller";
 import type {
+  AddRecentWorkbookRequest,
   ApplyTransactionRequest,
   CellDataRequest,
   ControlAppStatus,
@@ -38,6 +40,7 @@ import type {
   InstallerOptions,
   InstallerCheckUpdatesRequest,
   PasteRangeRequest,
+  RemoveRecentWorkbookRequest,
   SheetRangeRequest,
   WorkbookHistoryRequest,
   WorkbookRedoRequest,
@@ -50,6 +53,7 @@ const DEFAULT_EXPORT_FILE_NAME = "Sheet1.csv";
 const DEFAULT_WORKBOOK_FILE_NAME = "Workbook.spready";
 const DEFAULT_CONTROL_HOST = "127.0.0.1";
 const DEFAULT_CONTROL_PORT = 45731;
+const MAX_RECENT_WORKBOOK_MENU_LABEL_LENGTH = 72;
 
 const workbookController = new WorkbookController();
 const mainStartupOptions = parseMainStartupOptions(process.argv.slice(1));
@@ -81,6 +85,10 @@ const installerService = new InstallerService({
   },
   writeShortcut: (shortcutPath, operation, shortcut) =>
     shell.writeShortcutLink(shortcutPath, operation, shortcut),
+});
+
+const recentWorkbooksStore = new RecentWorkbooksStore({
+  filePath: getDefaultRecentWorkbooksFilePath(process.execPath),
 });
 
 const startupTimer = new StartupTimer("spready-main", createStartupLogSink(console.log));
@@ -239,7 +247,11 @@ const controlServer = new SpreadyControlServer(
   DEFAULT_CONTROL_HOST,
   Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
   {
+    addRecentWorkbook: (request) => addRecentWorkbook(request.filePath),
+    clearRecentWorkbooks,
     getAppStatus: getControlAppStatus,
+    getRecentWorkbooks: () => recentWorkbooksStore.getRecentWorkbooks(),
+    removeRecentWorkbook: (request) => removeRecentWorkbook(request.filePath),
     showApp: showAppWindow,
     startupTimer,
   },
@@ -261,6 +273,35 @@ function broadcastWorkbookChanged() {
     browserWindow.setTitle(title);
     browserWindow.webContents.send("workbook:changed", summary);
   }
+}
+
+function rebuildAppMenuSoon() {
+  if (isConsoleExitMode) {
+    return;
+  }
+
+  buildAppMenu();
+}
+
+async function addRecentWorkbook(filePath: string) {
+  const result = await recentWorkbooksStore.add(filePath);
+
+  rebuildAppMenuSoon();
+  return result;
+}
+
+async function removeRecentWorkbook(filePath: string) {
+  const result = await recentWorkbooksStore.remove(filePath);
+
+  rebuildAppMenuSoon();
+  return result;
+}
+
+async function clearRecentWorkbooks() {
+  const result = await recentWorkbooksStore.clear();
+
+  rebuildAppMenuSoon();
+  return result;
 }
 
 function runMenuCommand(command: () => void | Promise<void>) {
@@ -425,11 +466,49 @@ async function saveCurrentWorkbook(
       return null;
     }
 
-    return await workbookController.saveWorkbookFile({ filePath });
+    const result = await workbookController.saveWorkbookFile({ filePath });
+
+    await addRecentWorkbook(result.filePath);
+
+    return result;
   } catch (error) {
     dialog.showErrorBox(
       "Save workbook failed",
       error instanceof Error ? error.message : "The workbook file could not be saved.",
+    );
+
+    return null;
+  }
+}
+
+async function openWorkbookFilePath(
+  filePath: string,
+  browserWindow?: BrowserWindow | null,
+  unsavedChangesResolution?: UnsavedChangesResolution,
+): Promise<WorkbookFileOperationResult | null> {
+  try {
+    const resolution = unsavedChangesResolution ?? (await resolveUnsavedChanges(browserWindow));
+
+    if (resolution === "cancel") {
+      return null;
+    }
+
+    const result = await workbookController.openWorkbookFile({
+      discardUnsavedChanges: resolution === "discard",
+      filePath,
+    });
+
+    await addRecentWorkbook(result.filePath);
+
+    return result;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      await removeRecentWorkbook(filePath);
+    }
+
+    dialog.showErrorBox(
+      "Open workbook failed",
+      error instanceof Error ? error.message : "The workbook file could not be opened.",
     );
 
     return null;
@@ -490,6 +569,67 @@ async function createNewWorkbookWithPrompt(browserWindow?: BrowserWindow | null)
   }
 }
 
+function truncateMenuLabel(label: string) {
+  if (label.length <= MAX_RECENT_WORKBOOK_MENU_LABEL_LENGTH) {
+    return label;
+  }
+
+  return `...${label.slice(-(MAX_RECENT_WORKBOOK_MENU_LABEL_LENGTH - 3))}`;
+}
+
+function formatRecentWorkbookMenuLabel(filePath: string, index: number) {
+  const baseName = path.basename(filePath) || filePath;
+  const directory = path.dirname(filePath);
+  const detail = directory && directory !== "." ? ` (${directory})` : "";
+
+  return `${index + 1}. ${truncateMenuLabel(`${baseName}${detail}`)}`;
+}
+
+function buildRecentWorkbooksMenu(): MenuItemConstructorOptions {
+  const recentWorkbooks = recentWorkbooksStore.getRecentWorkbooks().workbooks;
+
+  if (recentWorkbooks.length === 0) {
+    return {
+      enabled: false,
+      label: "Open Recent",
+      submenu: [
+        {
+          enabled: false,
+          label: "No Recent Workbooks",
+        },
+      ],
+    };
+  }
+
+  return {
+    label: "Open Recent",
+    submenu: [
+      ...recentWorkbooks.map(
+        (entry, index): MenuItemConstructorOptions => ({
+          label: formatRecentWorkbookMenuLabel(entry.filePath, index),
+          click: (_menuItem, browserWindow) => {
+            runMenuCommand(() => {
+              void openWorkbookFilePath(
+                entry.filePath,
+                browserWindow instanceof BrowserWindow ? browserWindow : undefined,
+              );
+            });
+          },
+        }),
+      ),
+      { type: "separator" },
+      {
+        label: "Clear Recent Workbooks",
+        click: () => {
+          runMenuCommand(() => {
+            void clearRecentWorkbooks();
+          });
+        },
+      },
+    ],
+  };
+}
+
 function buildAppMenu() {
   const menuEnabled = !isChartDialogOpen;
   const template: MenuItemConstructorOptions[] = [
@@ -514,6 +654,7 @@ function buildAppMenu() {
             });
           },
         },
+        buildRecentWorkbooksMenu(),
         {
           label: "Save Workbook",
           accelerator: "CmdOrCtrl+S",
@@ -995,12 +1136,19 @@ ipcMain.handle("dialog:open-workbook-file", async (event) => {
       return { canceled: true as const };
     }
 
+    const openResult = await openWorkbookFilePath(
+      result.filePaths[0],
+      browserWindow,
+      unsavedChangesResolution,
+    );
+
+    if (!openResult) {
+      return { canceled: true as const };
+    }
+
     return {
       canceled: false as const,
-      ...(await workbookController.openWorkbookFile({
-        discardUnsavedChanges: unsavedChangesResolution === "discard",
-        filePath: result.filePaths[0],
-      })),
+      ...openResult,
     };
   } catch (error) {
     dialog.showErrorBox(
@@ -1192,7 +1340,13 @@ ipcMain.handle("workbook:get-sheet-chart-previews", (_event, args?: { sheetId?: 
 );
 
 ipcMain.handle("workbook:save-file", (_event, args: { filePath: string }) =>
-  workbookController.saveWorkbookFile(args),
+  saveCurrentWorkbook(undefined, args.filePath).then((result) => {
+    if (!result) {
+      throw new Error("The workbook file could not be saved.");
+    }
+
+    return result;
+  }),
 );
 
 ipcMain.handle("workbook:get-summary", () => workbookController.getSummary());
@@ -1200,6 +1354,18 @@ ipcMain.handle("workbook:get-summary", () => workbookController.getSummary());
 ipcMain.handle("workbook:get-used-range", (_event, args?: { sheetId?: string }) =>
   workbookController.getUsedRange(args?.sheetId),
 );
+
+ipcMain.handle("recent-workbooks:list", () => recentWorkbooksStore.getRecentWorkbooks());
+
+ipcMain.handle("recent-workbooks:add", (_event, args: AddRecentWorkbookRequest) =>
+  addRecentWorkbook(args.filePath),
+);
+
+ipcMain.handle("recent-workbooks:remove", (_event, args: RemoveRecentWorkbookRequest) =>
+  removeRecentWorkbook(args.filePath),
+);
+
+ipcMain.handle("recent-workbooks:clear", () => clearRecentWorkbooks());
 
 workbookController.on("changed", () => {
   if (isConsoleExitMode) {
@@ -1241,8 +1407,20 @@ if (mainStartupOptions.help) {
       app.quit();
     });
 } else {
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     startupTimer.log("app-when-ready");
+    startupTimer.log("recent-workbooks-load-start", recentWorkbooksStore.filePath);
+    await recentWorkbooksStore
+      .load()
+      .then((result) => {
+        startupTimer.log("recent-workbooks-load-done", `count=${result.workbooks.length}`);
+      })
+      .catch((error) => {
+        startupTimer.log(
+          "recent-workbooks-load-failed",
+          error instanceof Error ? error.message : "unknown error",
+        );
+      });
     startupTimer.log("control-server-start-requested");
     void controlServer
       .start()

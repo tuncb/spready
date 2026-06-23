@@ -3,6 +3,7 @@ import net, { type Socket } from "node:net";
 import type { StartupTimingLogger } from "./startup-timing";
 import type { WorkbookController } from "./workbook-controller";
 import type {
+  AddRecentWorkbookRequest,
   ApplyTransactionRequest,
   ClearRangeRequest,
   ControlAppStatus,
@@ -17,6 +18,8 @@ import type {
   OpenWorkbookFileRequest,
   SaveWorkbookFileRequest,
   PasteRangeRequest,
+  RecentWorkbooksResult,
+  RemoveRecentWorkbookRequest,
   SheetRangeRequest,
   WorkbookHistoryCheckoutRequest,
   WorkbookHistoryRequest,
@@ -50,7 +53,15 @@ type ControlEvent = {
 const CONTROL_PROTOCOL = "spready-control-v1";
 
 type SpreadyControlServerOptions = {
+  addRecentWorkbook?: (
+    request: AddRecentWorkbookRequest,
+  ) => Promise<RecentWorkbooksResult> | RecentWorkbooksResult;
+  clearRecentWorkbooks?: () => Promise<RecentWorkbooksResult> | RecentWorkbooksResult;
   getAppStatus?: () => ControlAppStatus;
+  getRecentWorkbooks?: () => Promise<RecentWorkbooksResult> | RecentWorkbooksResult;
+  removeRecentWorkbook?: (
+    request: RemoveRecentWorkbookRequest,
+  ) => Promise<RecentWorkbooksResult> | RecentWorkbooksResult;
   showApp?: () => ControlAppStatus | Promise<ControlAppStatus | void> | void;
   startupTimer?: StartupTimingLogger;
 };
@@ -73,11 +84,19 @@ function isServerNotRunningError(error: Error | undefined): boolean {
 }
 
 export class SpreadyControlServer {
+  #addRecentWorkbook?: (
+    request: AddRecentWorkbookRequest,
+  ) => Promise<RecentWorkbooksResult> | RecentWorkbooksResult;
   #clients = new Set<Socket>();
+  #clearRecentWorkbooks?: () => Promise<RecentWorkbooksResult> | RecentWorkbooksResult;
   #controller: WorkbookController;
   #getAppStatus: () => ControlAppStatus;
+  #getRecentWorkbooks?: () => Promise<RecentWorkbooksResult> | RecentWorkbooksResult;
   #host: string;
   #port: number;
+  #removeRecentWorkbook?: (
+    request: RemoveRecentWorkbookRequest,
+  ) => Promise<RecentWorkbooksResult> | RecentWorkbooksResult;
   #server?: net.Server;
   #showApp?: () => ControlAppStatus | Promise<ControlAppStatus | void> | void;
   #startupTimer?: StartupTimingLogger;
@@ -88,10 +107,14 @@ export class SpreadyControlServer {
     port: number,
     options: SpreadyControlServerOptions = {},
   ) {
+    this.#addRecentWorkbook = options.addRecentWorkbook;
+    this.#clearRecentWorkbooks = options.clearRecentWorkbooks;
     this.#controller = controller;
     this.#getAppStatus = options.getAppStatus ?? (() => DEFAULT_APP_STATUS);
+    this.#getRecentWorkbooks = options.getRecentWorkbooks;
     this.#host = host;
     this.#port = port;
+    this.#removeRecentWorkbook = options.removeRecentWorkbook;
     this.#showApp = options.showApp;
     this.#startupTimer = options.startupTimer;
   }
@@ -341,6 +364,8 @@ export class SpreadyControlServer {
         return this.#controller.getConsoleOutput();
       case "getSheetCsv":
         return this.#controller.getSheetCsv((params as { sheetId?: string } | undefined)?.sheetId);
+      case "getRecentWorkbooks":
+        return this.#getRecentWorkbooks?.() ?? { filePath: "", workbooks: [] };
       case "getSheetCharts":
         return this.#controller.getSheetCharts(
           (params as { sheetId?: string } | undefined)?.sheetId,
@@ -369,14 +394,40 @@ export class SpreadyControlServer {
         return this.#controller.getSummary();
       case "importCsvFile":
         return this.#controller.importCsvFile(params as ImportCsvFileRequest);
-      case "openWorkbookFile":
-        return this.#controller.openWorkbookFile(params as OpenWorkbookFileRequest);
+      case "addRecentWorkbook":
+        return (
+          this.#addRecentWorkbook?.(params as AddRecentWorkbookRequest) ?? {
+            filePath: "",
+            workbooks: [],
+          }
+        );
+      case "clearRecentWorkbooks":
+        return this.#clearRecentWorkbooks?.() ?? { filePath: "", workbooks: [] };
+      case "openWorkbookFile": {
+        const result = await this.#controller.openWorkbookFile(params as OpenWorkbookFileRequest);
+
+        await this.#addRecentWorkbook?.({ filePath: result.filePath });
+
+        return result;
+      }
       case "pasteRange":
         return this.#controller.pasteRange(params as PasteRangeRequest);
+      case "removeRecentWorkbook":
+        return (
+          this.#removeRecentWorkbook?.(params as RemoveRecentWorkbookRequest) ?? {
+            filePath: "",
+            workbooks: [],
+          }
+        );
       case "redo":
         return this.#controller.redo((params as WorkbookRedoRequest | undefined) ?? {});
-      case "saveWorkbookFile":
-        return this.#controller.saveWorkbookFile(params as SaveWorkbookFileRequest);
+      case "saveWorkbookFile": {
+        const result = await this.#controller.saveWorkbookFile(params as SaveWorkbookFileRequest);
+
+        await this.#addRecentWorkbook?.({ filePath: result.filePath });
+
+        return result;
+      }
       case "showApp": {
         await this.#showApp?.();
 
@@ -386,9 +437,11 @@ export class SpreadyControlServer {
         return this.#controller.undo((params as WorkbookHistoryRequest | undefined) ?? {});
       case "listMethods":
         return [
+          "addRecentWorkbook",
           "applyTransaction",
           "checkoutUndoNode",
           "clearRange",
+          "clearRecentWorkbooks",
           "copyRange",
           "cutRange",
           "createChart",
@@ -401,6 +454,7 @@ export class SpreadyControlServer {
           "getAppStatus",
           "getConsoleOutput",
           "getControlInfo",
+          "getRecentWorkbooks",
           "getSheetCsv",
           "getSheetCharts",
           "getSheetChartPreviews",
@@ -418,6 +472,7 @@ export class SpreadyControlServer {
           "pasteRange",
           "ping",
           "redo",
+          "removeRecentWorkbook",
           "saveWorkbookFile",
           "showApp",
           "undo",

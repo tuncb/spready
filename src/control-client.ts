@@ -3,6 +3,7 @@ import net, { type Socket } from "node:net";
 
 import { readDiscoveredControlInfo } from "./control-discovery";
 import type {
+  AddRecentWorkbookRequest,
   ApplyTransactionRequest,
   ApplyTransactionResult,
   CellDataRequest,
@@ -26,6 +27,8 @@ import type {
   OpenWorkbookFileRequest,
   SaveWorkbookFileRequest,
   PasteRangeRequest,
+  RecentWorkbooksResult,
+  RemoveRecentWorkbookRequest,
   SheetDisplayRangeResult,
   SheetRangeRequest,
   SheetRangeResult,
@@ -207,6 +210,14 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<ApplyTransactionResult>("clearRange", request);
   }
 
+  async addRecentWorkbook(request: AddRecentWorkbookRequest) {
+    return this.call<RecentWorkbooksResult>("addRecentWorkbook", request);
+  }
+
+  async clearRecentWorkbooks() {
+    return this.call<RecentWorkbooksResult>("clearRecentWorkbooks");
+  }
+
   async getCellData(request: CellDataRequest) {
     return this.call<CellDataResult>("getCellData", request);
   }
@@ -267,6 +278,10 @@ export class SpreadyControlClient extends EventEmitter {
     return this.call<WorkbookConsoleOutputResult>("getConsoleOutput");
   }
 
+  async getRecentWorkbooks() {
+    return this.call<RecentWorkbooksResult>("getRecentWorkbooks");
+  }
+
   async getAppStatus() {
     return this.call<ControlAppStatus>("getAppStatus");
   }
@@ -285,6 +300,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async redo(request?: WorkbookRedoRequest) {
     return this.call<WorkbookHistoryResult>("redo", request);
+  }
+
+  async removeRecentWorkbook(request: RemoveRecentWorkbookRequest) {
+    return this.call<RecentWorkbooksResult>("removeRecentWorkbook", request);
   }
 
   async saveWorkbookFile(request: SaveWorkbookFileRequest) {

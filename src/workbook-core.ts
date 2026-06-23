@@ -22,6 +22,24 @@ export interface ControlAppStatus {
   windowCount: number;
 }
 
+export interface RecentWorkbookEntry {
+  filePath: string;
+  lastOpenedAt: string;
+}
+
+export interface RecentWorkbooksResult {
+  filePath: string;
+  workbooks: RecentWorkbookEntry[];
+}
+
+export interface AddRecentWorkbookRequest {
+  filePath: string;
+}
+
+export interface RemoveRecentWorkbookRequest {
+  filePath: string;
+}
+
 export interface InstallerOptions {
   startMenuShortcut: boolean;
 }

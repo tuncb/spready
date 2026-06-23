@@ -558,6 +558,16 @@ const workbookFileOperationResultSchema = z.object({
   version: z.int().min(0),
 });
 
+const recentWorkbooksResultSchema = z.object({
+  filePath: z.string(),
+  workbooks: z.array(
+    z.object({
+      filePath: z.string(),
+      lastOpenedAt: z.string(),
+    }),
+  ),
+});
+
 const workbookConsoleOutputResultSchema = z.object({
   text: z.string(),
 });
@@ -877,6 +887,30 @@ const guideResource = {
       readOnly: false,
     },
     {
+      defaultsToActiveSheet: false,
+      description: "List workbook files shown in Spready's Open Recent menu.",
+      name: "list_recent_workbooks",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description: "Add or promote a workbook path in Spready's Open Recent menu.",
+      name: "add_recent_workbook",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description: "Remove one workbook path from Spready's Open Recent menu.",
+      name: "remove_recent_workbook",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description: "Clear Spready's Open Recent menu.",
+      name: "clear_recent_workbooks",
+      readOnly: false,
+    },
+    {
       defaultsToActiveSheet: true,
       description: "Return the used range bounds for a sheet.",
       name: "get_used_range",
@@ -1018,6 +1052,7 @@ const guideResource = {
     "Use get_cell_data when you need one cell's raw formula text plus its evaluated display result.",
     "Many transaction operations also default to the active sheet when sheetId is omitted.",
     "Use import_csv_file and export_csv_file only for single-sheet CSV interchange.",
+    "Use list_recent_workbooks when you need the same file history shown in the desktop Open Recent menu.",
     "Use get_workbook_summary before large edits so you know which sheet ids and sizes exist.",
     "Use get_used_range or get_sheet_range instead of reading an entire large sheet.",
     "Use paste_range, cut_range, and clear_range for explicit clipboard-like range edits without relying on UI selection state.",
@@ -1066,6 +1101,10 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 - create_new_workbook: Create a new blank workbook and replace the in-app workbook state.
 - open_workbook_file: Open a native Spready workbook file and replace the in-app workbook state.
 - save_workbook_file: Save the current workbook as a native Spready workbook file.
+- list_recent_workbooks: List workbook files shown in Spready's Open Recent menu.
+- add_recent_workbook: Add or promote a workbook path in Spready's Open Recent menu.
+- remove_recent_workbook: Remove one workbook path from Spready's Open Recent menu.
+- clear_recent_workbooks: Clear Spready's Open Recent menu.
 - get_used_range: Return the used range bounds for a sheet. Omitting sheetId uses the active sheet.
 - get_cell_data: Return one cell's raw input plus its evaluated display value. Omitting sheetId uses the active sheet.
 - get_sheet_display_range: Read one rectangular range of evaluated display values. Prefer this for formula-aware grid views.
@@ -1207,7 +1246,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use get_workbook_console_output for a formula-aware human-readable dump, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, list_recent_workbooks for the desktop Open Recent list, inspect with get_workbook_summary before large edits, use get_workbook_console_output for a formula-aware human-readable dump, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1560,6 +1599,77 @@ async function main() {
   );
 
   server.registerTool(
+    "list_recent_workbooks",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description: "List workbook files shown in Spready's Open Recent menu.",
+      outputSchema: recentWorkbooksResultSchema,
+    },
+    async () =>
+      createTextResult(await controlConnection.requireConnectedClient().getRecentWorkbooks()),
+  );
+
+  server.registerTool(
+    "add_recent_workbook",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description: "Add or promote a workbook path in Spready's Open Recent menu.",
+      inputSchema: z.object({
+        filePath: z
+          .string()
+          .min(1)
+          .describe("Path to a .spready workbook file on the machine running Spready."),
+      }),
+      outputSchema: recentWorkbooksResultSchema,
+    },
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().addRecentWorkbook(args)),
+  );
+
+  server.registerTool(
+    "remove_recent_workbook",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description: "Remove one workbook path from Spready's Open Recent menu.",
+      inputSchema: z.object({
+        filePath: z.string().min(1).describe("Path to remove from Spready's recent workbook list."),
+      }),
+      outputSchema: recentWorkbooksResultSchema,
+    },
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().removeRecentWorkbook(args)),
+  );
+
+  server.registerTool(
+    "clear_recent_workbooks",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description: "Clear Spready's Open Recent menu.",
+      outputSchema: recentWorkbooksResultSchema,
+    },
+    async () =>
+      createTextResult(await controlConnection.requireConnectedClient().clearRecentWorkbooks()),
+  );
+
+  server.registerTool(
     "describe_capabilities",
     {
       annotations: {
@@ -1689,6 +1799,36 @@ async function main() {
             readOnly: false,
             useWhen:
               "Use this when the result should persist as a full multi-sheet workbook document.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description: "List workbook files shown in Spready's Open Recent menu.",
+            name: "list_recent_workbooks",
+            readOnly: true,
+            useWhen:
+              "Use this when you need to discover files recently opened or saved by Spready.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description: "Add or promote a workbook path in Spready's Open Recent menu.",
+            name: "add_recent_workbook",
+            readOnly: false,
+            useWhen:
+              "Use this to sync an externally chosen workbook path into the desktop recent files menu.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description: "Remove one workbook path from Spready's Open Recent menu.",
+            name: "remove_recent_workbook",
+            readOnly: false,
+            useWhen: "Use this to prune a stale or unwanted recent workbook path.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description: "Clear Spready's Open Recent menu.",
+            name: "clear_recent_workbooks",
+            readOnly: false,
+            useWhen: "Use this only when the user wants to clear the entire recent workbook list.",
           },
           {
             defaultsToActiveSheet: true,
@@ -2426,6 +2566,7 @@ async function main() {
                 "- Call open_spready_app first if get_spready_connection_status reports disconnected.\n" +
                 "- Use create_new_workbook when the task should start from a blank workbook.\n" +
                 "- Use open_workbook_file when the task starts from an existing .spready workbook.\n" +
+                "- Use list_recent_workbooks when the task should start from the desktop Open Recent list.\n" +
                 "- Start with get_workbook_summary.\n" +
                 "- If get_workbook_summary reports hasUnsavedChanges, save first or pass discardUnsavedChanges only if losing local changes is intended.\n" +
                 "- Use get_workbook_console_output when you need a compact whole-workbook text view.\n" +

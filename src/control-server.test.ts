@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { applyWorkbookTransaction, createWorkbookState } from "./workbook-core";
 import { SpreadyControlClient } from "./control-client";
 import { SpreadyControlServer } from "./control-server";
+import { RecentWorkbooksStore } from "./recent-workbooks";
 import { WorkbookController } from "./workbook-controller";
 import { serializeWorkbookDocument } from "./workbook-document";
 
@@ -18,6 +19,84 @@ test("SpreadyControlServer stop is idempotent after startup", async () => {
 
   await server.stop();
   await server.stop();
+});
+
+test("SpreadyControlServer exposes recent workbooks over TCP", async () => {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-tcp-recents-"));
+  const recentsStore = new RecentWorkbooksStore({
+    clock: () => new Date("2026-06-23T10:00:00.000Z"),
+    filePath: path.join(tempDirectory, "spready-recents.toml"),
+  });
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0, {
+    addRecentWorkbook: (request) => recentsStore.add(request.filePath),
+    clearRecentWorkbooks: () => recentsStore.clear(),
+    getRecentWorkbooks: () => recentsStore.getRecentWorkbooks(),
+    removeRecentWorkbook: (request) => recentsStore.remove(request.filePath),
+  });
+  const workbookPath = path.join(tempDirectory, "Opened.spready");
+  const savedWorkbookPath = path.join(tempDirectory, "Saved.spready");
+  const manualRecentPath = path.join(tempDirectory, "Manual.spready");
+
+  await fs.writeFile(workbookPath, serializeWorkbookDocument(createWorkbookState()), "utf8");
+  await recentsStore.load();
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    const methods = await client.call<string[]>("listMethods");
+
+    assert.ok(methods.includes("getRecentWorkbooks"));
+    assert.ok(methods.includes("addRecentWorkbook"));
+    assert.ok(methods.includes("removeRecentWorkbook"));
+    assert.ok(methods.includes("clearRecentWorkbooks"));
+
+    assert.deepEqual((await client.getRecentWorkbooks()).workbooks, []);
+
+    const addedResult = await client.addRecentWorkbook({ filePath: manualRecentPath });
+
+    assert.deepEqual(
+      addedResult.workbooks.map((entry) => entry.filePath),
+      [manualRecentPath],
+    );
+
+    await client.openWorkbookFile({
+      discardUnsavedChanges: true,
+      filePath: workbookPath,
+    });
+
+    assert.deepEqual(
+      (await client.getRecentWorkbooks()).workbooks.map((entry) => entry.filePath),
+      [workbookPath, manualRecentPath],
+    );
+
+    await client.saveWorkbookFile({ filePath: savedWorkbookPath });
+
+    assert.deepEqual(
+      (await client.getRecentWorkbooks()).workbooks.map((entry) => entry.filePath),
+      [savedWorkbookPath, workbookPath, manualRecentPath],
+    );
+
+    assert.deepEqual(
+      (await client.removeRecentWorkbook({ filePath: workbookPath })).workbooks.map(
+        (entry) => entry.filePath,
+      ),
+      [savedWorkbookPath, manualRecentPath],
+    );
+
+    assert.deepEqual((await client.clearRecentWorkbooks()).workbooks, []);
+  } finally {
+    await client.close();
+    await server.stop();
+  }
 });
 
 test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
