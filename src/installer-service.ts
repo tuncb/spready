@@ -870,23 +870,20 @@ async function runPowerShellScript(
   options: { logPath?: string } = {},
 ) {
   const logPath = options.logPath ?? createInstallerLogPath(operationName);
+  const scriptPath = createInstallerScriptPath(logPath);
   const wrappedScript = buildInstallerPowerShellScript(operationName, script, {
     exitOnCompletion: true,
     logPath,
   });
 
   try {
-    await runProcess("powershell.exe", [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-EncodedCommand",
-      encodePowerShellCommand(wrappedScript),
-    ]);
+    await writePowerShellScriptFile(scriptPath, wrappedScript);
+    await runProcess("powershell.exe", buildPowerShellFileArguments(scriptPath));
+    await fs.rm(scriptPath, { force: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "PowerShell script failed.";
 
-    throw new Error(`${message} Log file: ${logPath}`);
+    throw new Error(`${message} Log file: ${logPath} Script file: ${scriptPath}`);
   }
 }
 
@@ -896,32 +893,24 @@ async function spawnPowerShellScript(
   options: { logPath?: string } = {},
 ) {
   const logPath = options.logPath ?? createInstallerLogPath(operationName);
+  const scriptPath = createInstallerScriptPath(logPath);
   const wrappedScript = buildInstallerPowerShellScript(operationName, script, {
     exitOnCompletion: false,
     logPath,
   });
 
+  await writePowerShellScriptFile(scriptPath, wrappedScript);
   await appendInstallerLogLine(logPath, "INFO", `Launching detached PowerShell: ${operationName}`);
+  await appendInstallerLogLine(logPath, "INFO", `PowerShell script file: ${scriptPath}`);
 
   let child: ReturnType<typeof spawn>;
 
   try {
-    child = spawn(
-      "powershell.exe",
-      [
-        "-NoExit",
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-EncodedCommand",
-        encodePowerShellCommand(wrappedScript),
-      ],
-      {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-      },
-    );
+    child = spawn("powershell.exe", buildPowerShellFileArguments(scriptPath, { keepOpen: true }), {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: false,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown spawn error.";
 
@@ -984,6 +973,32 @@ function createInstallerLogPath(operationName: string) {
     os.tmpdir(),
     INSTALLER_LOG_DIRECTORY_NAME,
     `${timestamp}-${process.pid}-${safeOperationName || "operation"}.log`,
+  );
+}
+
+function createInstallerScriptPath(logPath: string) {
+  return logPath.toLowerCase().endsWith(".log") ? `${logPath.slice(0, -4)}.ps1` : `${logPath}.ps1`;
+}
+
+export function buildPowerShellFileArguments(
+  scriptPath: string,
+  options: { keepOpen?: boolean } = {},
+) {
+  return [
+    ...(options.keepOpen ? ["-NoExit"] : []),
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    scriptPath,
+  ];
+}
+
+async function writePowerShellScriptFile(scriptPath: string, script: string) {
+  await fs.mkdir(path.dirname(scriptPath), { recursive: true });
+  await fs.writeFile(
+    scriptPath,
+    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(script, "utf16le")]),
   );
 }
 
@@ -1053,10 +1068,6 @@ export function buildInstallerPowerShellScript(
       ? "exit $spreadyInstallerExitCode"
       : 'Write-SpreadyInstallerLog "PowerShell window left open for review. Close it when finished."',
   ].join("\n");
-}
-
-function encodePowerShellCommand(script: string) {
-  return Buffer.from(script, "utf16le").toString("base64");
 }
 
 function quotePowerShellString(value: string) {

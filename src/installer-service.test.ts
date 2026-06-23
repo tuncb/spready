@@ -9,6 +9,7 @@ import {
   buildFileOpenCommand,
   buildFinishUpdateScript,
   buildInstallerPowerShellScript,
+  buildPowerShellFileArguments,
   buildStartMenuShortcutDetails,
   buildUninstallScript,
   buildWaitForProcessExitScript,
@@ -515,6 +516,27 @@ test("installer PowerShell wrapper logs lifecycle details", () => {
   assert.match(script, /Starting: \$Name/u);
   assert.match(script, /Write-SpreadyInstallerError \$_/u);
   assert.match(script, /PowerShell window left open for review/u);
+});
+
+test("PowerShell file arguments keep installer scripts off the command line", () => {
+  const scriptPath = "C:\\Temp\\spready-installation-logs\\update.ps1";
+
+  assert.deepEqual(buildPowerShellFileArguments(scriptPath), [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    scriptPath,
+  ]);
+  assert.deepEqual(buildPowerShellFileArguments(scriptPath, { keepOpen: true }), [
+    "-NoExit",
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    scriptPath,
+  ]);
+  assert.equal(buildPowerShellFileArguments(scriptPath).includes("-EncodedCommand"), false);
 });
 
 test("uninstall script logs explicit steps and propagates failures", () => {
