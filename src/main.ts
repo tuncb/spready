@@ -19,6 +19,8 @@ import { getMainHelpText, parseMainStartupOptions } from "./app-startup";
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
 import {
   SPREADY_CLIPBOARD_FORMAT,
+  createSpreadyClipboardHtml,
+  parseSpreadyClipboardHtmlPayload,
   type ClipboardReadResult,
   type ClipboardWriteRequest,
   type SpreadyClipboardPayload,
@@ -157,15 +159,15 @@ function getStartupTimingMessageDetail(message: StartupTimingMessage): string | 
 function readSpreadyClipboardPayload(): SpreadyClipboardPayload | undefined {
   const buffer = clipboard.readBuffer(SPREADY_CLIPBOARD_FORMAT);
 
-  if (buffer.length === 0) {
-    return undefined;
+  if (buffer.length > 0) {
+    try {
+      return JSON.parse(buffer.toString("utf8")) as SpreadyClipboardPayload;
+    } catch {
+      return undefined;
+    }
   }
 
-  try {
-    return JSON.parse(buffer.toString("utf8")) as SpreadyClipboardPayload;
-  } catch {
-    return undefined;
-  }
+  return parseSpreadyClipboardHtmlPayload(clipboard.readHTML());
 }
 
 function getTargetWindow(browserWindow?: BrowserWindow | null): BrowserWindow | null {
@@ -1202,16 +1204,16 @@ ipcMain.handle("clipboard:read", () => {
 
 ipcMain.handle("clipboard:write", (_event, request: ClipboardWriteRequest) => {
   clipboard.clear();
-  clipboard.writeText(request.text);
 
   if (!request.payload) {
+    clipboard.writeText(request.text);
     return;
   }
 
-  clipboard.writeBuffer(
-    SPREADY_CLIPBOARD_FORMAT,
-    Buffer.from(JSON.stringify(request.payload), "utf8"),
-  );
+  clipboard.write({
+    html: createSpreadyClipboardHtml(request.text, request.payload),
+    text: request.text,
+  });
 });
 
 ipcMain.handle("menu:show-cell-context-menu", async (event, args: ShowCellContextMenuArgs) => {
