@@ -75,6 +75,7 @@ test("evaluateSheet records lightweight evaluation metrics", () => {
   assert.deepEqual(metrics, {
     cellsEvaluated: 12,
     dependencyKeysRecorded: 6,
+    functionCalls: {},
     formulasParsed: 2,
     rangeCellsMaterialized: 0,
   });

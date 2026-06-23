@@ -37,6 +37,9 @@ Options:
                         default: ${DEFAULT_VISIBLE_ROW_COUNT}
   --order MODE          selected-first or range-first
                         default: selected-first
+  --function-metrics    collect per-formula-function call counts and timings
+  --top-functions N     number of functions to show in the human report
+                        default: 20
   --json                print only machine-readable JSON
   --help                show this help
 `);
@@ -55,10 +58,12 @@ function parseIntegerOption(name, value, minimum = 0) {
 function parseArgs(argv) {
   const options = {
     editColumnName: DEFAULT_EDIT_COLUMN,
+    functionMetrics: false,
     iterations: DEFAULT_ITERATIONS,
     json: false,
     order: "selected-first",
     sheetName: DEFAULT_SHEET_NAME,
+    topFunctions: 20,
     viewHeight: DEFAULT_VISIBLE_ROW_COUNT,
     viewWidth: DEFAULT_VISIBLE_COLUMN_COUNT,
     viewX: 0,
@@ -103,6 +108,12 @@ function parseArgs(argv) {
         if (!["selected-first", "range-first"].includes(options.order)) {
           throw new Error('--order must be "selected-first" or "range-first".');
         }
+        break;
+      case "--function-metrics":
+        options.functionMetrics = true;
+        break;
+      case "--top-functions":
+        options.topFunctions = parseIntegerOption("--top-functions", argv[++index], 1);
         break;
       case "--json":
         options.json = true;
@@ -185,6 +196,33 @@ function parseTraceLog(message) {
   }
 
   return fields;
+}
+
+function serializeEvaluationMetricsEvent(event) {
+  const functionCalls = Object.fromEntries(
+    Object.entries(event.metrics.functionCalls).map(([name, stats]) => [
+      name,
+      {
+        calls: stats.calls,
+        durationMs: Number(stats.durationMs.toFixed(3)),
+        selfDurationMs: Number(stats.selfDurationMs.toFixed(3)),
+      },
+    ]),
+  );
+
+  return {
+    cellsEvaluated: event.metrics.cellsEvaluated,
+    dependencyKeysRecorded: event.metrics.dependencyKeysRecorded,
+    durationMs: Number(event.durationMs.toFixed(3)),
+    formulasParsed: event.metrics.formulasParsed,
+    functionCalls,
+    rangeCellsMaterialized: event.metrics.rangeCellsMaterialized,
+    reason: event.reason,
+    requestedSheetId: event.requestedSheetId,
+    snapshots: event.snapshotCount,
+    version: event.workbookVersion,
+    volatileSnapshots: event.volatileSnapshotCount,
+  };
 }
 
 function getQuantile(sortedValues, quantile) {
@@ -289,6 +327,57 @@ function aggregateEvaluationStats(iterations) {
           ? 0
           : Number((totals.durationMs / totals.coldEvaluations).toFixed(3)),
       durationMs: Number(totals.durationMs.toFixed(3)),
+    },
+  };
+}
+
+function aggregateFunctionStats(iterations, topCount) {
+  const byName = {};
+
+  for (const iteration of iterations) {
+    for (const evaluation of iteration.evaluations) {
+      for (const [name, stats] of Object.entries(evaluation.functionCalls ?? {})) {
+        const entry = (byName[name] ??= {
+          calls: 0,
+          durationMs: 0,
+          selfDurationMs: 0,
+        });
+
+        entry.calls += Number(stats.calls ?? 0);
+        entry.durationMs += Number(stats.durationMs ?? 0);
+        entry.selfDurationMs += Number(stats.selfDurationMs ?? 0);
+      }
+    }
+  }
+
+  const all = Object.entries(byName)
+    .map(([name, stats]) => ({
+      avgCallMs: stats.calls === 0 ? 0 : stats.durationMs / stats.calls,
+      avgSelfCallMs: stats.calls === 0 ? 0 : stats.selfDurationMs / stats.calls,
+      calls: stats.calls,
+      durationMs: stats.durationMs,
+      functionName: name,
+      selfDurationMs: stats.selfDurationMs,
+    }))
+    .sort((left, right) => right.selfDurationMs - left.selfDurationMs)
+    .map((entry) => ({
+      ...entry,
+      avgCallMs: Number(entry.avgCallMs.toFixed(4)),
+      avgSelfCallMs: Number(entry.avgSelfCallMs.toFixed(4)),
+      durationMs: Number(entry.durationMs.toFixed(3)),
+      selfDurationMs: Number(entry.selfDurationMs.toFixed(3)),
+    }));
+
+  return {
+    all,
+    top: all.slice(0, topCount),
+    totals: {
+      calls: all.reduce((total, entry) => total + entry.calls, 0),
+      durationMs: Number(all.reduce((total, entry) => total + entry.durationMs, 0).toFixed(3)),
+      functions: all.length,
+      selfDurationMs: Number(
+        all.reduce((total, entry) => total + entry.selfDurationMs, 0).toFixed(3),
+      ),
     },
   };
 }
@@ -416,6 +505,11 @@ function printHumanReport(report) {
   console.log("Evaluation totals");
   console.table(report.evaluationStats.byReason);
   console.log(report.evaluationStats.totals);
+  if (report.functionStats) {
+    console.log("Formula function hot spots");
+    console.table(report.functionStats.top);
+    console.log(report.functionStats.totals);
+  }
 }
 
 async function main() {
@@ -429,7 +523,11 @@ async function main() {
   const workbookControllerModule = await import("../src/workbook-controller.ts");
   const { WorkbookController } = workbookControllerModule.default ?? workbookControllerModule;
   const traceLogs = [];
+  const metricsEvents = [];
   const controller = new WorkbookController({
+    evaluationMetricsSink: options.functionMetrics
+      ? (event) => metricsEvents.push(serializeEvaluationMetricsEvent(event))
+      : undefined,
     evaluationTraceSink: (message) => traceLogs.push(parseTraceLog(message)),
     performanceClock: () => performance.now(),
   });
@@ -464,6 +562,7 @@ async function main() {
     sheetId: sheet.id,
   });
   traceLogs.length = 0;
+  metricsEvents.length = 0;
 
   const totalIterations = options.warmupIterations + options.iterations;
   const measuredIterations = [];
@@ -484,8 +583,11 @@ async function main() {
       value: createNextCellValue(currentValue, iterationIndex),
     };
     const traceStartIndex = traceLogs.length;
+    const metricsStartIndex = metricsEvents.length;
     const timings = runUiEditCycle(controller, sheet, visibleRequest, edit, options);
-    const evaluations = traceLogs.slice(traceStartIndex);
+    const evaluations = options.functionMetrics
+      ? metricsEvents.slice(metricsStartIndex)
+      : traceLogs.slice(traceStartIndex);
 
     if (iterationIndex >= options.warmupIterations) {
       measuredIterations.push({
@@ -503,6 +605,9 @@ async function main() {
     editColumnName: options.editColumnName,
     editRowsSample: editRows.slice(0, Math.min(10, editRows.length)),
     evaluationStats: aggregateEvaluationStats(measuredIterations),
+    functionStats: options.functionMetrics
+      ? aggregateFunctionStats(measuredIterations, options.topFunctions)
+      : undefined,
     iterations: measuredIterations,
     openWorkbookMs: Number(openTiming.durationMs.toFixed(3)),
     order: options.order,

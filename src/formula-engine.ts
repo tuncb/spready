@@ -90,6 +90,7 @@ export interface SheetEvaluationSnapshot {
 }
 
 export interface FormulaEvaluationOptions {
+  functionClock?: () => number;
   metrics?: FormulaEvaluationMetrics;
   now?: Date;
   parseCache?: FormulaParseCache;
@@ -99,11 +100,18 @@ export interface FormulaEvaluationOptions {
 export interface FormulaEvaluationMetrics {
   cellsEvaluated: number;
   dependencyKeysRecorded: number;
+  functionCalls: Record<string, FormulaFunctionEvaluationMetrics>;
   formulasParsed: number;
   rangeCellsMaterialized: number;
 }
 
 export type FormulaParseCache = Map<string, FormulaAst | "PARSE_ERROR">;
+
+export interface FormulaFunctionEvaluationMetrics {
+  calls: number;
+  durationMs: number;
+  selfDurationMs: number;
+}
 
 type FormulaToken =
   | { type: "comma" }
@@ -186,6 +194,7 @@ export function createFormulaEvaluationMetrics(): FormulaEvaluationMetrics {
   return {
     cellsEvaluated: 0,
     dependencyKeysRecorded: 0,
+    functionCalls: {},
     formulasParsed: 0,
     rangeCellsMaterialized: 0,
   };
@@ -979,6 +988,7 @@ export function evaluateWorkbook(
   const evaluationNow = options.now ? new Date(options.now.getTime()) : new Date();
   const formulaCellStack: CellAddress[] = [];
   const formulaDependencyReuseStack: boolean[] = [];
+  const functionTimingStack: Array<{ childDurationMs: number }> = [];
   const reusedDependencyCellKeys = new Set<CellKey>();
   let hasVolatileFunctions = false;
 
@@ -2194,13 +2204,44 @@ export function evaluateWorkbook(
     args: FormulaAst[],
     dependencies: Set<CellKey>,
   ): FormulaValue {
-    const handler = functionRegistry.get(name.toUpperCase());
+    const normalizedName = name.toUpperCase();
+    const handler = functionRegistry.get(normalizedName);
 
     if (!handler) {
       return createErrorValue("NAME");
     }
 
-    return handler(args, dependencies);
+    if (!metrics || !options.functionClock) {
+      return handler(args, dependencies);
+    }
+
+    const startedMs = options.functionClock();
+    const timingFrame = { childDurationMs: 0 };
+
+    functionTimingStack.push(timingFrame);
+
+    try {
+      return handler(args, dependencies);
+    } finally {
+      functionTimingStack.pop();
+      const durationMs = options.functionClock() - startedMs;
+      const selfDurationMs = durationMs - timingFrame.childDurationMs;
+      const parentTimingFrame = functionTimingStack[functionTimingStack.length - 1];
+
+      if (parentTimingFrame) {
+        parentTimingFrame.childDurationMs += durationMs;
+      }
+
+      const entry = (metrics.functionCalls[normalizedName] ??= {
+        calls: 0,
+        durationMs: 0,
+        selfDurationMs: 0,
+      });
+
+      entry.calls += 1;
+      entry.durationMs += durationMs;
+      entry.selfDurationMs += selfDurationMs;
+    }
   }
 
   function evaluateSum(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {

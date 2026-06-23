@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { applyWorkbookTransaction, createWorkbookState } from "./workbook-core";
-import { WorkbookController } from "./workbook-controller";
+import { WorkbookController, type WorkbookEvaluationMetricsEvent } from "./workbook-controller";
 import { serializeWorkbookDocument } from "./workbook-document";
 
 test("WorkbookController exposes raw range reads separately from display-range and cell-data reads", () => {
@@ -120,6 +120,50 @@ test("WorkbookController emits opt-in evaluation trace logs for cold snapshots",
       "volatileSnapshots=0",
     ].join(" "),
   ]);
+});
+
+test("WorkbookController emits structured formula function metrics", () => {
+  const metricsEvents: WorkbookEvaluationMetricsEvent[] = [];
+  const performanceTimes = [0, 5, 8, 10];
+  const controller = new WorkbookController({
+    evaluationMetricsSink: (event) => metricsEvents.push(event),
+    performanceClock: () => performanceTimes.shift() ?? 10,
+  });
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["1", "2", "=SUM(A1:B1)"]],
+      },
+    ],
+  });
+  controller.getCellData({
+    columnIndex: 2,
+    rowIndex: 0,
+  });
+
+  assert.equal(metricsEvents.length, 1);
+  assert.deepEqual(
+    {
+      durationMs: metricsEvents[0].durationMs,
+      functionCalls: metricsEvents[0].metrics.functionCalls,
+      reason: metricsEvents[0].reason,
+    },
+    {
+      durationMs: 10,
+      functionCalls: {
+        SUM: {
+          calls: 1,
+          durationMs: 3,
+          selfDurationMs: 3,
+        },
+      },
+      reason: "getCellData",
+    },
+  );
 });
 
 test("WorkbookController reuses evaluation snapshots for non-formula input edits", () => {

@@ -100,11 +100,24 @@ interface WorkbookHistoryNode {
 
 type EvaluationTraceSink = (message: string) => void;
 
+export interface WorkbookEvaluationMetricsEvent {
+  durationMs: number;
+  metrics: FormulaEvaluationMetrics;
+  reason: string;
+  requestedSheetId: string;
+  snapshotCount: number;
+  volatileSnapshotCount: number;
+  workbookVersion: number;
+}
+
+type EvaluationMetricsSink = (event: WorkbookEvaluationMetricsEvent) => void;
+
 export class WorkbookController extends EventEmitter {
   #state: WorkbookState = createWorkbookState();
   #sheetEvaluationSnapshots = new Map<string, SheetEvaluationSnapshot>();
   #formulaParseCache: FormulaParseCache = new Map();
   #evaluationClock: () => Date;
+  #evaluationMetricsSink?: EvaluationMetricsSink;
   #evaluationTraceSink?: EvaluationTraceSink;
   #performanceClock: () => number;
   #historyNodes = new Map<string, WorkbookHistoryNode>();
@@ -116,12 +129,14 @@ export class WorkbookController extends EventEmitter {
   constructor(
     options: {
       evaluationClock?: () => Date;
+      evaluationMetricsSink?: EvaluationMetricsSink;
       evaluationTraceSink?: EvaluationTraceSink;
       performanceClock?: () => number;
     } = {},
   ) {
     super();
     this.#evaluationClock = options.evaluationClock ?? (() => new Date());
+    this.#evaluationMetricsSink = options.evaluationMetricsSink;
     this.#evaluationTraceSink =
       options.evaluationTraceSink ?? createEnvironmentEvaluationTraceSink();
     this.#performanceClock = options.performanceClock ?? Date.now;
@@ -645,9 +660,13 @@ export class WorkbookController extends EventEmitter {
       return cachedSnapshot;
     }
 
-    const metrics = this.#evaluationTraceSink ? createFormulaEvaluationMetrics() : undefined;
+    const metrics =
+      this.#evaluationTraceSink || this.#evaluationMetricsSink
+        ? createFormulaEvaluationMetrics()
+        : undefined;
     const startedMs = this.#performanceClock();
     const nextSnapshots = evaluateWorkbook(this.#state, this.#state.version, {
+      functionClock: metrics ? this.#performanceClock : undefined,
       metrics,
       now: this.#evaluationClock(),
       parseCache: this.#formulaParseCache,
@@ -660,6 +679,7 @@ export class WorkbookController extends EventEmitter {
     this.#sheetEvaluationSnapshots = nextSnapshots;
     if (metrics) {
       this.#traceEvaluation(reason, sheet.id, metrics, durationMs);
+      this.#emitEvaluationMetrics(reason, sheet.id, metrics, durationMs);
     }
     const nextSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);
 
@@ -691,6 +711,32 @@ export class WorkbookController extends EventEmitter {
         volatileSnapshotCount,
       }),
     );
+  }
+
+  #emitEvaluationMetrics(
+    reason: string,
+    requestedSheetId: string,
+    metrics: FormulaEvaluationMetrics,
+    durationMs: number,
+  ) {
+    if (!this.#evaluationMetricsSink) {
+      return;
+    }
+
+    const snapshotCount = this.#sheetEvaluationSnapshots.size;
+    const volatileSnapshotCount = [...this.#sheetEvaluationSnapshots.values()].filter(
+      (snapshot) => snapshot.hasVolatileFunctions,
+    ).length;
+
+    this.#evaluationMetricsSink({
+      durationMs,
+      metrics,
+      reason,
+      requestedSheetId,
+      snapshotCount,
+      volatileSnapshotCount,
+      workbookVersion: this.#state.version,
+    });
   }
 
   #canSeedEvaluationSnapshots() {
