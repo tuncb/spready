@@ -17,6 +17,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint --ext .ts,.tsx .",
     "typecheck": "tsc --noEmit",
+    "perf:cell-editing": "node --import tsx scripts/bench-cell-editing.mjs",
     "mcp:stdio": "tsx src/mcp-stdio.ts"
   },
   "keywords": [],

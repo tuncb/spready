@@ -72,9 +72,11 @@ import {
 import { formatWorkbookConsoleOutput } from "./workbook-console-output";
 import {
   compareCellEvaluationSortValues,
+  createFormulaEvaluationMetrics,
   evaluateWorkbook,
   getCellEvaluation,
   type CellEvaluation,
+  type FormulaEvaluationMetrics,
   type SheetEvaluationSnapshot,
 } from "./formula-engine";
 import { buildWorkbookChartPreview } from "./workbook-charting";
@@ -91,19 +93,32 @@ interface WorkbookHistoryNode {
   state: WorkbookState;
 }
 
+type EvaluationTraceSink = (message: string) => void;
+
 export class WorkbookController extends EventEmitter {
   #state: WorkbookState = createWorkbookState();
   #sheetEvaluationSnapshots = new Map<string, SheetEvaluationSnapshot>();
   #evaluationClock: () => Date;
+  #evaluationTraceSink?: EvaluationTraceSink;
+  #performanceClock: () => number;
   #historyNodes = new Map<string, WorkbookHistoryNode>();
   #currentHistoryNodeId = "";
   #rootHistoryNodeId = "";
   #savedHistoryNodeId: string | undefined;
   #nextHistoryNodeNumber = 1;
 
-  constructor(options: { evaluationClock?: () => Date } = {}) {
+  constructor(
+    options: {
+      evaluationClock?: () => Date;
+      evaluationTraceSink?: EvaluationTraceSink;
+      performanceClock?: () => number;
+    } = {},
+  ) {
     super();
     this.#evaluationClock = options.evaluationClock ?? (() => new Date());
+    this.#evaluationTraceSink =
+      options.evaluationTraceSink ?? createEnvironmentEvaluationTraceSink();
+    this.#performanceClock = options.performanceClock ?? Date.now;
     this.#resetHistory(this.#state, true);
   }
 
@@ -170,7 +185,9 @@ export class WorkbookController extends EventEmitter {
         return buildWorkbookChartPreview(
           chart,
           sourceSheet,
-          sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id) : undefined,
+          sourceSheet
+            ? this.#getEvaluationSnapshot(sourceSheet.id, "getSheetChartPreviews")
+            : undefined,
           this.#getChartSheetReferences(),
         );
       }),
@@ -198,7 +215,7 @@ export class WorkbookController extends EventEmitter {
     return buildWorkbookChartPreview(
       cloneWorkbookChart(chart),
       sourceSheet,
-      sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id) : undefined,
+      sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id, "getChartPreview") : undefined,
       this.#getChartSheetReferences(),
     );
   }
@@ -225,7 +242,7 @@ export class WorkbookController extends EventEmitter {
 
   getSheetDisplayRange(request: SheetRangeRequest): SheetDisplayRangeResult {
     const rawRange = getSheetRange(this.#state, request);
-    const snapshot = this.#getEvaluationSnapshot(rawRange.sheetId);
+    const snapshot = this.#getEvaluationSnapshot(rawRange.sheetId, "getSheetDisplayRange");
 
     return {
       ...rawRange,
@@ -248,7 +265,7 @@ export class WorkbookController extends EventEmitter {
     assertCellIndex(request.columnIndex, getSheetColumnCount(sheet), "Column");
 
     const evaluation = getCellEvaluation(
-      this.#getEvaluationSnapshot(sheet.id),
+      this.#getEvaluationSnapshot(sheet.id, "getCellData"),
       request.rowIndex,
       request.columnIndex,
     );
@@ -577,7 +594,7 @@ export class WorkbookController extends EventEmitter {
       );
     }
 
-    const snapshot = this.#getEvaluationSnapshot(table.range.sheetId);
+    const snapshot = this.#getEvaluationSnapshot(table.range.sheetId, "sortTable");
     const rows = Array.from({ length: bodyRowCount }, (_value, index) => ({
       originalIndex: index,
       rowIndex: bodyStartRow + index,
@@ -602,7 +619,10 @@ export class WorkbookController extends EventEmitter {
       .map((entry) => entry.rowIndex);
   }
 
-  #getEvaluationSnapshot(sheetId?: string): SheetEvaluationSnapshot {
+  #getEvaluationSnapshot(
+    sheetId?: string,
+    reason = "getEvaluationSnapshot",
+  ): SheetEvaluationSnapshot {
     const sheet = getWorkbookSheet(this.#state, sheetId);
     const cachedSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);
 
@@ -614,11 +634,18 @@ export class WorkbookController extends EventEmitter {
       return cachedSnapshot;
     }
 
+    const metrics = this.#evaluationTraceSink ? createFormulaEvaluationMetrics() : undefined;
+    const startedMs = this.#performanceClock();
     const nextSnapshots = evaluateWorkbook(this.#state, this.#state.version, {
+      metrics,
       now: this.#evaluationClock(),
     });
+    const durationMs = this.#performanceClock() - startedMs;
 
     this.#sheetEvaluationSnapshots = nextSnapshots;
+    if (metrics) {
+      this.#traceEvaluation(reason, sheet.id, metrics, durationMs);
+    }
     const nextSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);
 
     if (!nextSnapshot) {
@@ -626,6 +653,29 @@ export class WorkbookController extends EventEmitter {
     }
 
     return nextSnapshot;
+  }
+
+  #traceEvaluation(
+    reason: string,
+    requestedSheetId: string,
+    metrics: FormulaEvaluationMetrics,
+    durationMs: number,
+  ) {
+    if (!this.#evaluationTraceSink) {
+      return;
+    }
+
+    const snapshotCount = this.#sheetEvaluationSnapshots.size;
+    const volatileSnapshotCount = [...this.#sheetEvaluationSnapshots.values()].filter(
+      (snapshot) => snapshot.hasVolatileFunctions,
+    ).length;
+
+    this.#evaluationTraceSink(
+      formatEvaluationTraceLog(reason, requestedSheetId, this.#state.version, durationMs, metrics, {
+        snapshotCount,
+        volatileSnapshotCount,
+      }),
+    );
   }
 
   #getChartSheetReferences(): WorkbookChartSheetReference[] {
@@ -817,6 +867,35 @@ function shouldPreserveEvaluationSnapshots(operations: readonly WorkbookTransact
   return (
     operations.length > 0 && operations.every((operation) => operation.type === "setActiveSheet")
   );
+}
+
+function createEnvironmentEvaluationTraceSink(): EvaluationTraceSink | undefined {
+  return process.env.SPREADY_EVALUATION_TRACE === "1"
+    ? (message) => console.error(message)
+    : undefined;
+}
+
+function formatEvaluationTraceLog(
+  reason: string,
+  requestedSheetId: string,
+  workbookVersion: number,
+  durationMs: number,
+  metrics: FormulaEvaluationMetrics,
+  snapshotSummary: { snapshotCount: number; volatileSnapshotCount: number },
+) {
+  return [
+    "[spready-evaluation]",
+    `reason=${reason}`,
+    `version=${workbookVersion}`,
+    `requestedSheetId=${requestedSheetId}`,
+    `durationMs=${Math.round(durationMs)}`,
+    `cellsEvaluated=${metrics.cellsEvaluated}`,
+    `formulasParsed=${metrics.formulasParsed}`,
+    `rangeCellsMaterialized=${metrics.rangeCellsMaterialized}`,
+    `dependencyKeysRecorded=${metrics.dependencyKeysRecorded}`,
+    `snapshots=${snapshotSummary.snapshotCount}`,
+    `volatileSnapshots=${snapshotSummary.volatileSnapshotCount}`,
+  ].join(" ");
 }
 
 function retagEvaluationSnapshots(

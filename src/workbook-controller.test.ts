@@ -76,6 +76,52 @@ test("WorkbookController exposes raw range reads separately from display-range a
   assert.equal(controller.getSummary().hasUnsavedChanges, true);
 });
 
+test("WorkbookController emits opt-in evaluation trace logs for cold snapshots", () => {
+  const traceLogs: string[] = [];
+  const performanceTimes = [10, 17];
+  const controller = new WorkbookController({
+    evaluationTraceSink: (message) => traceLogs.push(message),
+    performanceClock: () => performanceTimes.shift() ?? 17,
+  });
+  const sheetId = controller.getSummary().activeSheetId;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["1", "2", "=A1+B1"]],
+      },
+    ],
+  });
+
+  controller.getCellData({
+    columnIndex: 2,
+    rowIndex: 0,
+  });
+  controller.getCellData({
+    columnIndex: 2,
+    rowIndex: 0,
+  });
+
+  assert.deepEqual(traceLogs, [
+    [
+      "[spready-evaluation]",
+      "reason=getCellData",
+      "version=1",
+      `requestedSheetId=${sheetId}`,
+      "durationMs=7",
+      "cellsEvaluated=10000",
+      "formulasParsed=1",
+      "rangeCellsMaterialized=2",
+      "dependencyKeysRecorded=2",
+      "snapshots=1",
+      "volatileSnapshots=0",
+    ].join(" "),
+  ]);
+});
+
 test("WorkbookController formats a formula-aware whole-workbook console output", () => {
   const controller = new WorkbookController();
 

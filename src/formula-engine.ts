@@ -79,7 +79,15 @@ export interface SheetEvaluationSnapshot {
 }
 
 export interface FormulaEvaluationOptions {
+  metrics?: FormulaEvaluationMetrics;
   now?: Date;
+}
+
+export interface FormulaEvaluationMetrics {
+  cellsEvaluated: number;
+  dependencyKeysRecorded: number;
+  formulasParsed: number;
+  rangeCellsMaterialized: number;
 }
 
 type FormulaToken =
@@ -157,6 +165,15 @@ const ERROR_LITERALS: ReadonlyArray<[string, FormulaErrorCode]> = [
 
 export function createCellKey(sheetId: string, rowIndex: number, columnIndex: number): CellKey {
   return `${sheetId}:${rowIndex}:${columnIndex}`;
+}
+
+export function createFormulaEvaluationMetrics(): FormulaEvaluationMetrics {
+  return {
+    cellsEvaluated: 0,
+    dependencyKeysRecorded: 0,
+    formulasParsed: 0,
+    rangeCellsMaterialized: 0,
+  };
 }
 
 export function getCellEvaluation(
@@ -895,6 +912,7 @@ export function evaluateWorkbook(
   workbookVersion: number,
   options: FormulaEvaluationOptions = {},
 ): Map<string, SheetEvaluationSnapshot> {
+  const metrics = options.metrics;
   const sheetById = new Map(workbook.sheets.map((sheet) => [sheet.id, sheet]));
   const sheetIdByName = new Map(
     workbook.sheets.map((sheet) => [getSheetNameKey(sheet.name), sheet.id]),
@@ -946,6 +964,9 @@ export function evaluateWorkbook(
     const precedentSet = new Set(dependencies);
 
     snapshot.precedents.set(cellKey, precedentSet);
+    if (metrics) {
+      metrics.dependencyKeysRecorded += precedentSet.size;
+    }
 
     for (const dependencyKey of precedentSet) {
       const dependencySnapshot = snapshots.get(getCellKeySheetId(dependencyKey));
@@ -985,6 +1006,9 @@ export function evaluateWorkbook(
     }
 
     evaluationStack.push(cellKey);
+    if (metrics) {
+      metrics.cellsEvaluated += 1;
+    }
 
     try {
       const input = getInput(address.sheetId, address.rowIndex, address.columnIndex);
@@ -1020,6 +1044,9 @@ export function evaluateWorkbook(
     let ast: FormulaAst;
 
     try {
+      if (metrics) {
+        metrics.formulasParsed += 1;
+      }
       ast = parseFormula(input);
     } catch {
       return createErrorEvaluation(input, "PARSE", EMPTY_DEPENDENCIES);
@@ -1290,6 +1317,9 @@ export function evaluateWorkbook(
     const endRow = Math.max(start.rowIndex, end.rowIndex);
     const startColumn = Math.min(start.columnIndex, end.columnIndex);
     const endColumn = Math.max(start.columnIndex, end.columnIndex);
+    if (metrics) {
+      metrics.rangeCellsMaterialized += (endRow - startRow + 1) * (endColumn - startColumn + 1);
+    }
     const cellsInRange = Array.from({ length: endRow - startRow + 1 }, (_, rowOffset) =>
       Array.from({ length: endColumn - startColumn + 1 }, (_, columnOffset) => {
         const cellAddress = {

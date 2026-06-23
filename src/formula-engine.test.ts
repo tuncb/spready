@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { evaluateSheet, evaluateWorkbook, getCellEvaluation, type CellKey } from "./formula-engine";
+import {
+  createFormulaEvaluationMetrics,
+  evaluateSheet,
+  evaluateWorkbook,
+  getCellEvaluation,
+  type CellKey,
+} from "./formula-engine";
 import { normalizeSheet, type WorkbookSheet, type WorkbookState } from "./workbook-core";
 
 function createSheet(rows: string[][]): WorkbookSheet {
@@ -53,6 +59,25 @@ test("evaluateSheet returns formula error markers for parse, name, reference, di
   assert.equal(getDisplay(sheet, 0, 5), "#VALUE!");
   assert.equal(getDisplay(sheet, 0, 6), "#CYCLE!");
   assert.equal(getDisplay(sheet, 0, 7), "#CYCLE!");
+});
+
+test("evaluateSheet records lightweight evaluation metrics", () => {
+  const sheet = createSheet([
+    ["1", "2", "=SUM(A1:B1)", '=XLOOKUP("b",A2:A3,B2:B3)'],
+    ["a", "10", "", ""],
+    ["b", "20", "", ""],
+  ]);
+  const metrics = createFormulaEvaluationMetrics();
+  const snapshot = evaluateSheet(sheet, 31, { metrics });
+
+  assert.equal(getCellEvaluation(snapshot, 0, 2).display, "3");
+  assert.equal(getCellEvaluation(snapshot, 0, 3).display, "20");
+  assert.deepEqual(metrics, {
+    cellsEvaluated: 12,
+    dependencyKeysRecorded: 6,
+    formulasParsed: 2,
+    rangeCellsMaterialized: 6,
+  });
 });
 
 test("evaluateSheet records direct precedents and dependents for formula cells", () => {
