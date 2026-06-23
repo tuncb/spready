@@ -71,6 +71,11 @@ type RangeValue = {
 
 type FormulaValue = RangeValue | ScalarFormulaValue;
 
+type RangeVector = {
+  getCell: (index: number) => CellAddress | undefined;
+  length: number;
+};
+
 export interface CellEvaluation {
   input: string;
   display: string;
@@ -2085,7 +2090,7 @@ export function evaluateWorkbook(
     return firstCell;
   }
 
-  function getVectorAddresses(rangeValue: RangeValue): CellAddress[] | ErrorValue {
+  function getRangeVector(rangeValue: RangeValue): RangeVector | ErrorValue {
     const height = getRangeAreaHeight(rangeValue.cells);
     const width = getRangeAreaWidth(rangeValue.cells);
 
@@ -2094,27 +2099,17 @@ export function evaluateWorkbook(
     }
 
     if (height === 1) {
-      return Array.from({ length: width }, (_value, columnOffset) => {
-        const cell = getRangeAreaCell(rangeValue.cells, 0, columnOffset);
-
-        if (!cell) {
-          throw new Error("Range vector cell was unexpectedly missing.");
-        }
-
-        return cell;
-      });
+      return {
+        getCell: (index) => getRangeAreaCell(rangeValue.cells, 0, index),
+        length: width,
+      };
     }
 
     if (width === 1) {
-      return Array.from({ length: height }, (_value, rowOffset) => {
-        const cell = getRangeAreaCell(rangeValue.cells, rowOffset, 0);
-
-        if (!cell) {
-          throw new Error("Range vector cell was unexpectedly missing.");
-        }
-
-        return cell;
-      });
+      return {
+        getCell: (index) => getRangeAreaCell(rangeValue.cells, index, 0),
+        length: height,
+      };
     }
 
     return createErrorValue("VALUE");
@@ -3313,7 +3308,7 @@ export function evaluateWorkbook(
       return lookupRange;
     }
 
-    const lookupVector = getVectorAddresses(lookupRange);
+    const lookupVector = getRangeVector(lookupRange);
 
     if (isErrorValue(lookupVector)) {
       return lookupVector;
@@ -3337,7 +3332,13 @@ export function evaluateWorkbook(
     let bestValue: ScalarFormulaValue | undefined;
 
     for (let index = 0; index < lookupVector.length; index += 1) {
-      const cellValue = evaluateCell(lookupVector[index]).value;
+      const lookupCell = lookupVector.getCell(index);
+
+      if (!lookupCell) {
+        return createErrorValue("REF");
+      }
+
+      const cellValue = evaluateCell(lookupCell).value;
 
       if (cellValue.type === "error") {
         return cellValue;
@@ -3414,8 +3415,8 @@ export function evaluateWorkbook(
       return returnRange;
     }
 
-    const lookupVector = getVectorAddresses(lookupRange);
-    const returnVector = getVectorAddresses(returnRange);
+    const lookupVector = getRangeVector(lookupRange);
+    const returnVector = getRangeVector(returnRange);
 
     if (isErrorValue(lookupVector)) {
       return lookupVector;
@@ -3430,14 +3431,22 @@ export function evaluateWorkbook(
     }
 
     for (let index = 0; index < lookupVector.length; index += 1) {
-      const candidateValue = evaluateCell(lookupVector[index]).value;
+      const lookupCell = lookupVector.getCell(index);
+
+      if (!lookupCell) {
+        return createErrorValue("REF");
+      }
+
+      const candidateValue = evaluateCell(lookupCell).value;
 
       if (candidateValue.type === "error") {
         return candidateValue;
       }
 
       if (compareScalarValues(candidateValue, lookupValue) === 0) {
-        return evaluateCell(returnVector[index]).value;
+        const returnCell = returnVector.getCell(index);
+
+        return returnCell ? evaluateCell(returnCell).value : createErrorValue("REF");
       }
     }
 
