@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import { applyWorkbookTransaction, createWorkbookState } from "./workbook-core";
-import { WorkbookController } from "./workbook-controller";
+import { WorkbookController, type WorkbookEvaluationMetricsEvent } from "./workbook-controller";
 import { serializeWorkbookDocument } from "./workbook-document";
 
 test("WorkbookController exposes raw range reads separately from display-range and cell-data reads", () => {
@@ -74,6 +74,172 @@ test("WorkbookController exposes raw range reads separately from display-range a
     sheetName: rawRange.sheetName,
   });
   assert.equal(controller.getSummary().hasUnsavedChanges, true);
+});
+
+test("WorkbookController emits opt-in evaluation trace logs for cold snapshots", () => {
+  const traceLogs: string[] = [];
+  const performanceTimes = [10, 17];
+  const controller = new WorkbookController({
+    evaluationTraceSink: (message) => traceLogs.push(message),
+    performanceClock: () => performanceTimes.shift() ?? 17,
+  });
+  const sheetId = controller.getSummary().activeSheetId;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["1", "2", "=A1+B1"]],
+      },
+    ],
+  });
+
+  controller.getCellData({
+    columnIndex: 2,
+    rowIndex: 0,
+  });
+  controller.getCellData({
+    columnIndex: 2,
+    rowIndex: 0,
+  });
+
+  assert.deepEqual(traceLogs, [
+    [
+      "[spready-evaluation]",
+      "reason=getCellData",
+      "version=1",
+      `requestedSheetId=${sheetId}`,
+      "durationMs=7",
+      "cellsEvaluated=10000",
+      "formulasParsed=1",
+      "rangeCellsMaterialized=0",
+      "dependencyKeysRecorded=2",
+      "snapshots=1",
+      "volatileSnapshots=0",
+    ].join(" "),
+  ]);
+});
+
+test("WorkbookController emits structured formula function metrics", () => {
+  const metricsEvents: WorkbookEvaluationMetricsEvent[] = [];
+  const performanceTimes = [0, 5, 8, 10];
+  const controller = new WorkbookController({
+    evaluationMetricsSink: (event) => metricsEvents.push(event),
+    performanceClock: () => performanceTimes.shift() ?? 10,
+  });
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["1", "2", "=SUM(A1:B1)"]],
+      },
+    ],
+  });
+  controller.getCellData({
+    columnIndex: 2,
+    rowIndex: 0,
+  });
+
+  assert.equal(metricsEvents.length, 1);
+  assert.deepEqual(
+    {
+      durationMs: metricsEvents[0].durationMs,
+      functionCalls: metricsEvents[0].metrics.functionCalls,
+      reason: metricsEvents[0].reason,
+    },
+    {
+      durationMs: 10,
+      functionCalls: {
+        SUM: {
+          calls: 1,
+          durationMs: 3,
+          selfDurationMs: 3,
+        },
+      },
+      reason: "getCellData",
+    },
+  );
+});
+
+test("WorkbookController reuses evaluation snapshots for non-formula input edits", () => {
+  const traceLogs: string[] = [];
+  const performanceTimes = [0, 10, 10, 14];
+  const controller = new WorkbookController({
+    evaluationTraceSink: (message) => traceLogs.push(message),
+    performanceClock: () => performanceTimes.shift() ?? 14,
+  });
+  const sheetId = controller.getSummary().activeSheetId;
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["1", "=A1*2", "=B1+1"]],
+      },
+    ],
+  });
+  assert.equal(
+    controller.getCellData({
+      columnIndex: 2,
+      rowIndex: 0,
+    }).display,
+    "3",
+  );
+
+  controller.applyTransaction({
+    operations: [
+      {
+        columnIndex: 0,
+        rowIndex: 0,
+        type: "setCell",
+        value: "3",
+      },
+    ],
+  });
+
+  assert.equal(
+    controller.getCellData({
+      columnIndex: 2,
+      rowIndex: 0,
+    }).display,
+    "7",
+  );
+
+  assert.deepEqual(traceLogs, [
+    [
+      "[spready-evaluation]",
+      "reason=getCellData",
+      "version=1",
+      `requestedSheetId=${sheetId}`,
+      "durationMs=10",
+      "cellsEvaluated=10000",
+      "formulasParsed=2",
+      "rangeCellsMaterialized=0",
+      "dependencyKeysRecorded=2",
+      "snapshots=1",
+      "volatileSnapshots=0",
+    ].join(" "),
+    [
+      "[spready-evaluation]",
+      "reason=getCellData",
+      "version=2",
+      `requestedSheetId=${sheetId}`,
+      "durationMs=4",
+      "cellsEvaluated=3",
+      "formulasParsed=0",
+      "rangeCellsMaterialized=0",
+      "dependencyKeysRecorded=0",
+      "snapshots=1",
+      "volatileSnapshots=0",
+    ].join(" "),
+  ]);
 });
 
 test("WorkbookController formats a formula-aware whole-workbook console output", () => {

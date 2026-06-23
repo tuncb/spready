@@ -50,7 +50,18 @@ type TextValue = {
 
 type ScalarFormulaValue = BlankValue | BooleanValue | ErrorValue | NumberValue | TextValue;
 
-type RangeArea = CellAddress[][];
+type MaterializedRangeArea = CellAddress[][];
+
+type RectangularRangeArea = {
+  endColumn: number;
+  endRow: number;
+  sheetId: string;
+  startColumn: number;
+  startRow: number;
+  type: "rectangular";
+};
+
+type RangeArea = MaterializedRangeArea | RectangularRangeArea;
 
 type RangeValue = {
   type: "range";
@@ -59,6 +70,11 @@ type RangeValue = {
 };
 
 type FormulaValue = RangeValue | ScalarFormulaValue;
+
+type RangeVector = {
+  getCell: (index: number) => CellAddress | undefined;
+  length: number;
+};
 
 export interface CellEvaluation {
   input: string;
@@ -79,7 +95,27 @@ export interface SheetEvaluationSnapshot {
 }
 
 export interface FormulaEvaluationOptions {
+  functionClock?: () => number;
+  metrics?: FormulaEvaluationMetrics;
   now?: Date;
+  parseCache?: FormulaParseCache;
+  seedSnapshots?: Map<string, SheetEvaluationSnapshot>;
+}
+
+export interface FormulaEvaluationMetrics {
+  cellsEvaluated: number;
+  dependencyKeysRecorded: number;
+  functionCalls: Record<string, FormulaFunctionEvaluationMetrics>;
+  formulasParsed: number;
+  rangeCellsMaterialized: number;
+}
+
+export type FormulaParseCache = Map<string, FormulaAst | "PARSE_ERROR">;
+
+export interface FormulaFunctionEvaluationMetrics {
+  calls: number;
+  durationMs: number;
+  selfDurationMs: number;
 }
 
 type FormulaToken =
@@ -157,6 +193,34 @@ const ERROR_LITERALS: ReadonlyArray<[string, FormulaErrorCode]> = [
 
 export function createCellKey(sheetId: string, rowIndex: number, columnIndex: number): CellKey {
   return `${sheetId}:${rowIndex}:${columnIndex}`;
+}
+
+export function createFormulaEvaluationMetrics(): FormulaEvaluationMetrics {
+  return {
+    cellsEvaluated: 0,
+    dependencyKeysRecorded: 0,
+    functionCalls: {},
+    formulasParsed: 0,
+    rangeCellsMaterialized: 0,
+  };
+}
+
+function cloneSeedEvaluationSnapshot(
+  snapshot: SheetEvaluationSnapshot,
+  workbookVersion: number,
+): SheetEvaluationSnapshot {
+  return {
+    sheetId: snapshot.sheetId,
+    workbookVersion,
+    hasVolatileFunctions: snapshot.hasVolatileFunctions,
+    cells: new Map(snapshot.cells),
+    dependents: cloneCellKeySetMap(snapshot.dependents),
+    precedents: cloneCellKeySetMap(snapshot.precedents),
+  };
+}
+
+function cloneCellKeySetMap(map: Map<CellKey, Set<CellKey>>): Map<CellKey, Set<CellKey>> {
+  return new Map([...map].map(([key, values]) => [key, new Set(values)]));
 }
 
 export function getCellEvaluation(
@@ -895,6 +959,8 @@ export function evaluateWorkbook(
   workbookVersion: number,
   options: FormulaEvaluationOptions = {},
 ): Map<string, SheetEvaluationSnapshot> {
+  const metrics = options.metrics;
+  const parseCache = options.parseCache;
   const sheetById = new Map(workbook.sheets.map((sheet) => [sheet.id, sheet]));
   const sheetIdByName = new Map(
     workbook.sheets.map((sheet) => [getSheetNameKey(sheet.name), sheet.id]),
@@ -904,22 +970,31 @@ export function evaluateWorkbook(
     workbookTables.map((table) => [getStructuredReferenceNameKey(table.name), table]),
   );
   const snapshots = new Map<string, SheetEvaluationSnapshot>(
-    workbook.sheets.map((sheet) => [
-      sheet.id,
-      {
-        sheetId: sheet.id,
-        workbookVersion,
-        hasVolatileFunctions: false,
-        cells: new Map<CellKey, CellEvaluation>(),
-        dependents: new Map<CellKey, Set<CellKey>>(),
-        precedents: new Map<CellKey, Set<CellKey>>(),
-      },
-    ]),
+    workbook.sheets.map((sheet) => {
+      const seedSnapshot = options.seedSnapshots?.get(sheet.id);
+
+      return [
+        sheet.id,
+        seedSnapshot
+          ? cloneSeedEvaluationSnapshot(seedSnapshot, workbookVersion)
+          : {
+              sheetId: sheet.id,
+              workbookVersion,
+              hasVolatileFunctions: false,
+              cells: new Map<CellKey, CellEvaluation>(),
+              dependents: new Map<CellKey, Set<CellKey>>(),
+              precedents: new Map<CellKey, Set<CellKey>>(),
+            },
+      ];
+    }),
   );
   const evaluationStack: CellKey[] = [];
   const cycleCellKeys = new Set<CellKey>();
   const evaluationNow = options.now ? new Date(options.now.getTime()) : new Date();
   const formulaCellStack: CellAddress[] = [];
+  const formulaDependencyReuseStack: boolean[] = [];
+  const functionTimingStack: Array<{ childDurationMs: number }> = [];
+  const reusedDependencyCellKeys = new Set<CellKey>();
   let hasVolatileFunctions = false;
 
   function getInput(sheetId: string, rowIndex: number, columnIndex: number): string {
@@ -946,6 +1021,9 @@ export function evaluateWorkbook(
     const precedentSet = new Set(dependencies);
 
     snapshot.precedents.set(cellKey, precedentSet);
+    if (metrics) {
+      metrics.dependencyKeysRecorded += precedentSet.size;
+    }
 
     for (const dependencyKey of precedentSet) {
       const dependencySnapshot = snapshots.get(getCellKeySheetId(dependencyKey));
@@ -985,6 +1063,9 @@ export function evaluateWorkbook(
     }
 
     evaluationStack.push(cellKey);
+    if (metrics) {
+      metrics.cellsEvaluated += 1;
+    }
 
     try {
       const input = getInput(address.sheetId, address.rowIndex, address.columnIndex);
@@ -1005,7 +1086,9 @@ export function evaluateWorkbook(
       }
 
       snapshot.cells.set(cellKey, evaluation);
-      recordDependencies(snapshot, cellKey, evaluation.dependencies);
+      if (!reusedDependencyCellKeys.has(cellKey)) {
+        recordDependencies(snapshot, cellKey, evaluation.dependencies);
+      }
       return evaluation;
     } finally {
       evaluationStack.pop();
@@ -1017,31 +1100,39 @@ export function evaluateWorkbook(
     cellKey: CellKey,
     address: CellAddress,
   ): CellEvaluation {
-    let ast: FormulaAst;
+    const ast = getFormulaAst(input);
 
-    try {
-      ast = parseFormula(input);
-    } catch {
+    if (ast === "PARSE_ERROR") {
       return createErrorEvaluation(input, "PARSE", EMPTY_DEPENDENCIES);
     }
 
+    const reusableDependencies = getSnapshot(address.sheetId).precedents.get(cellKey);
+    const reuseDependencies = reusableDependencies !== undefined;
     const dependencies = new Set<CellKey>();
     let value: ScalarFormulaValue;
 
     formulaCellStack.push(address);
+    formulaDependencyReuseStack.push(reuseDependencies);
 
     try {
       value = scalarizeFormulaValue(evaluateAst(ast, dependencies));
     } finally {
+      formulaDependencyReuseStack.pop();
       formulaCellStack.pop();
     }
 
-    const normalizedDependencies = [...dependencies];
+    const normalizedDependencies = reuseDependencies
+      ? [...reusableDependencies]
+      : [...dependencies];
     const errorCode = cycleCellKeys.has(cellKey)
       ? "CYCLE"
       : value.type === "error"
         ? value.errorCode
         : undefined;
+
+    if (reuseDependencies) {
+      reusedDependencyCellKeys.add(cellKey);
+    }
 
     if (errorCode) {
       return createErrorEvaluation(input, errorCode, normalizedDependencies);
@@ -1054,6 +1145,31 @@ export function evaluateWorkbook(
       value,
       dependencies: normalizedDependencies,
     };
+  }
+
+  function shouldCollectFormulaDependencies(): boolean {
+    return formulaDependencyReuseStack[formulaDependencyReuseStack.length - 1] !== true;
+  }
+
+  function getFormulaAst(input: string): FormulaAst | "PARSE_ERROR" {
+    const cachedAst = parseCache?.get(input);
+
+    if (cachedAst) {
+      return cachedAst;
+    }
+
+    try {
+      if (metrics) {
+        metrics.formulasParsed += 1;
+      }
+      const ast = parseFormula(input);
+
+      parseCache?.set(input, ast);
+      return ast;
+    } catch {
+      parseCache?.set(input, "PARSE_ERROR");
+      return "PARSE_ERROR";
+    }
   }
 
   function evaluateAst(ast: FormulaAst, dependencies: Set<CellKey>): FormulaValue {
@@ -1290,27 +1406,139 @@ export function evaluateWorkbook(
     const endRow = Math.max(start.rowIndex, end.rowIndex);
     const startColumn = Math.min(start.columnIndex, end.columnIndex);
     const endColumn = Math.max(start.columnIndex, end.columnIndex);
-    const cellsInRange = Array.from({ length: endRow - startRow + 1 }, (_, rowOffset) =>
-      Array.from({ length: endColumn - startColumn + 1 }, (_, columnOffset) => {
-        const cellAddress = {
-          sheetId: start.sheetId,
-          rowIndex: startRow + rowOffset,
-          columnIndex: startColumn + columnOffset,
-        };
-
-        dependencies.add(
-          createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
-        );
-
-        return cellAddress;
-      }),
+    const cellsInRange = createRectangularRangeArea(
+      start.sheetId,
+      startRow,
+      endRow,
+      startColumn,
+      endColumn,
     );
+
+    recordRangeDependencies([cellsInRange], dependencies);
 
     return {
       type: "range",
       areas: [cellsInRange],
       cells: cellsInRange,
     };
+  }
+
+  function createRectangularRangeArea(
+    sheetId: string,
+    startRow: number,
+    endRow: number,
+    startColumn: number,
+    endColumn: number,
+  ): RectangularRangeArea {
+    return {
+      endColumn,
+      endRow,
+      sheetId,
+      startColumn,
+      startRow,
+      type: "rectangular",
+    };
+  }
+
+  function createSingleCellRangeValue(cellAddress: CellAddress): RangeValue {
+    const area = createRectangularRangeArea(
+      cellAddress.sheetId,
+      cellAddress.rowIndex,
+      cellAddress.rowIndex,
+      cellAddress.columnIndex,
+      cellAddress.columnIndex,
+    );
+
+    return {
+      type: "range",
+      areas: [area],
+      cells: area,
+    };
+  }
+
+  function isRectangularRangeArea(area: RangeArea): area is RectangularRangeArea {
+    return !Array.isArray(area);
+  }
+
+  function getRangeAreaHeight(area: RangeArea): number {
+    return isRectangularRangeArea(area) ? area.endRow - area.startRow + 1 : area.length;
+  }
+
+  function getRangeAreaWidth(area: RangeArea): number {
+    return isRectangularRangeArea(area)
+      ? area.endColumn - area.startColumn + 1
+      : (area[0]?.length ?? 0);
+  }
+
+  function getRangeAreaCell(
+    area: RangeArea,
+    rowOffset: number,
+    columnOffset: number,
+  ): CellAddress | undefined {
+    if (isRectangularRangeArea(area)) {
+      const rowIndex = area.startRow + rowOffset;
+      const columnIndex = area.startColumn + columnOffset;
+
+      if (
+        rowIndex < area.startRow ||
+        rowIndex > area.endRow ||
+        columnIndex < area.startColumn ||
+        columnIndex > area.endColumn
+      ) {
+        return undefined;
+      }
+
+      return {
+        sheetId: area.sheetId,
+        rowIndex,
+        columnIndex,
+      };
+    }
+
+    return area[rowOffset]?.[columnOffset];
+  }
+
+  function* iterateRangeAreaCells(area: RangeArea): Generator<CellAddress> {
+    if (isRectangularRangeArea(area)) {
+      for (let rowIndex = area.startRow; rowIndex <= area.endRow; rowIndex += 1) {
+        for (let columnIndex = area.startColumn; columnIndex <= area.endColumn; columnIndex += 1) {
+          yield {
+            sheetId: area.sheetId,
+            rowIndex,
+            columnIndex,
+          };
+        }
+      }
+
+      return;
+    }
+
+    for (const row of area) {
+      for (const cellAddress of row) {
+        yield cellAddress;
+      }
+    }
+  }
+
+  function materializeRangeArea(area: RangeArea): MaterializedRangeArea {
+    if (!isRectangularRangeArea(area)) {
+      return area;
+    }
+
+    const rowCount = getRangeAreaHeight(area);
+    const columnCount = getRangeAreaWidth(area);
+
+    if (metrics) {
+      metrics.rangeCellsMaterialized += rowCount * columnCount;
+    }
+
+    return Array.from({ length: rowCount }, (_rowValue, rowOffset) =>
+      Array.from({ length: columnCount }, (_columnValue, columnOffset) => ({
+        sheetId: area.sheetId,
+        rowIndex: area.startRow + rowOffset,
+        columnIndex: area.startColumn + columnOffset,
+      })),
+    );
   }
 
   function intersectRangeValues(
@@ -1323,13 +1551,11 @@ export function evaluateWorkbook(
     for (const leftArea of left.areas) {
       for (const rightArea of right.areas) {
         const rightCellKeys = new Set(
-          rightArea.flatMap((row) =>
-            row.map((cellAddress) =>
-              createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
-            ),
+          [...iterateRangeAreaCells(rightArea)].map((cellAddress) =>
+            createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
           ),
         );
-        const intersectedArea = leftArea
+        const intersectedArea = materializeRangeArea(leftArea)
           .map((row) => {
             return row.filter((cellAddress) => {
               return rightCellKeys.has(
@@ -1456,13 +1682,15 @@ export function evaluateWorkbook(
   }
 
   function recordRangeDependencies(areas: readonly RangeArea[], dependencies: Set<CellKey>) {
+    if (!shouldCollectFormulaDependencies()) {
+      return;
+    }
+
     for (const area of areas) {
-      for (const row of area) {
-        for (const cellAddress of row) {
-          dependencies.add(
-            createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
-          );
-        }
+      for (const cellAddress of iterateRangeAreaCells(area)) {
+        dependencies.add(
+          createCellKey(cellAddress.sheetId, cellAddress.rowIndex, cellAddress.columnIndex),
+        );
       }
     }
   }
@@ -1475,14 +1703,12 @@ export function evaluateWorkbook(
     let onlyCell: CellAddress | undefined;
 
     for (const area of value.areas) {
-      for (const row of area) {
-        for (const cellAddress of row) {
-          if (onlyCell) {
-            return undefined;
-          }
-
-          onlyCell = cellAddress;
+      for (const cellAddress of iterateRangeAreaCells(area)) {
+        if (onlyCell) {
+          return undefined;
         }
+
+        onlyCell = cellAddress;
       }
     }
 
@@ -1816,16 +2042,14 @@ export function evaluateWorkbook(
     const flattenedValues: ScalarFormulaValue[] = [];
 
     for (const area of rangeValue.areas) {
-      for (const row of area) {
-        for (const cellAddress of row) {
-          const cellValue = evaluateCell(cellAddress).value;
+      for (const cellAddress of iterateRangeAreaCells(area)) {
+        const cellValue = evaluateCell(cellAddress).value;
 
-          if (cellValue.type === "error") {
-            return cellValue;
-          }
-
-          flattenedValues.push(cellValue);
+        if (cellValue.type === "error") {
+          return cellValue;
         }
+
+        flattenedValues.push(cellValue);
       }
     }
 
@@ -1857,7 +2081,7 @@ export function evaluateWorkbook(
   }
 
   function getFirstRangeCell(rangeValue: RangeValue): CellAddress | ErrorValue {
-    const firstCell = rangeValue.cells[0]?.[0];
+    const firstCell = getRangeAreaCell(rangeValue.cells, 0, 0);
 
     if (!firstCell) {
       return createErrorValue("REF");
@@ -1866,17 +2090,26 @@ export function evaluateWorkbook(
     return firstCell;
   }
 
-  function getVectorAddresses(rangeValue: RangeValue): CellAddress[] | ErrorValue {
-    if (rangeValue.cells.length === 0 || rangeValue.cells[0]?.length === 0) {
+  function getRangeVector(rangeValue: RangeValue): RangeVector | ErrorValue {
+    const height = getRangeAreaHeight(rangeValue.cells);
+    const width = getRangeAreaWidth(rangeValue.cells);
+
+    if (height === 0 || width === 0) {
       return createErrorValue("REF");
     }
 
-    if (rangeValue.cells.length === 1) {
-      return [...rangeValue.cells[0]];
+    if (height === 1) {
+      return {
+        getCell: (index) => getRangeAreaCell(rangeValue.cells, 0, index),
+        length: width,
+      };
     }
 
-    if (rangeValue.cells.every((row) => row.length === 1)) {
-      return rangeValue.cells.map((row) => row[0]);
+    if (width === 1) {
+      return {
+        getCell: (index) => getRangeAreaCell(rangeValue.cells, index, 0),
+        length: height,
+      };
     }
 
     return createErrorValue("VALUE");
@@ -1966,13 +2199,44 @@ export function evaluateWorkbook(
     args: FormulaAst[],
     dependencies: Set<CellKey>,
   ): FormulaValue {
-    const handler = functionRegistry.get(name.toUpperCase());
+    const normalizedName = name.toUpperCase();
+    const handler = functionRegistry.get(normalizedName);
 
     if (!handler) {
       return createErrorValue("NAME");
     }
 
-    return handler(args, dependencies);
+    if (!metrics || !options.functionClock) {
+      return handler(args, dependencies);
+    }
+
+    const startedMs = options.functionClock();
+    const timingFrame = { childDurationMs: 0 };
+
+    functionTimingStack.push(timingFrame);
+
+    try {
+      return handler(args, dependencies);
+    } finally {
+      functionTimingStack.pop();
+      const durationMs = options.functionClock() - startedMs;
+      const selfDurationMs = durationMs - timingFrame.childDurationMs;
+      const parentTimingFrame = functionTimingStack[functionTimingStack.length - 1];
+
+      if (parentTimingFrame) {
+        parentTimingFrame.childDurationMs += durationMs;
+      }
+
+      const entry = (metrics.functionCalls[normalizedName] ??= {
+        calls: 0,
+        durationMs: 0,
+        selfDurationMs: 0,
+      });
+
+      entry.calls += 1;
+      entry.durationMs += durationMs;
+      entry.selfDurationMs += selfDurationMs;
+    }
   }
 
   function evaluateSum(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
@@ -2986,8 +3250,8 @@ export function evaluateWorkbook(
       return createErrorValue("REF");
     }
 
-    const height = arrayValue.cells.length;
-    const width = arrayValue.cells[0]?.length ?? 0;
+    const height = getRangeAreaHeight(arrayValue.cells);
+    const width = getRangeAreaWidth(arrayValue.cells);
     let resolvedRow = rowNumber;
     let resolvedColumn = 1;
 
@@ -3016,17 +3280,13 @@ export function evaluateWorkbook(
       return createErrorValue("REF");
     }
 
-    const targetCell = arrayValue.cells[resolvedRow - 1]?.[resolvedColumn - 1];
+    const targetCell = getRangeAreaCell(arrayValue.cells, resolvedRow - 1, resolvedColumn - 1);
 
     if (!targetCell) {
       return createErrorValue("REF");
     }
 
-    return {
-      type: "range",
-      areas: [[[targetCell]]],
-      cells: [[targetCell]],
-    };
+    return createSingleCellRangeValue(targetCell);
   }
 
   function evaluateMatch(args: FormulaAst[], dependencies: Set<CellKey>): FormulaValue {
@@ -3048,7 +3308,7 @@ export function evaluateWorkbook(
       return lookupRange;
     }
 
-    const lookupVector = getVectorAddresses(lookupRange);
+    const lookupVector = getRangeVector(lookupRange);
 
     if (isErrorValue(lookupVector)) {
       return lookupVector;
@@ -3072,7 +3332,13 @@ export function evaluateWorkbook(
     let bestValue: ScalarFormulaValue | undefined;
 
     for (let index = 0; index < lookupVector.length; index += 1) {
-      const cellValue = evaluateCell(lookupVector[index]).value;
+      const lookupCell = lookupVector.getCell(index);
+
+      if (!lookupCell) {
+        return createErrorValue("REF");
+      }
+
+      const cellValue = evaluateCell(lookupCell).value;
 
       if (cellValue.type === "error") {
         return cellValue;
@@ -3149,8 +3415,8 @@ export function evaluateWorkbook(
       return returnRange;
     }
 
-    const lookupVector = getVectorAddresses(lookupRange);
-    const returnVector = getVectorAddresses(returnRange);
+    const lookupVector = getRangeVector(lookupRange);
+    const returnVector = getRangeVector(returnRange);
 
     if (isErrorValue(lookupVector)) {
       return lookupVector;
@@ -3165,14 +3431,22 @@ export function evaluateWorkbook(
     }
 
     for (let index = 0; index < lookupVector.length; index += 1) {
-      const candidateValue = evaluateCell(lookupVector[index]).value;
+      const lookupCell = lookupVector.getCell(index);
+
+      if (!lookupCell) {
+        return createErrorValue("REF");
+      }
+
+      const candidateValue = evaluateCell(lookupCell).value;
 
       if (candidateValue.type === "error") {
         return candidateValue;
       }
 
       if (compareScalarValues(candidateValue, lookupValue) === 0) {
-        return evaluateCell(returnVector[index]).value;
+        const returnCell = returnVector.getCell(index);
+
+        return returnCell ? evaluateCell(returnCell).value : createErrorValue("REF");
       }
     }
 
@@ -3202,7 +3476,10 @@ export function evaluateWorkbook(
       return tableRange;
     }
 
-    if (tableRange.cells.length === 0 || tableRange.cells[0]?.length === 0) {
+    const tableHeight = getRangeAreaHeight(tableRange.cells);
+    const tableWidth = getRangeAreaWidth(tableRange.cells);
+
+    if (tableHeight === 0 || tableWidth === 0) {
       return createErrorValue("REF");
     }
 
@@ -3213,8 +3490,6 @@ export function evaluateWorkbook(
     }
 
     const returnColumnIndex = Math.trunc(columnValue.value);
-    const tableWidth = tableRange.cells[0].length;
-
     if (returnColumnIndex < 1) {
       return createErrorValue("VALUE");
     }
@@ -3234,8 +3509,8 @@ export function evaluateWorkbook(
     let bestRowIndex = -1;
     let bestValue: ScalarFormulaValue | undefined;
 
-    for (let rowIndex = 0; rowIndex < tableRange.cells.length; rowIndex += 1) {
-      const lookupCell = tableRange.cells[rowIndex]?.[0];
+    for (let rowIndex = 0; rowIndex < tableHeight; rowIndex += 1) {
+      const lookupCell = getRangeAreaCell(tableRange.cells, rowIndex, 0);
 
       if (!lookupCell) {
         return createErrorValue("REF");
@@ -3251,7 +3526,7 @@ export function evaluateWorkbook(
 
       if (!rangeLookup.value) {
         if (comparison === 0) {
-          const targetCell = tableRange.cells[rowIndex]?.[returnColumnIndex - 1];
+          const targetCell = getRangeAreaCell(tableRange.cells, rowIndex, returnColumnIndex - 1);
 
           return targetCell ? evaluateCell(targetCell).value : createErrorValue("REF");
         }
@@ -3273,7 +3548,7 @@ export function evaluateWorkbook(
       return createErrorValue("NA");
     }
 
-    const targetCell = tableRange.cells[bestRowIndex]?.[returnColumnIndex - 1];
+    const targetCell = getRangeAreaCell(tableRange.cells, bestRowIndex, returnColumnIndex - 1);
 
     return targetCell ? evaluateCell(targetCell).value : createErrorValue("REF");
   }
@@ -3881,7 +4156,7 @@ function getStructuredReferenceTableColumnName(
   return headerValue.length > 0 ? headerValue : `Column${columnOffset + 1}`;
 }
 
-function getCellKeySheetId(cellKey: CellKey): string {
+export function getCellKeySheetId(cellKey: CellKey): string {
   const columnSeparator = cellKey.lastIndexOf(":");
   const rowSeparator = cellKey.lastIndexOf(":", columnSeparator - 1);
 

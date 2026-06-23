@@ -25,6 +25,7 @@ import {
   getSheetStyleRange,
   getSheetUsedRange,
   getWorkbookSummary,
+  isFormulaInput,
   getSheetRowCount,
   type ApplyTransactionRequest,
   type ApplyTransactionResult,
@@ -72,9 +73,15 @@ import {
 import { formatWorkbookConsoleOutput } from "./workbook-console-output";
 import {
   compareCellEvaluationSortValues,
+  createCellKey,
+  createFormulaEvaluationMetrics,
   evaluateWorkbook,
   getCellEvaluation,
+  getCellKeySheetId,
   type CellEvaluation,
+  type CellKey,
+  type FormulaEvaluationMetrics,
+  type FormulaParseCache,
   type SheetEvaluationSnapshot,
 } from "./formula-engine";
 import { buildWorkbookChartPreview } from "./workbook-charting";
@@ -91,19 +98,48 @@ interface WorkbookHistoryNode {
   state: WorkbookState;
 }
 
+type EvaluationTraceSink = (message: string) => void;
+
+export interface WorkbookEvaluationMetricsEvent {
+  durationMs: number;
+  metrics: FormulaEvaluationMetrics;
+  reason: string;
+  requestedSheetId: string;
+  snapshotCount: number;
+  volatileSnapshotCount: number;
+  workbookVersion: number;
+}
+
+type EvaluationMetricsSink = (event: WorkbookEvaluationMetricsEvent) => void;
+
 export class WorkbookController extends EventEmitter {
   #state: WorkbookState = createWorkbookState();
   #sheetEvaluationSnapshots = new Map<string, SheetEvaluationSnapshot>();
+  #formulaParseCache: FormulaParseCache = new Map();
   #evaluationClock: () => Date;
+  #evaluationMetricsSink?: EvaluationMetricsSink;
+  #evaluationTraceSink?: EvaluationTraceSink;
+  #performanceClock: () => number;
   #historyNodes = new Map<string, WorkbookHistoryNode>();
   #currentHistoryNodeId = "";
   #rootHistoryNodeId = "";
   #savedHistoryNodeId: string | undefined;
   #nextHistoryNodeNumber = 1;
 
-  constructor(options: { evaluationClock?: () => Date } = {}) {
+  constructor(
+    options: {
+      evaluationClock?: () => Date;
+      evaluationMetricsSink?: EvaluationMetricsSink;
+      evaluationTraceSink?: EvaluationTraceSink;
+      performanceClock?: () => number;
+    } = {},
+  ) {
     super();
     this.#evaluationClock = options.evaluationClock ?? (() => new Date());
+    this.#evaluationMetricsSink = options.evaluationMetricsSink;
+    this.#evaluationTraceSink =
+      options.evaluationTraceSink ?? createEnvironmentEvaluationTraceSink();
+    this.#performanceClock = options.performanceClock ?? Date.now;
     this.#resetHistory(this.#state, true);
   }
 
@@ -170,7 +206,9 @@ export class WorkbookController extends EventEmitter {
         return buildWorkbookChartPreview(
           chart,
           sourceSheet,
-          sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id) : undefined,
+          sourceSheet
+            ? this.#getEvaluationSnapshot(sourceSheet.id, "getSheetChartPreviews")
+            : undefined,
           this.#getChartSheetReferences(),
         );
       }),
@@ -198,7 +236,7 @@ export class WorkbookController extends EventEmitter {
     return buildWorkbookChartPreview(
       cloneWorkbookChart(chart),
       sourceSheet,
-      sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id) : undefined,
+      sourceSheet ? this.#getEvaluationSnapshot(sourceSheet.id, "getChartPreview") : undefined,
       this.#getChartSheetReferences(),
     );
   }
@@ -225,7 +263,7 @@ export class WorkbookController extends EventEmitter {
 
   getSheetDisplayRange(request: SheetRangeRequest): SheetDisplayRangeResult {
     const rawRange = getSheetRange(this.#state, request);
-    const snapshot = this.#getEvaluationSnapshot(rawRange.sheetId);
+    const snapshot = this.#getEvaluationSnapshot(rawRange.sheetId, "getSheetDisplayRange");
 
     return {
       ...rawRange,
@@ -248,7 +286,7 @@ export class WorkbookController extends EventEmitter {
     assertCellIndex(request.columnIndex, getSheetColumnCount(sheet), "Column");
 
     const evaluation = getCellEvaluation(
-      this.#getEvaluationSnapshot(sheet.id),
+      this.#getEvaluationSnapshot(sheet.id, "getCellData"),
       request.rowIndex,
       request.columnIndex,
     );
@@ -436,8 +474,13 @@ export class WorkbookController extends EventEmitter {
     const nextSummary = getWorkbookSummary(nextState);
 
     if (execution.changed && !request.dryRun) {
+      const nextEvaluationSnapshots = this.#getTransactionEvaluationSnapshots(
+        preparedRequest.operations,
+      );
+
       this.#recordHistoryNode(nextState);
       this.#commitState(nextState, {
+        evaluationSnapshots: nextEvaluationSnapshots,
         preserveEvaluationSnapshots: shouldPreserveEvaluationSnapshots(preparedRequest.operations),
       });
     }
@@ -577,7 +620,7 @@ export class WorkbookController extends EventEmitter {
       );
     }
 
-    const snapshot = this.#getEvaluationSnapshot(table.range.sheetId);
+    const snapshot = this.#getEvaluationSnapshot(table.range.sheetId, "sortTable");
     const rows = Array.from({ length: bodyRowCount }, (_value, index) => ({
       originalIndex: index,
       rowIndex: bodyStartRow + index,
@@ -602,7 +645,10 @@ export class WorkbookController extends EventEmitter {
       .map((entry) => entry.rowIndex);
   }
 
-  #getEvaluationSnapshot(sheetId?: string): SheetEvaluationSnapshot {
+  #getEvaluationSnapshot(
+    sheetId?: string,
+    reason = "getEvaluationSnapshot",
+  ): SheetEvaluationSnapshot {
     const sheet = getWorkbookSheet(this.#state, sheetId);
     const cachedSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);
 
@@ -614,11 +660,27 @@ export class WorkbookController extends EventEmitter {
       return cachedSnapshot;
     }
 
+    const metrics =
+      this.#evaluationTraceSink || this.#evaluationMetricsSink
+        ? createFormulaEvaluationMetrics()
+        : undefined;
+    const startedMs = this.#performanceClock();
     const nextSnapshots = evaluateWorkbook(this.#state, this.#state.version, {
+      functionClock: metrics ? this.#performanceClock : undefined,
+      metrics,
       now: this.#evaluationClock(),
+      parseCache: this.#formulaParseCache,
+      seedSnapshots: this.#canSeedEvaluationSnapshots()
+        ? this.#sheetEvaluationSnapshots
+        : undefined,
     });
+    const durationMs = this.#performanceClock() - startedMs;
 
     this.#sheetEvaluationSnapshots = nextSnapshots;
+    if (metrics) {
+      this.#traceEvaluation(reason, sheet.id, metrics, durationMs);
+      this.#emitEvaluationMetrics(reason, sheet.id, metrics, durationMs);
+    }
     const nextSnapshot = this.#sheetEvaluationSnapshots.get(sheet.id);
 
     if (!nextSnapshot) {
@@ -626,6 +688,61 @@ export class WorkbookController extends EventEmitter {
     }
 
     return nextSnapshot;
+  }
+
+  #traceEvaluation(
+    reason: string,
+    requestedSheetId: string,
+    metrics: FormulaEvaluationMetrics,
+    durationMs: number,
+  ) {
+    if (!this.#evaluationTraceSink) {
+      return;
+    }
+
+    const snapshotCount = this.#sheetEvaluationSnapshots.size;
+    const volatileSnapshotCount = [...this.#sheetEvaluationSnapshots.values()].filter(
+      (snapshot) => snapshot.hasVolatileFunctions,
+    ).length;
+
+    this.#evaluationTraceSink(
+      formatEvaluationTraceLog(reason, requestedSheetId, this.#state.version, durationMs, metrics, {
+        snapshotCount,
+        volatileSnapshotCount,
+      }),
+    );
+  }
+
+  #emitEvaluationMetrics(
+    reason: string,
+    requestedSheetId: string,
+    metrics: FormulaEvaluationMetrics,
+    durationMs: number,
+  ) {
+    if (!this.#evaluationMetricsSink) {
+      return;
+    }
+
+    const snapshotCount = this.#sheetEvaluationSnapshots.size;
+    const volatileSnapshotCount = [...this.#sheetEvaluationSnapshots.values()].filter(
+      (snapshot) => snapshot.hasVolatileFunctions,
+    ).length;
+
+    this.#evaluationMetricsSink({
+      durationMs,
+      metrics,
+      reason,
+      requestedSheetId,
+      snapshotCount,
+      volatileSnapshotCount,
+      workbookVersion: this.#state.version,
+    });
+  }
+
+  #canSeedEvaluationSnapshots() {
+    return ![...this.#sheetEvaluationSnapshots.values()].some(
+      (snapshot) => snapshot.hasVolatileFunctions,
+    );
   }
 
   #getChartSheetReferences(): WorkbookChartSheetReference[] {
@@ -636,10 +753,36 @@ export class WorkbookController extends EventEmitter {
     }));
   }
 
-  #commitState(nextState: WorkbookState, options: { preserveEvaluationSnapshots?: boolean } = {}) {
+  #getTransactionEvaluationSnapshots(
+    operations: readonly WorkbookTransactionOperation[],
+  ): Map<string, SheetEvaluationSnapshot> | undefined {
+    const changedCellKeys = getIncrementalCellWriteKeys(this.#state, operations);
+
+    if (!changedCellKeys || this.#sheetEvaluationSnapshots.size === 0) {
+      return undefined;
+    }
+
+    if (
+      [...this.#sheetEvaluationSnapshots.values()].some((snapshot) => snapshot.hasVolatileFunctions)
+    ) {
+      return undefined;
+    }
+
+    return invalidateEvaluationSnapshots(this.#sheetEvaluationSnapshots, changedCellKeys);
+  }
+
+  #commitState(
+    nextState: WorkbookState,
+    options: {
+      evaluationSnapshots?: Map<string, SheetEvaluationSnapshot>;
+      preserveEvaluationSnapshots?: boolean;
+    } = {},
+  ) {
     this.#state = nextState;
 
-    if (options.preserveEvaluationSnapshots) {
+    if (options.evaluationSnapshots) {
+      this.#sheetEvaluationSnapshots = options.evaluationSnapshots;
+    } else if (options.preserveEvaluationSnapshots) {
       this.#sheetEvaluationSnapshots = retagEvaluationSnapshots(
         this.#sheetEvaluationSnapshots,
         nextState.version,
@@ -817,6 +960,142 @@ function shouldPreserveEvaluationSnapshots(operations: readonly WorkbookTransact
   return (
     operations.length > 0 && operations.every((operation) => operation.type === "setActiveSheet")
   );
+}
+
+function getIncrementalCellWriteKeys(
+  state: WorkbookState,
+  operations: readonly WorkbookTransactionOperation[],
+): Set<CellKey> | undefined {
+  const changedCellKeys = new Set<CellKey>();
+
+  for (const operation of operations) {
+    if (operation.type === "setActiveSheet") {
+      continue;
+    }
+
+    if (operation.type !== "setCell") {
+      return undefined;
+    }
+
+    const sheet = getWorkbookSheet(state, operation.sheetId);
+
+    if (
+      operation.rowIndex < 0 ||
+      operation.columnIndex < 0 ||
+      operation.rowIndex >= getSheetRowCount(sheet) ||
+      operation.columnIndex >= getSheetColumnCount(sheet)
+    ) {
+      return undefined;
+    }
+
+    const previousInput = sheet.cells[operation.rowIndex]?.[operation.columnIndex] ?? "";
+
+    if (isFormulaInput(previousInput) || isFormulaInput(operation.value)) {
+      return undefined;
+    }
+
+    changedCellKeys.add(createCellKey(sheet.id, operation.rowIndex, operation.columnIndex));
+  }
+
+  return changedCellKeys.size > 0 ? changedCellKeys : undefined;
+}
+
+function invalidateEvaluationSnapshots(
+  snapshots: Map<string, SheetEvaluationSnapshot>,
+  changedCellKeys: ReadonlySet<CellKey>,
+): Map<string, SheetEvaluationSnapshot> {
+  const dirtyCellKeys = getTransitiveDirtyCellKeys(snapshots, changedCellKeys);
+  const nextSnapshots = cloneEvaluationSnapshots(snapshots);
+
+  for (const dirtyCellKey of dirtyCellKeys) {
+    const dirtySnapshot = nextSnapshots.get(getCellKeySheetId(dirtyCellKey));
+
+    if (!dirtySnapshot) {
+      continue;
+    }
+
+    dirtySnapshot.cells.delete(dirtyCellKey);
+  }
+
+  return nextSnapshots;
+}
+
+function getTransitiveDirtyCellKeys(
+  snapshots: Map<string, SheetEvaluationSnapshot>,
+  changedCellKeys: ReadonlySet<CellKey>,
+): Set<CellKey> {
+  const dirtyCellKeys = new Set(changedCellKeys);
+  const queue = [...changedCellKeys];
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const cellKey = queue[index];
+    const snapshot = snapshots.get(getCellKeySheetId(cellKey));
+    const dependents = snapshot?.dependents.get(cellKey);
+
+    if (!dependents) {
+      continue;
+    }
+
+    for (const dependentKey of dependents) {
+      if (dirtyCellKeys.has(dependentKey)) {
+        continue;
+      }
+
+      dirtyCellKeys.add(dependentKey);
+      queue.push(dependentKey);
+    }
+  }
+
+  return dirtyCellKeys;
+}
+
+function cloneEvaluationSnapshots(
+  snapshots: Map<string, SheetEvaluationSnapshot>,
+): Map<string, SheetEvaluationSnapshot> {
+  return new Map(
+    [...snapshots].map(([sheetId, snapshot]) => [
+      sheetId,
+      {
+        ...snapshot,
+        cells: new Map(snapshot.cells),
+        dependents: cloneCellKeySetMap(snapshot.dependents),
+        precedents: cloneCellKeySetMap(snapshot.precedents),
+      },
+    ]),
+  );
+}
+
+function cloneCellKeySetMap(map: Map<CellKey, Set<CellKey>>): Map<CellKey, Set<CellKey>> {
+  return new Map([...map].map(([cellKey, values]) => [cellKey, new Set(values)]));
+}
+
+function createEnvironmentEvaluationTraceSink(): EvaluationTraceSink | undefined {
+  return process.env.SPREADY_EVALUATION_TRACE === "1"
+    ? (message) => console.error(message)
+    : undefined;
+}
+
+function formatEvaluationTraceLog(
+  reason: string,
+  requestedSheetId: string,
+  workbookVersion: number,
+  durationMs: number,
+  metrics: FormulaEvaluationMetrics,
+  snapshotSummary: { snapshotCount: number; volatileSnapshotCount: number },
+) {
+  return [
+    "[spready-evaluation]",
+    `reason=${reason}`,
+    `version=${workbookVersion}`,
+    `requestedSheetId=${requestedSheetId}`,
+    `durationMs=${Math.round(durationMs)}`,
+    `cellsEvaluated=${metrics.cellsEvaluated}`,
+    `formulasParsed=${metrics.formulasParsed}`,
+    `rangeCellsMaterialized=${metrics.rangeCellsMaterialized}`,
+    `dependencyKeysRecorded=${metrics.dependencyKeysRecorded}`,
+    `snapshots=${snapshotSummary.snapshotCount}`,
+    `volatileSnapshots=${snapshotSummary.volatileSnapshotCount}`,
+  ].join(" ");
 }
 
 function retagEvaluationSnapshots(
