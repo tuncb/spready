@@ -311,6 +311,106 @@ test("applying installer options writes the file association", async () => {
   }
 });
 
+test("starting uninstall removes integrations and launches observable cleanup", async () => {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-installer-uninstall-"));
+  const env = {
+    APPDATA: tempDirectory,
+    LOCALAPPDATA: tempDirectory,
+  };
+  const installDirectory = getDefaultInstallDirectory(env, "win32");
+  const executablePath = getInstalledExecutablePath(installDirectory);
+  const shortcutPath = getStartMenuShortcutPath(env, "win32");
+  const registry = new Map<string, string>([
+    ["HKCU\\Software\\Classes\\.spready", "Spready.Workbook"],
+    [
+      "HKCU\\Software\\Classes\\Spready.Workbook\\shell\\open\\command",
+      buildFileOpenCommand(executablePath),
+    ],
+    ["HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spready", ""],
+  ]);
+  const launcherCalls: Array<{ logPath?: string; operationName: string; script: string }> = [];
+  let quitRequested = false;
+  const commandRunner: InstallerCommandRunner = async (command, args) => {
+    assert.equal(command, "reg.exe");
+
+    const operation = args[0];
+    const key = args[1];
+
+    if (operation === "query") {
+      const value = registry.get(key);
+
+      if (!value) {
+        throw new Error("not found");
+      }
+
+      return {
+        stderr: "",
+        stdout: ["", key, `    (Default)    REG_SZ    ${value}`, ""].join("\r\n"),
+      };
+    }
+
+    if (operation === "delete") {
+      if (args.includes("/ve")) {
+        registry.delete(key);
+      } else {
+        for (const registryKey of [...registry.keys()]) {
+          if (registryKey === key || registryKey.startsWith(`${key}\\`)) {
+            registry.delete(registryKey);
+          }
+        }
+      }
+
+      return { stderr: "", stdout: "" };
+    }
+
+    throw new Error(`Unexpected reg.exe operation ${operation}.`);
+  };
+
+  try {
+    await fs.mkdir(installDirectory, { recursive: true });
+    await fs.writeFile(executablePath, "");
+    await fs.mkdir(path.dirname(shortcutPath), { recursive: true });
+    await fs.writeFile(shortcutPath, "shortcut");
+
+    const service = new InstallerService({
+      commandRunner,
+      currentAppDirectory: installDirectory,
+      currentExecutablePath: executablePath,
+      currentVersion: "1.2.3",
+      detachedPowerShellRunner: async (operationName, script, options) => {
+        assert.equal(quitRequested, false);
+        launcherCalls.push({ logPath: options?.logPath, operationName, script });
+      },
+      env,
+      isPackaged: true,
+      platform: "win32",
+      requestQuit: () => {
+        quitRequested = true;
+      },
+    });
+
+    const result = await service.startUninstall();
+
+    assert.equal(quitRequested, true);
+    assert.equal(registry.has("HKCU\\Software\\Classes\\.spready"), false);
+    assert.equal(
+      registry.has("HKCU\\Software\\Classes\\Spready.Workbook\\shell\\open\\command"),
+      false,
+    );
+    assert.equal(
+      registry.has("HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spready"),
+      false,
+    );
+    assert.equal(await fileExists(shortcutPath), false);
+    assert.equal(launcherCalls.length, 1);
+    assert.equal(launcherCalls[0].operationName, "Uninstall Spready");
+    assert.match(launcherCalls[0].script, /remove install directory/u);
+    assert.match(result.logPath ?? "", /spready-uninstall\.log$/u);
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
+});
+
 test("installer status reports supported installation options", async () => {
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-installer-status-"));
 
@@ -449,3 +549,13 @@ test("finish update script retries replacement and restores previous install on 
   );
   assert.match(script, /Start-Process -FilePath/u);
 });
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+
+    return true;
+  } catch {
+    return false;
+  }
+}

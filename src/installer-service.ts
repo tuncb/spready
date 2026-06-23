@@ -52,6 +52,7 @@ interface InstallerServiceDependencies {
   currentAppDirectory: string;
   currentExecutablePath: string;
   currentVersion: string;
+  detachedPowerShellRunner?: InstallerDetachedPowerShellRunner;
   env?: NodeJS.ProcessEnv;
   fetch?: typeof fetch;
   isPackaged: boolean;
@@ -73,6 +74,12 @@ export type InstallerCommandRunner = (
   command: string,
   args: string[],
 ) => Promise<InstallerCommandResult>;
+
+export type InstallerDetachedPowerShellRunner = (
+  operationName: string,
+  script: string,
+  options?: { logPath?: string },
+) => Promise<void>;
 
 export interface InstallerShortcutDetails {
   cwd: string;
@@ -298,6 +305,7 @@ export class InstallerService {
   #currentAppDirectory: string;
   #currentExecutablePath: string;
   #currentVersion: string;
+  #detachedPowerShellRunner: InstallerDetachedPowerShellRunner;
   #env: NodeJS.ProcessEnv;
   #fetch: typeof fetch;
   #isPackaged: boolean;
@@ -315,6 +323,7 @@ export class InstallerService {
     this.#currentAppDirectory = dependencies.currentAppDirectory;
     this.#currentExecutablePath = dependencies.currentExecutablePath;
     this.#currentVersion = dependencies.currentVersion;
+    this.#detachedPowerShellRunner = dependencies.detachedPowerShellRunner ?? spawnPowerShellScript;
     this.#env = dependencies.env ?? process.env;
     this.#fetch = dependencies.fetch ?? fetch;
     this.#isPackaged = dependencies.isPackaged;
@@ -401,9 +410,9 @@ export class InstallerService {
     await this.#commandRunner("reg.exe", ["delete", UNINSTALL_REGISTRY_KEY, "/f"]).catch(
       () => undefined,
     );
-    const logPath = createInstallerLogPath("uninstall");
+    const logPath = createInstallerLogPath("spready-uninstall");
 
-    spawnPowerShellScript(
+    await this.#detachedPowerShellRunner(
       "Uninstall Spready",
       buildUninstallScript(process.pid, status.installDirectory),
       {
@@ -502,7 +511,7 @@ export class InstallerService {
     await fs.rm(stagingDirectory, { force: true, recursive: true });
     await fs.rename(extractedAppDirectory, stagingDirectory);
 
-    spawnPowerShellScript(
+    await this.#detachedPowerShellRunner(
       "Finish Spready update",
       buildFinishUpdateScript({
         installDirectory: status.installDirectory,
@@ -881,7 +890,7 @@ async function runPowerShellScript(
   }
 }
 
-function spawnPowerShellScript(
+async function spawnPowerShellScript(
   operationName: string,
   script: string,
   options: { logPath?: string } = {},
@@ -891,36 +900,35 @@ function spawnPowerShellScript(
     exitOnCompletion: false,
     logPath,
   });
-  const child = spawn(
-    "cmd.exe",
-    [
-      "/d",
-      "/s",
-      "/c",
-      "start",
-      `"${operationName}"`,
-      "powershell.exe",
-      "-NoExit",
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-EncodedCommand",
-      encodePowerShellCommand(wrappedScript),
-    ],
-    {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-    },
-  );
 
-  child.on("error", (error) => {
-    void appendInstallerLogLine(
-      logPath,
-      "ERROR",
-      `Failed to launch PowerShell terminal: ${error.message}`,
+  await appendInstallerLogLine(logPath, "INFO", `Launching detached PowerShell: ${operationName}`);
+
+  let child: ReturnType<typeof spawn>;
+
+  try {
+    child = spawn(
+      "powershell.exe",
+      [
+        "-NoExit",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-EncodedCommand",
+        encodePowerShellCommand(wrappedScript),
+      ],
+      {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      },
     );
-  });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown spawn error.";
+
+    await appendInstallerLogLine(logPath, "ERROR", `Failed to launch PowerShell: ${message}`);
+    throw error;
+  }
+
   child.on("exit", (code) => {
     if (code === 0) {
       return;
@@ -932,7 +940,37 @@ function spawnPowerShellScript(
       `PowerShell terminal launch exited with code ${code ?? "unknown"}.`,
     );
   });
+  const handoff = waitForDetachedProcessHandoff(child, logPath);
+
   child.unref();
+
+  await handoff;
+}
+
+async function waitForDetachedProcessHandoff(
+  child: ReturnType<typeof spawn>,
+  logPath: string,
+): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(resolve, 500);
+    const finish = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+
+    child.once("spawn", () => {
+      void appendInstallerLogLine(logPath, "INFO", "Detached PowerShell process started.").finally(
+        finish,
+      );
+    });
+    child.once("error", (error) => {
+      void appendInstallerLogLine(
+        logPath,
+        "ERROR",
+        `Failed to launch PowerShell terminal: ${error.message}`,
+      ).finally(finish);
+    });
+  });
 }
 
 function createInstallerLogPath(operationName: string) {
