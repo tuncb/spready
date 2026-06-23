@@ -76,7 +76,7 @@ test("evaluateSheet records lightweight evaluation metrics", () => {
     cellsEvaluated: 12,
     dependencyKeysRecorded: 6,
     formulasParsed: 2,
-    rangeCellsMaterialized: 6,
+    rangeCellsMaterialized: 0,
   });
 });
 

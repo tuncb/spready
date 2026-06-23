@@ -25,6 +25,7 @@ import {
   getSheetStyleRange,
   getSheetUsedRange,
   getWorkbookSummary,
+  isFormulaInput,
   getSheetRowCount,
   type ApplyTransactionRequest,
   type ApplyTransactionResult,
@@ -72,11 +73,15 @@ import {
 import { formatWorkbookConsoleOutput } from "./workbook-console-output";
 import {
   compareCellEvaluationSortValues,
+  createCellKey,
   createFormulaEvaluationMetrics,
   evaluateWorkbook,
   getCellEvaluation,
+  getCellKeySheetId,
   type CellEvaluation,
+  type CellKey,
   type FormulaEvaluationMetrics,
+  type FormulaParseCache,
   type SheetEvaluationSnapshot,
 } from "./formula-engine";
 import { buildWorkbookChartPreview } from "./workbook-charting";
@@ -98,6 +103,7 @@ type EvaluationTraceSink = (message: string) => void;
 export class WorkbookController extends EventEmitter {
   #state: WorkbookState = createWorkbookState();
   #sheetEvaluationSnapshots = new Map<string, SheetEvaluationSnapshot>();
+  #formulaParseCache: FormulaParseCache = new Map();
   #evaluationClock: () => Date;
   #evaluationTraceSink?: EvaluationTraceSink;
   #performanceClock: () => number;
@@ -453,8 +459,13 @@ export class WorkbookController extends EventEmitter {
     const nextSummary = getWorkbookSummary(nextState);
 
     if (execution.changed && !request.dryRun) {
+      const nextEvaluationSnapshots = this.#getTransactionEvaluationSnapshots(
+        preparedRequest.operations,
+      );
+
       this.#recordHistoryNode(nextState);
       this.#commitState(nextState, {
+        evaluationSnapshots: nextEvaluationSnapshots,
         preserveEvaluationSnapshots: shouldPreserveEvaluationSnapshots(preparedRequest.operations),
       });
     }
@@ -639,6 +650,10 @@ export class WorkbookController extends EventEmitter {
     const nextSnapshots = evaluateWorkbook(this.#state, this.#state.version, {
       metrics,
       now: this.#evaluationClock(),
+      parseCache: this.#formulaParseCache,
+      seedSnapshots: this.#canSeedEvaluationSnapshots()
+        ? this.#sheetEvaluationSnapshots
+        : undefined,
     });
     const durationMs = this.#performanceClock() - startedMs;
 
@@ -678,6 +693,12 @@ export class WorkbookController extends EventEmitter {
     );
   }
 
+  #canSeedEvaluationSnapshots() {
+    return ![...this.#sheetEvaluationSnapshots.values()].some(
+      (snapshot) => snapshot.hasVolatileFunctions,
+    );
+  }
+
   #getChartSheetReferences(): WorkbookChartSheetReference[] {
     return this.#state.sheets.map((sheet) => ({
       columnCount: getSheetColumnCount(sheet),
@@ -686,10 +707,36 @@ export class WorkbookController extends EventEmitter {
     }));
   }
 
-  #commitState(nextState: WorkbookState, options: { preserveEvaluationSnapshots?: boolean } = {}) {
+  #getTransactionEvaluationSnapshots(
+    operations: readonly WorkbookTransactionOperation[],
+  ): Map<string, SheetEvaluationSnapshot> | undefined {
+    const changedCellKeys = getIncrementalCellWriteKeys(this.#state, operations);
+
+    if (!changedCellKeys || this.#sheetEvaluationSnapshots.size === 0) {
+      return undefined;
+    }
+
+    if (
+      [...this.#sheetEvaluationSnapshots.values()].some((snapshot) => snapshot.hasVolatileFunctions)
+    ) {
+      return undefined;
+    }
+
+    return invalidateEvaluationSnapshots(this.#sheetEvaluationSnapshots, changedCellKeys);
+  }
+
+  #commitState(
+    nextState: WorkbookState,
+    options: {
+      evaluationSnapshots?: Map<string, SheetEvaluationSnapshot>;
+      preserveEvaluationSnapshots?: boolean;
+    } = {},
+  ) {
     this.#state = nextState;
 
-    if (options.preserveEvaluationSnapshots) {
+    if (options.evaluationSnapshots) {
+      this.#sheetEvaluationSnapshots = options.evaluationSnapshots;
+    } else if (options.preserveEvaluationSnapshots) {
       this.#sheetEvaluationSnapshots = retagEvaluationSnapshots(
         this.#sheetEvaluationSnapshots,
         nextState.version,
@@ -867,6 +914,113 @@ function shouldPreserveEvaluationSnapshots(operations: readonly WorkbookTransact
   return (
     operations.length > 0 && operations.every((operation) => operation.type === "setActiveSheet")
   );
+}
+
+function getIncrementalCellWriteKeys(
+  state: WorkbookState,
+  operations: readonly WorkbookTransactionOperation[],
+): Set<CellKey> | undefined {
+  const changedCellKeys = new Set<CellKey>();
+
+  for (const operation of operations) {
+    if (operation.type === "setActiveSheet") {
+      continue;
+    }
+
+    if (operation.type !== "setCell") {
+      return undefined;
+    }
+
+    const sheet = getWorkbookSheet(state, operation.sheetId);
+
+    if (
+      operation.rowIndex < 0 ||
+      operation.columnIndex < 0 ||
+      operation.rowIndex >= getSheetRowCount(sheet) ||
+      operation.columnIndex >= getSheetColumnCount(sheet)
+    ) {
+      return undefined;
+    }
+
+    const previousInput = sheet.cells[operation.rowIndex]?.[operation.columnIndex] ?? "";
+
+    if (isFormulaInput(previousInput) || isFormulaInput(operation.value)) {
+      return undefined;
+    }
+
+    changedCellKeys.add(createCellKey(sheet.id, operation.rowIndex, operation.columnIndex));
+  }
+
+  return changedCellKeys.size > 0 ? changedCellKeys : undefined;
+}
+
+function invalidateEvaluationSnapshots(
+  snapshots: Map<string, SheetEvaluationSnapshot>,
+  changedCellKeys: ReadonlySet<CellKey>,
+): Map<string, SheetEvaluationSnapshot> {
+  const dirtyCellKeys = getTransitiveDirtyCellKeys(snapshots, changedCellKeys);
+  const nextSnapshots = cloneEvaluationSnapshots(snapshots);
+
+  for (const dirtyCellKey of dirtyCellKeys) {
+    const dirtySnapshot = nextSnapshots.get(getCellKeySheetId(dirtyCellKey));
+
+    if (!dirtySnapshot) {
+      continue;
+    }
+
+    dirtySnapshot.cells.delete(dirtyCellKey);
+  }
+
+  return nextSnapshots;
+}
+
+function getTransitiveDirtyCellKeys(
+  snapshots: Map<string, SheetEvaluationSnapshot>,
+  changedCellKeys: ReadonlySet<CellKey>,
+): Set<CellKey> {
+  const dirtyCellKeys = new Set(changedCellKeys);
+  const queue = [...changedCellKeys];
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const cellKey = queue[index];
+    const snapshot = snapshots.get(getCellKeySheetId(cellKey));
+    const dependents = snapshot?.dependents.get(cellKey);
+
+    if (!dependents) {
+      continue;
+    }
+
+    for (const dependentKey of dependents) {
+      if (dirtyCellKeys.has(dependentKey)) {
+        continue;
+      }
+
+      dirtyCellKeys.add(dependentKey);
+      queue.push(dependentKey);
+    }
+  }
+
+  return dirtyCellKeys;
+}
+
+function cloneEvaluationSnapshots(
+  snapshots: Map<string, SheetEvaluationSnapshot>,
+): Map<string, SheetEvaluationSnapshot> {
+  return new Map(
+    [...snapshots].map(([sheetId, snapshot]) => [
+      sheetId,
+      {
+        ...snapshot,
+        cells: new Map(snapshot.cells),
+        dependents: cloneCellKeySetMap(snapshot.dependents),
+        precedents: cloneCellKeySetMap(snapshot.precedents),
+      },
+    ]),
+  );
+}
+
+function cloneCellKeySetMap(map: Map<CellKey, Set<CellKey>>): Map<CellKey, Set<CellKey>> {
+  return new Map([...map].map(([cellKey, values]) => [cellKey, new Set(values)]));
 }
 
 function createEnvironmentEvaluationTraceSink(): EvaluationTraceSink | undefined {
