@@ -1217,6 +1217,29 @@ async function runConsoleOutputMode(filePath: string) {
   process.stdout.write(workbookController.getConsoleOutput().text);
 }
 
+async function openStartupWorkbookFile(filePath: string | undefined) {
+  if (!filePath) {
+    return;
+  }
+
+  try {
+    await workbookController.openWorkbookFile({
+      discardUnsavedChanges: true,
+      filePath,
+    });
+    startupTimer.log("startup-workbook-opened", filePath);
+  } catch (error) {
+    startupTimer.log(
+      "startup-workbook-open-failed",
+      error instanceof Error ? error.message : "unknown error",
+    );
+    dialog.showErrorBox(
+      "Open workbook failed",
+      error instanceof Error ? error.message : "The workbook file could not be opened.",
+    );
+  }
+}
+
 if (mainStartupOptions.help) {
   console.log(getMainHelpText(process.argv[0] ?? "spready"));
   app.exit(0);
@@ -1241,8 +1264,9 @@ if (mainStartupOptions.help) {
       app.quit();
     });
 } else {
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     startupTimer.log("app-when-ready");
+    await openStartupWorkbookFile(mainStartupOptions.workbookFilePath);
     startupTimer.log("control-server-start-requested");
     void controlServer
       .start()

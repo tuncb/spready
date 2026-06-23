@@ -14,8 +14,13 @@ import type {
 
 const APP_NAME = "Spready";
 const APP_EXECUTABLE_NAME = "Spready.exe";
+const FILE_ASSOCIATION_DESCRIPTION = "Spready Workbook";
+const FILE_ASSOCIATION_EXTENSION = ".spready";
+const FILE_ASSOCIATION_PROG_ID = "Spready.Workbook";
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/tuncb/spready/releases/latest";
 const PUBLISHER = "tuncb";
+const FILE_ASSOCIATION_EXTENSION_KEY = `HKCU\\Software\\Classes\\${FILE_ASSOCIATION_EXTENSION}`;
+const FILE_ASSOCIATION_PROG_ID_KEY = `HKCU\\Software\\Classes\\${FILE_ASSOCIATION_PROG_ID}`;
 const UNINSTALL_REGISTRY_KEY =
   "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spready";
 const MAX_RELEASE_RESPONSE_BYTES = 2 * 1024 * 1024;
@@ -42,6 +47,7 @@ export interface LatestReleaseInfo {
 
 interface InstallerServiceDependencies {
   arch?: NodeJS.Architecture;
+  commandRunner?: InstallerCommandRunner;
   currentAppDirectory: string;
   currentExecutablePath: string;
   currentVersion: string;
@@ -56,6 +62,16 @@ interface InstallerServiceDependencies {
     shortcut: InstallerShortcutDetails,
   ) => boolean;
 }
+
+export interface InstallerCommandResult {
+  stderr: string;
+  stdout: string;
+}
+
+export type InstallerCommandRunner = (
+  command: string,
+  args: string[],
+) => Promise<InstallerCommandResult>;
 
 export interface InstallerShortcutDetails {
   cwd: string;
@@ -157,6 +173,50 @@ export function buildStartMenuShortcutDetails(executablePath: string): Installer
   };
 }
 
+export function buildFileOpenCommand(executablePath: string): string {
+  return `"${executablePath}" "%1"`;
+}
+
+export function buildFileAssociationRegistryEntries(executablePath: string) {
+  return [
+    {
+      key: FILE_ASSOCIATION_EXTENSION_KEY,
+      value: FILE_ASSOCIATION_PROG_ID,
+    },
+    {
+      key: FILE_ASSOCIATION_PROG_ID_KEY,
+      value: FILE_ASSOCIATION_DESCRIPTION,
+    },
+    {
+      key: `${FILE_ASSOCIATION_PROG_ID_KEY}\\DefaultIcon`,
+      value: `"${executablePath}",0`,
+    },
+    {
+      key: `${FILE_ASSOCIATION_PROG_ID_KEY}\\shell\\open\\command`,
+      value: buildFileOpenCommand(executablePath),
+    },
+  ];
+}
+
+export function normalizeInstallerOptions(options: Partial<InstallerOptions>): InstallerOptions {
+  return {
+    fileAssociation: options.fileAssociation === true,
+    startMenuShortcut: options.startMenuShortcut === true,
+  };
+}
+
+export function parseRegistryDefaultString(output: string): string | null {
+  for (const line of output.split(/\r?\n/u)) {
+    const match = /\sREG_SZ\s+(.*)$/u.exec(line);
+
+    if (match) {
+      return match[1].trim();
+    }
+  }
+
+  return null;
+}
+
 export function selectWindowsReleaseAsset(
   release: Pick<LatestReleaseInfo, "assets">,
   arch: NodeJS.Architecture,
@@ -233,6 +293,7 @@ export function parseLatestReleaseResponse(response: string): LatestReleaseInfo 
 
 export class InstallerService {
   #arch: NodeJS.Architecture;
+  #commandRunner: InstallerCommandRunner;
   #currentAppDirectory: string;
   #currentExecutablePath: string;
   #currentVersion: string;
@@ -249,6 +310,7 @@ export class InstallerService {
 
   constructor(dependencies: InstallerServiceDependencies) {
     this.#arch = dependencies.arch ?? process.arch;
+    this.#commandRunner = dependencies.commandRunner ?? runProcess;
     this.#currentAppDirectory = dependencies.currentAppDirectory;
     this.#currentExecutablePath = dependencies.currentExecutablePath;
     this.#currentVersion = dependencies.currentVersion;
@@ -277,6 +339,9 @@ export class InstallerService {
       installedExecutablePath,
       isPackaged: this.#isPackaged,
       options: {
+        fileAssociation: installed
+          ? await this.#isFileAssociationRegistered(installedExecutablePath)
+          : false,
         startMenuShortcut: installed ? await isRegularFile(shortcutPath) : false,
       },
       platform: this.#platform,
@@ -331,8 +396,10 @@ export class InstallerService {
       throw new Error(`${APP_NAME} is not installed.`);
     }
 
-    await this.#applyOptions({ startMenuShortcut: false });
-    await runProcess("reg.exe", ["delete", UNINSTALL_REGISTRY_KEY, "/f"]).catch(() => undefined);
+    await this.#applyOptions({ fileAssociation: false, startMenuShortcut: false });
+    await this.#commandRunner("reg.exe", ["delete", UNINSTALL_REGISTRY_KEY, "/f"]).catch(
+      () => undefined,
+    );
     spawnPowerShellScript(buildUninstallScript(process.pid, status.installDirectory));
     this.#requestQuit?.();
 
@@ -446,10 +513,11 @@ export class InstallerService {
   }
 
   async #applyOptions(options: InstallerOptions) {
+    const normalizedOptions = normalizeInstallerOptions(options);
     const installDirectory = getDefaultInstallDirectory(this.#env, this.#platform);
     const shortcutPath = getStartMenuShortcutPath(this.#env, this.#platform);
 
-    if (options.startMenuShortcut) {
+    if (normalizedOptions.startMenuShortcut) {
       await fs.mkdir(path.dirname(shortcutPath), { recursive: true });
 
       const installedExecutablePath = getInstalledExecutablePath(installDirectory);
@@ -460,6 +528,14 @@ export class InstallerService {
       }
     } else {
       await fs.rm(shortcutPath, { force: true });
+    }
+
+    const installedExecutablePath = getInstalledExecutablePath(installDirectory);
+
+    if (normalizedOptions.fileAssociation) {
+      await this.#registerFileAssociation(installedExecutablePath);
+    } else {
+      await this.#unregisterFileAssociation();
     }
   }
 
@@ -519,16 +595,28 @@ export class InstallerService {
     const status = await this.getStatus();
     const uninstallCommand = `"${status.installedExecutablePath}" --spready-uninstall`;
 
-    await runProcess("reg.exe", ["add", UNINSTALL_REGISTRY_KEY, "/f"]);
-    await setRegistryString("DisplayName", APP_NAME);
-    await setRegistryString("DisplayVersion", this.#currentVersion);
-    await setRegistryString("Publisher", PUBLISHER);
-    await setRegistryString("InstallLocation", status.installDirectory);
-    await setRegistryString("DisplayIcon", status.installedExecutablePath);
-    await setRegistryString("UninstallString", uninstallCommand);
-    await setRegistryString("QuietUninstallString", `${uninstallCommand} --quiet`);
-    await setRegistryDword("NoModify", 1);
-    await setRegistryDword("NoRepair", 1);
+    await this.#commandRunner("reg.exe", ["add", UNINSTALL_REGISTRY_KEY, "/f"]);
+    await this.#setRegistryString(UNINSTALL_REGISTRY_KEY, "DisplayName", APP_NAME);
+    await this.#setRegistryString(UNINSTALL_REGISTRY_KEY, "DisplayVersion", this.#currentVersion);
+    await this.#setRegistryString(UNINSTALL_REGISTRY_KEY, "Publisher", PUBLISHER);
+    await this.#setRegistryString(
+      UNINSTALL_REGISTRY_KEY,
+      "InstallLocation",
+      status.installDirectory,
+    );
+    await this.#setRegistryString(
+      UNINSTALL_REGISTRY_KEY,
+      "DisplayIcon",
+      status.installedExecutablePath,
+    );
+    await this.#setRegistryString(UNINSTALL_REGISTRY_KEY, "UninstallString", uninstallCommand);
+    await this.#setRegistryString(
+      UNINSTALL_REGISTRY_KEY,
+      "QuietUninstallString",
+      `${uninstallCommand} --quiet`,
+    );
+    await this.#setRegistryDword(UNINSTALL_REGISTRY_KEY, "NoModify", 1);
+    await this.#setRegistryDword(UNINSTALL_REGISTRY_KEY, "NoRepair", 1);
   }
 
   async #resolveAssetSha256(release: LatestReleaseInfo, asset: ReleaseAsset) {
@@ -562,6 +650,89 @@ export class InstallerService {
     }
 
     return sha256;
+  }
+
+  async #isFileAssociationRegistered(executablePath: string) {
+    if (this.#platform !== "win32") {
+      return false;
+    }
+
+    const extensionProgId = await this.#queryRegistryDefaultValue(FILE_ASSOCIATION_EXTENSION_KEY);
+
+    if (extensionProgId !== FILE_ASSOCIATION_PROG_ID) {
+      return false;
+    }
+
+    const openCommand = await this.#queryRegistryDefaultValue(
+      `${FILE_ASSOCIATION_PROG_ID_KEY}\\shell\\open\\command`,
+    );
+
+    return openCommand === buildFileOpenCommand(executablePath);
+  }
+
+  async #queryRegistryDefaultValue(key: string) {
+    try {
+      const result = await this.#commandRunner("reg.exe", ["query", key, "/ve"]);
+
+      return parseRegistryDefaultString(result.stdout);
+    } catch {
+      return null;
+    }
+  }
+
+  async #registerFileAssociation(executablePath: string) {
+    for (const entry of buildFileAssociationRegistryEntries(executablePath)) {
+      await this.#setRegistryDefaultString(entry.key, entry.value);
+    }
+  }
+
+  async #unregisterFileAssociation() {
+    const extensionProgId = await this.#queryRegistryDefaultValue(FILE_ASSOCIATION_EXTENSION_KEY);
+
+    if (extensionProgId === FILE_ASSOCIATION_PROG_ID) {
+      await this.#commandRunner("reg.exe", [
+        "delete",
+        FILE_ASSOCIATION_EXTENSION_KEY,
+        "/ve",
+        "/f",
+      ]).catch(() => undefined);
+    }
+
+    await this.#commandRunner("reg.exe", ["delete", FILE_ASSOCIATION_PROG_ID_KEY, "/f"]).catch(
+      () => undefined,
+    );
+  }
+
+  async #setRegistryDefaultString(key: string, value: string) {
+    await this.#commandRunner("reg.exe", ["add", key, "/ve", "/t", "REG_SZ", "/d", value, "/f"]);
+  }
+
+  async #setRegistryString(key: string, name: string, value: string) {
+    await this.#commandRunner("reg.exe", [
+      "add",
+      key,
+      "/v",
+      name,
+      "/t",
+      "REG_SZ",
+      "/d",
+      value,
+      "/f",
+    ]);
+  }
+
+  async #setRegistryDword(key: string, name: string, value: number) {
+    await this.#commandRunner("reg.exe", [
+      "add",
+      key,
+      "/v",
+      name,
+      "/t",
+      "REG_DWORD",
+      "/d",
+      String(value),
+      "/f",
+    ]);
   }
 }
 
@@ -640,13 +811,17 @@ async function pathsReferToSameFile(left: string, right: string): Promise<boolea
   }
 }
 
-async function runProcess(command: string, args: string[]) {
-  await new Promise<void>((resolve, reject) => {
+async function runProcess(command: string, args: string[]): Promise<InstallerCommandResult> {
+  return await new Promise<InstallerCommandResult>((resolve, reject) => {
     const child = spawn(command, args, {
       windowsHide: true,
     });
     let stderr = "";
+    let stdout = "";
 
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString("utf8");
+    });
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
@@ -654,7 +829,7 @@ async function runProcess(command: string, args: string[]) {
     child.on("error", reject);
     child.on("exit", (code) => {
       if (code === 0) {
-        resolve();
+        resolve({ stderr, stdout });
         return;
       }
 
@@ -830,32 +1005,4 @@ async function verifyFileSha256(filePath: string, expectedSha256: string) {
   if (actualSha256.toLowerCase() !== expectedSha256.toLowerCase()) {
     throw new Error("Downloaded update SHA-256 did not match the expected digest.");
   }
-}
-
-async function setRegistryString(name: string, value: string) {
-  await runProcess("reg.exe", [
-    "add",
-    UNINSTALL_REGISTRY_KEY,
-    "/v",
-    name,
-    "/t",
-    "REG_SZ",
-    "/d",
-    value,
-    "/f",
-  ]);
-}
-
-async function setRegistryDword(name: string, value: number) {
-  await runProcess("reg.exe", [
-    "add",
-    UNINSTALL_REGISTRY_KEY,
-    "/v",
-    name,
-    "/t",
-    "REG_DWORD",
-    "/d",
-    String(value),
-    "/f",
-  ]);
 }

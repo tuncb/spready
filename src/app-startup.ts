@@ -1,7 +1,10 @@
 export interface MainStartupOptions {
   consoleOutputFilePath?: string;
   help: boolean;
+  workbookFilePath?: string;
 }
+
+const WORKBOOK_FILE_EXTENSION = ".spready";
 
 function getArgumentName(token: string) {
   const separatorIndex = token.indexOf("=");
@@ -59,6 +62,13 @@ export function parseMainStartupOptions(argv: string[]): MainStartupOptions {
     }
 
     if (!token.startsWith("--")) {
+      if (
+        options.workbookFilePath === undefined &&
+        token.toLowerCase().endsWith(WORKBOOK_FILE_EXTENSION)
+      ) {
+        options.workbookFilePath = token;
+      }
+
       continue;
     }
 
@@ -96,5 +106,8 @@ export function getMainHelpText(commandName = "spready") {
     "Options:",
     "  -h, --help                         Show this help message.",
     "      --console-output FILE          Print a .spready workbook to stdout and exit.",
+    "",
+    "Arguments:",
+    "  FILE                               Open a .spready workbook.",
   ].join("\n");
 }
