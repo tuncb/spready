@@ -5,6 +5,8 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  buildFileAssociationRegistryEntries,
+  buildFileOpenCommand,
   buildFinishUpdateScript,
   buildStartMenuShortcutDetails,
   buildWaitForProcessExitScript,
@@ -14,7 +16,9 @@ import {
   getInstalledExecutablePath,
   getStartMenuShortcutPath,
   InstallerService,
+  type InstallerCommandRunner,
   type InstallerShortcutDetails,
+  parseRegistryDefaultString,
   parseLatestReleaseResponse,
   parseVersionTag,
   runWithAsarFilesystemDisabled,
@@ -126,6 +130,50 @@ test("start menu shortcut details include a matching icon index", () => {
   });
 });
 
+test("file association registry entries open workbook files with Spready", () => {
+  const executablePath = path.join(
+    "C:\\Users\\person\\AppData\\Local",
+    "Programs",
+    "Spready",
+    "Spready.exe",
+  );
+
+  assert.equal(buildFileOpenCommand(executablePath), `"${executablePath}" "%1"`);
+  assert.deepEqual(buildFileAssociationRegistryEntries(executablePath), [
+    {
+      key: "HKCU\\Software\\Classes\\.spready",
+      value: "Spready.Workbook",
+    },
+    {
+      key: "HKCU\\Software\\Classes\\Spready.Workbook",
+      value: "Spready Workbook",
+    },
+    {
+      key: "HKCU\\Software\\Classes\\Spready.Workbook\\DefaultIcon",
+      value: `"${executablePath}",0`,
+    },
+    {
+      key: "HKCU\\Software\\Classes\\Spready.Workbook\\shell\\open\\command",
+      value: `"${executablePath}" "%1"`,
+    },
+  ]);
+});
+
+test("registry default value parsing reads REG_SZ output", () => {
+  assert.equal(
+    parseRegistryDefaultString(
+      [
+        "",
+        "HKEY_CURRENT_USER\\Software\\Classes\\.spready",
+        "    (Default)    REG_SZ    Spready.Workbook",
+        "",
+      ].join("\r\n"),
+    ),
+    "Spready.Workbook",
+  );
+  assert.equal(parseRegistryDefaultString("value not set"), null);
+});
+
 test("non-Windows install directory uses the user data area", () => {
   assert.equal(
     getDefaultInstallDirectory({}, "linux"),
@@ -165,7 +213,10 @@ test("applying installer options writes the start menu shortcut", async () => {
       },
     });
 
-    const result = await service.applyOptions({ startMenuShortcut: true });
+    const result = await service.applyOptions({
+      fileAssociation: false,
+      startMenuShortcut: true,
+    });
 
     assert.deepEqual(writtenShortcut, buildStartMenuShortcutDetails(executablePath));
     assert.equal(result.status.options.startMenuShortcut, true);
@@ -174,7 +225,91 @@ test("applying installer options writes the start menu shortcut", async () => {
   }
 });
 
-test("installer status reports only supported installation options", async () => {
+test("applying installer options writes the file association", async () => {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-installer-association-"));
+  const env = {
+    LOCALAPPDATA: tempDirectory,
+  };
+  const installDirectory = getDefaultInstallDirectory(env, "win32");
+  const executablePath = getInstalledExecutablePath(installDirectory);
+  const registry = new Map<string, string>();
+  const commandRunner: InstallerCommandRunner = async (command, args) => {
+    assert.equal(command, "reg.exe");
+
+    const operation = args[0];
+    const key = args[1];
+
+    if (operation === "add") {
+      const valueIndex = args.indexOf("/d");
+
+      if (args.includes("/ve") && valueIndex >= 0) {
+        registry.set(key, args[valueIndex + 1]);
+      }
+
+      return { stderr: "", stdout: "" };
+    }
+
+    if (operation === "query") {
+      const value = registry.get(key);
+
+      if (!value) {
+        throw new Error("not found");
+      }
+
+      return {
+        stderr: "",
+        stdout: ["", key, `    (Default)    REG_SZ    ${value}`, ""].join("\r\n"),
+      };
+    }
+
+    if (operation === "delete") {
+      if (args.includes("/ve")) {
+        registry.delete(key);
+      } else {
+        for (const registryKey of [...registry.keys()]) {
+          if (registryKey === key || registryKey.startsWith(`${key}\\`)) {
+            registry.delete(registryKey);
+          }
+        }
+      }
+
+      return { stderr: "", stdout: "" };
+    }
+
+    throw new Error(`Unexpected reg.exe operation ${operation}.`);
+  };
+
+  try {
+    await fs.mkdir(installDirectory, { recursive: true });
+    await fs.writeFile(executablePath, "");
+
+    const service = new InstallerService({
+      commandRunner,
+      currentAppDirectory: installDirectory,
+      currentExecutablePath: executablePath,
+      currentVersion: "1.2.3",
+      env,
+      isPackaged: true,
+      platform: "win32",
+    });
+
+    const result = await service.applyOptions({
+      fileAssociation: true,
+      startMenuShortcut: false,
+    });
+
+    assert.equal(registry.get("HKCU\\Software\\Classes\\.spready"), "Spready.Workbook");
+    assert.equal(
+      registry.get("HKCU\\Software\\Classes\\Spready.Workbook\\shell\\open\\command"),
+      `"${executablePath}" "%1"`,
+    );
+    assert.equal(result.status.options.fileAssociation, true);
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
+});
+
+test("installer status reports supported installation options", async () => {
   const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-installer-status-"));
 
   try {
@@ -190,6 +325,7 @@ test("installer status reports only supported installation options", async () =>
     });
 
     assert.deepEqual((await service.getStatus()).options, {
+      fileAssociation: false,
       startMenuShortcut: false,
     });
   } finally {

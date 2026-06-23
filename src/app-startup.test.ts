@@ -23,6 +23,17 @@ test("parseMainStartupOptions recognizes help flags", () => {
   });
 });
 
+test("parseMainStartupOptions reads workbook file arguments", () => {
+  assert.deepEqual(parseMainStartupOptions(["C:\\workbooks\\budget.spready"]), {
+    help: false,
+    workbookFilePath: "C:\\workbooks\\budget.spready",
+  });
+  assert.deepEqual(parseMainStartupOptions([".", "C:\\workbooks\\budget.spready"]), {
+    help: false,
+    workbookFilePath: "C:\\workbooks\\budget.spready",
+  });
+});
+
 test("parseMainStartupOptions rejects missing console output values", () => {
   assert.throws(() => parseMainStartupOptions(["--console-output"]), /Missing value/);
   assert.throws(() => parseMainStartupOptions(["--console-output="]), /Missing value/);
@@ -33,4 +44,5 @@ test("getMainHelpText documents console output mode", () => {
 
   assert.match(helpText, /Usage: spready \[options\]/);
   assert.match(helpText, /--console-output FILE/);
+  assert.match(helpText, /Open a \.spready workbook/);
 });

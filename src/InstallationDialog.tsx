@@ -17,6 +17,7 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [options, setOptions] = useState<InstallerOptions>({
+    fileAssociation: false,
     startMenuShortcut: false,
   });
   const [status, setStatus] = useState<InstallerStatus | null>(null);
@@ -183,6 +184,17 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
                     type="checkbox"
                   />
                   Add Start Menu shortcut
+                </label>
+                <label className="chart-editor__checkbox">
+                  <input
+                    checked={options.fileAssociation}
+                    disabled={!canInstall || isBusy}
+                    onChange={(event) => {
+                      updateOption("fileAssociation", event.target.checked);
+                    }}
+                    type="checkbox"
+                  />
+                  Associate with Spready files
                 </label>
               </section>
             ) : (

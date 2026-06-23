@@ -23,6 +23,7 @@ export interface ControlAppStatus {
 }
 
 export interface InstallerOptions {
+  fileAssociation: boolean;
   startMenuShortcut: boolean;
 }
 
