@@ -8,7 +8,9 @@ import {
   buildFileAssociationRegistryEntries,
   buildFileOpenCommand,
   buildFinishUpdateScript,
+  buildInstallerPowerShellScript,
   buildStartMenuShortcutDetails,
+  buildUninstallScript,
   buildWaitForProcessExitScript,
   extractSha256FromDigest,
   extractSha256FromText,
@@ -394,6 +396,39 @@ test("update script tolerates the app process already being closed", () => {
   assert.doesNotMatch(script, /Wait-Process/u);
 });
 
+test("installer PowerShell wrapper logs lifecycle details", () => {
+  const script = buildInstallerPowerShellScript(
+    "Finish Spready update",
+    "Invoke-SpreadyInstallerStep 'copy files' { Write-Host 'copying' }",
+    {
+      exitOnCompletion: false,
+      logPath: "C:\\Temp\\spready-installation-logs\\update.log",
+    },
+  );
+
+  assert.match(
+    script,
+    /\$spreadyInstallerLogPath = 'C:\\Temp\\spready-installation-logs\\update.log'/u,
+  );
+  assert.match(script, /Write-Host \$line/u);
+  assert.match(script, /Add-Content -LiteralPath \$spreadyInstallerLogPath -Value \$line/u);
+  assert.match(script, /Starting: \$Name/u);
+  assert.match(script, /Write-SpreadyInstallerError \$_/u);
+  assert.match(script, /PowerShell window left open for review/u);
+});
+
+test("uninstall script logs explicit steps and propagates failures", () => {
+  const script = buildUninstallScript(
+    12345,
+    "C:\\Users\\person\\AppData\\Local\\Programs\\Spready",
+  );
+
+  assert.match(script, /Invoke-SpreadyInstallerStep 'wait for Spready to exit'/u);
+  assert.match(script, /Invoke-SpreadyInstallerStep 'remove install directory'/u);
+  assert.match(script, /Remove-Item -LiteralPath/u);
+  assert.doesNotMatch(script, /SilentlyContinue'\n/u);
+});
+
 test("finish update script retries replacement and restores previous install on failure", () => {
   const script = buildFinishUpdateScript({
     installDirectory: "C:\\Users\\person\\AppData\\Local\\Programs\\Spready",
@@ -406,6 +441,7 @@ test("finish update script retries replacement and restores previous install on 
 
   assert.match(script, /Invoke-SpreadyUpdateStep 'rename current install'/u);
   assert.match(script, /Invoke-SpreadyUpdateStep 'move staged update'/u);
+  assert.match(script, /Write-SpreadyInstallerLog/u);
   assert.match(script, /Restored previous install after update failure/u);
   assert.match(
     script,

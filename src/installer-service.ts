@@ -23,6 +23,7 @@ const FILE_ASSOCIATION_EXTENSION_KEY = `HKCU\\Software\\Classes\\${FILE_ASSOCIAT
 const FILE_ASSOCIATION_PROG_ID_KEY = `HKCU\\Software\\Classes\\${FILE_ASSOCIATION_PROG_ID}`;
 const UNINSTALL_REGISTRY_KEY =
   "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Spready";
+const INSTALLER_LOG_DIRECTORY_NAME = "spready-installation-logs";
 const MAX_RELEASE_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_ASSET_DOWNLOAD_BYTES = 250 * 1024 * 1024;
 
@@ -400,10 +401,19 @@ export class InstallerService {
     await this.#commandRunner("reg.exe", ["delete", UNINSTALL_REGISTRY_KEY, "/f"]).catch(
       () => undefined,
     );
-    spawnPowerShellScript(buildUninstallScript(process.pid, status.installDirectory));
+    const logPath = createInstallerLogPath("uninstall");
+
+    spawnPowerShellScript(
+      "Uninstall Spready",
+      buildUninstallScript(process.pid, status.installDirectory),
+      {
+        logPath,
+      },
+    );
     this.#requestQuit?.();
 
     return {
+      logPath,
       message: `${APP_NAME} uninstall started.`,
       status: await this.getStatus(),
     };
@@ -477,10 +487,14 @@ export class InstallerService {
     );
     await verifyFileSha256(downloadedArchive, expectedSha256);
     await fs.mkdir(extractionDirectory, { recursive: true });
+    const logPath = createInstallerLogPath("update");
+
     await runPowerShellScript(
+      "Extract Spready update",
       `Expand-Archive -LiteralPath ${quotePowerShellString(
         downloadedArchive,
       )} -DestinationPath ${quotePowerShellString(extractionDirectory)} -Force`,
+      { logPath },
     );
 
     const extractedAppDirectory = await findExtractedAppDirectory(extractionDirectory);
@@ -489,6 +503,7 @@ export class InstallerService {
     await fs.rename(extractedAppDirectory, stagingDirectory);
 
     spawnPowerShellScript(
+      "Finish Spready update",
       buildFinishUpdateScript({
         installDirectory: status.installDirectory,
         latestVersion: formatVersionNumber(release.version),
@@ -497,6 +512,7 @@ export class InstallerService {
         stagedDirectory: stagingDirectory,
         updateDirectory,
       }),
+      { logPath },
     );
     this.#requestQuit?.();
 
@@ -504,6 +520,7 @@ export class InstallerService {
       assetName: asset.name,
       currentVersion: this.#currentVersion,
       latestVersion: formatVersionNumber(release.version),
+      logPath,
       message: `${APP_NAME} update started.`,
       releaseUrl: release.html_url,
       status,
@@ -838,25 +855,57 @@ async function runProcess(command: string, args: string[]): Promise<InstallerCom
   });
 }
 
-async function runPowerShellScript(script: string) {
-  await runProcess("powershell.exe", [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-EncodedCommand",
-    encodePowerShellCommand(script),
-  ]);
-}
+async function runPowerShellScript(
+  operationName: string,
+  script: string,
+  options: { logPath?: string } = {},
+) {
+  const logPath = options.logPath ?? createInstallerLogPath(operationName);
+  const wrappedScript = buildInstallerPowerShellScript(operationName, script, {
+    exitOnCompletion: true,
+    logPath,
+  });
 
-function spawnPowerShellScript(script: string) {
-  const child = spawn(
-    "powershell.exe",
-    [
+  try {
+    await runProcess("powershell.exe", [
       "-NoProfile",
       "-ExecutionPolicy",
       "Bypass",
       "-EncodedCommand",
-      encodePowerShellCommand(script),
+      encodePowerShellCommand(wrappedScript),
+    ]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "PowerShell script failed.";
+
+    throw new Error(`${message} Log file: ${logPath}`);
+  }
+}
+
+function spawnPowerShellScript(
+  operationName: string,
+  script: string,
+  options: { logPath?: string } = {},
+) {
+  const logPath = options.logPath ?? createInstallerLogPath(operationName);
+  const wrappedScript = buildInstallerPowerShellScript(operationName, script, {
+    exitOnCompletion: false,
+    logPath,
+  });
+  const child = spawn(
+    "cmd.exe",
+    [
+      "/d",
+      "/s",
+      "/c",
+      "start",
+      `"${operationName}"`,
+      "powershell.exe",
+      "-NoExit",
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-EncodedCommand",
+      encodePowerShellCommand(wrappedScript),
     ],
     {
       detached: true,
@@ -865,7 +914,107 @@ function spawnPowerShellScript(script: string) {
     },
   );
 
+  child.on("error", (error) => {
+    void appendInstallerLogLine(
+      logPath,
+      "ERROR",
+      `Failed to launch PowerShell terminal: ${error.message}`,
+    );
+  });
+  child.on("exit", (code) => {
+    if (code === 0) {
+      return;
+    }
+
+    void appendInstallerLogLine(
+      logPath,
+      "ERROR",
+      `PowerShell terminal launch exited with code ${code ?? "unknown"}.`,
+    );
+  });
   child.unref();
+}
+
+function createInstallerLogPath(operationName: string) {
+  const safeOperationName = operationName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "-")
+    .replace(/^-|-$/gu, "");
+  const timestamp = new Date().toISOString().replace(/[:.]/gu, "-");
+
+  return path.join(
+    os.tmpdir(),
+    INSTALLER_LOG_DIRECTORY_NAME,
+    `${timestamp}-${process.pid}-${safeOperationName || "operation"}.log`,
+  );
+}
+
+async function appendInstallerLogLine(logPath: string, level: "ERROR" | "INFO", message: string) {
+  const timestamp = new Date().toISOString();
+
+  try {
+    await fs.mkdir(path.dirname(logPath), { recursive: true });
+    await fs.appendFile(logPath, `[${timestamp}] [${level}] ${message}\n`);
+  } catch {
+    // Launch failure logging should never take down the app.
+  }
+}
+
+export function buildInstallerPowerShellScript(
+  operationName: string,
+  script: string,
+  options: { exitOnCompletion: boolean; logPath: string },
+) {
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    "$ProgressPreference = 'Continue'",
+    `$spreadyInstallerLogPath = ${quotePowerShellString(options.logPath)}`,
+    `$spreadyInstallerOperation = ${quotePowerShellString(operationName)}`,
+    "New-Item -ItemType Directory -Path (Split-Path -Parent $spreadyInstallerLogPath) -Force | Out-Null",
+    "function Write-SpreadyInstallerLog {",
+    "  param([string] $Message, [string] $Level = 'INFO')",
+    "  $timestamp = Get-Date -Format o",
+    '  $line = "[$timestamp] [$Level] $Message"',
+    "  Write-Host $line",
+    "  Add-Content -LiteralPath $spreadyInstallerLogPath -Value $line",
+    "}",
+    "function Write-SpreadyInstallerError {",
+    "  param([System.Management.Automation.ErrorRecord] $ErrorRecord)",
+    '  Write-SpreadyInstallerLog "Error: $($ErrorRecord.Exception.Message)" "ERROR"',
+    "  if ($ErrorRecord.InvocationInfo.PositionMessage) {",
+    '    Write-SpreadyInstallerLog $ErrorRecord.InvocationInfo.PositionMessage "ERROR"',
+    "  }",
+    "  if ($ErrorRecord.ScriptStackTrace) {",
+    '    Write-SpreadyInstallerLog $ErrorRecord.ScriptStackTrace "ERROR"',
+    "  }",
+    "}",
+    "function Invoke-SpreadyInstallerStep {",
+    "  param([string] $Name, [scriptblock] $Action)",
+    '  Write-SpreadyInstallerLog "Starting: $Name"',
+    "  try {",
+    "    & $Action",
+    '    Write-SpreadyInstallerLog "Completed: $Name"',
+    "  } catch {",
+    '    Write-SpreadyInstallerLog "Failed: $Name" "ERROR"',
+    "    Write-SpreadyInstallerError $_",
+    "    throw",
+    "  }",
+    "}",
+    'Write-SpreadyInstallerLog "Starting $spreadyInstallerOperation."',
+    'Write-SpreadyInstallerLog "Log file: $spreadyInstallerLogPath"',
+    "$spreadyInstallerExitCode = 0",
+    "try {",
+    indentPowerShellScript(script),
+    '  Write-SpreadyInstallerLog "Finished $spreadyInstallerOperation."',
+    "} catch {",
+    "  $spreadyInstallerExitCode = 1",
+    '  Write-SpreadyInstallerLog "$spreadyInstallerOperation failed." "ERROR"',
+    "  Write-SpreadyInstallerError $_",
+    "}",
+    options.exitOnCompletion
+      ? "exit $spreadyInstallerExitCode"
+      : 'Write-SpreadyInstallerLog "PowerShell window left open for review. Close it when finished."',
+  ].join("\n");
 }
 
 function encodePowerShellCommand(script: string) {
@@ -890,9 +1039,16 @@ export function buildWaitForProcessExitScript(pid: number, timeoutSeconds = 60) 
 
 export function buildUninstallScript(pid: number, installDirectory: string) {
   return [
-    "$ErrorActionPreference = 'SilentlyContinue'",
-    buildWaitForProcessExitScript(pid),
-    `Remove-Item -LiteralPath ${quotePowerShellString(installDirectory)} -Recurse -Force`,
+    "Invoke-SpreadyInstallerStep 'wait for Spready to exit' {",
+    indentPowerShellScript(buildWaitForProcessExitScript(pid)),
+    "}",
+    "Invoke-SpreadyInstallerStep 'remove install directory' {",
+    `  if (Test-Path -LiteralPath ${quotePowerShellString(installDirectory)}) {`,
+    `    Remove-Item -LiteralPath ${quotePowerShellString(installDirectory)} -Recurse -Force`,
+    "  } else {",
+    "    Write-SpreadyInstallerLog 'Install directory was already removed.'",
+    "  }",
+    "}",
   ].join("\n");
 }
 
@@ -913,35 +1069,31 @@ export function buildFinishUpdateScript(args: {
 }) {
   const installedExecutablePath = getInstalledExecutablePath(args.installDirectory);
   const backupDirectory = `${args.installDirectory}.old-${Date.now()}`;
-  const updateLogPath = path.join(args.updateDirectory, "spready-update.log");
 
   return [
-    "$ErrorActionPreference = 'Stop'",
-    "$ProgressPreference = 'SilentlyContinue'",
-    `$logPath = ${quotePowerShellString(updateLogPath)}`,
-    "function Write-SpreadyUpdateLog {",
-    "  param([string] $Message)",
-    "  $timestamp = Get-Date -Format o",
-    '  Add-Content -LiteralPath $logPath -Value "[$timestamp] $Message"',
-    "}",
     "function Invoke-SpreadyUpdateStep {",
     "  param([string] $Name, [scriptblock] $Action)",
     "  $lastError = $null",
+    '  Write-SpreadyInstallerLog "Starting: $Name"',
     "  for ($attempt = 1; $attempt -le 40; $attempt += 1) {",
     "    try {",
     "      & $Action",
+    '      Write-SpreadyInstallerLog "Completed: $Name"',
     "      return",
     "    } catch {",
     "      $lastError = $_",
-    '      Write-SpreadyUpdateLog "$Name failed on attempt ${attempt}: $($_.Exception.Message)"',
+    '      Write-SpreadyInstallerLog "$Name failed on attempt ${attempt}: $($_.Exception.Message)" "ERROR"',
     "      Start-Sleep -Milliseconds 500",
     "    }",
     "  }",
+    '  Write-SpreadyInstallerLog "Failed: $Name" "ERROR"',
+    "  Write-SpreadyInstallerError $lastError",
     "  throw $lastError",
     "}",
     "try {",
-    "  Write-SpreadyUpdateLog 'Waiting for Spready to exit.'",
+    "  Invoke-SpreadyInstallerStep 'wait for Spready to exit' {",
     indentPowerShellScript(buildWaitForProcessExitScript(args.pid)),
+    "  }",
     `  if (Test-Path -LiteralPath ${quotePowerShellString(backupDirectory)}) {`,
     `    Invoke-SpreadyUpdateStep 'remove stale backup' { Remove-Item -LiteralPath ${quotePowerShellString(
       backupDirectory,
@@ -959,7 +1111,7 @@ export function buildFinishUpdateScript(args: {
     "    try {",
     `      Remove-Item -LiteralPath ${quotePowerShellString(backupDirectory)} -Recurse -Force`,
     "    } catch {",
-    '      Write-SpreadyUpdateLog "Old install cleanup failed: $($_.Exception.Message)"',
+    '      Write-SpreadyInstallerLog "Old install cleanup failed: $($_.Exception.Message)" "ERROR"',
     "    }",
     "  }",
     "  try {",
@@ -967,18 +1119,20 @@ export function buildFinishUpdateScript(args: {
       args.latestVersion,
     )} /f | Out-Null`,
     "  } catch {",
-    '    Write-SpreadyUpdateLog "Registry version update failed: $($_.Exception.Message)"',
+    '    Write-SpreadyInstallerLog "Registry version update failed: $($_.Exception.Message)" "ERROR"',
     "  }",
     args.restart
-      ? `  Start-Process -FilePath ${quotePowerShellString(installedExecutablePath)}`
+      ? `  Invoke-SpreadyInstallerStep 'restart Spready' { Start-Process -FilePath ${quotePowerShellString(
+          installedExecutablePath,
+        )} }`
       : "",
     "  try {",
     `    Remove-Item -LiteralPath ${quotePowerShellString(args.updateDirectory)} -Recurse -Force`,
     "  } catch {",
-    '    Write-SpreadyUpdateLog "Temporary update cleanup failed: $($_.Exception.Message)"',
+    '    Write-SpreadyInstallerLog "Temporary update cleanup failed: $($_.Exception.Message)" "ERROR"',
     "  }",
     "} catch {",
-    '  Write-SpreadyUpdateLog "Update failed: $($_.Exception.Message)"',
+    '  Write-SpreadyInstallerLog "Update failed: $($_.Exception.Message)" "ERROR"',
     `  if ((Test-Path -LiteralPath ${quotePowerShellString(
       backupDirectory,
     )}) -and -not (Test-Path -LiteralPath ${quotePowerShellString(args.installDirectory)})) {`,
@@ -986,12 +1140,12 @@ export function buildFinishUpdateScript(args: {
     `      Rename-Item -LiteralPath ${quotePowerShellString(backupDirectory)} -NewName ${quotePowerShellString(
       path.basename(args.installDirectory),
     )} -Force`,
-    "      Write-SpreadyUpdateLog 'Restored previous install after update failure.'",
+    "      Write-SpreadyInstallerLog 'Restored previous install after update failure.'",
     "    } catch {",
-    '      Write-SpreadyUpdateLog "Previous install restore failed: $($_.Exception.Message)"',
+    '      Write-SpreadyInstallerLog "Previous install restore failed: $($_.Exception.Message)" "ERROR"',
     "    }",
     "  }",
-    "  exit 1",
+    "  throw",
     "}",
   ]
     .filter(Boolean)

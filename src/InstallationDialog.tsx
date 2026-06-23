@@ -2,6 +2,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import type {
   InstallerCheckUpdatesResult,
+  InstallerOperationResult,
   InstallerOptions,
   InstallerStatus,
 } from "./workbook-core";
@@ -20,6 +21,7 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
     fileAssociation: false,
     startMenuShortcut: false,
   });
+  const [operationLogPath, setOperationLogPath] = useState<string | null>(null);
   const [status, setStatus] = useState<InstallerStatus | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [updateResult, setUpdateResult] = useState<InstallerCheckUpdatesResult | null>(null);
@@ -84,11 +86,10 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
     }));
   };
 
-  const runOperation = async (
-    operation: () => Promise<{ message: string; status: InstallerStatus }>,
-  ) => {
+  const runOperation = async (operation: () => Promise<InstallerOperationResult>) => {
     setIsBusy(true);
     setErrorMessage(null);
+    setOperationLogPath(null);
     setSuccessMessage(null);
 
     try {
@@ -96,6 +97,7 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
 
       setStatus(result.status);
       setOptions(result.status.options);
+      setOperationLogPath(result.logPath ?? null);
       setSuccessMessage(result.message);
     } catch (error) {
       setErrorMessage(getErrorMessage(error, "Installation operation failed."));
@@ -107,6 +109,7 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
   const checkUpdates = async (startUpdate: boolean) => {
     setIsBusy(true);
     setErrorMessage(null);
+    setOperationLogPath(null);
     setSuccessMessage(null);
 
     try {
@@ -117,6 +120,7 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
 
       setStatus(result.status);
       setUpdateResult(result);
+      setOperationLogPath(result.logPath ?? null);
 
       if (result.updateStarted || !result.updateAvailable) {
         setSuccessMessage(result.message);
@@ -229,6 +233,10 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
               <div className="chart-editor__callout chart-editor__callout--error">
                 {errorMessage}
               </div>
+            ) : null}
+
+            {operationLogPath ? (
+              <div className="chart-editor__callout">Log file: {operationLogPath}</div>
             ) : null}
           </div>
 

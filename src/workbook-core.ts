@@ -40,6 +40,7 @@ export interface InstallerStatus {
 }
 
 export interface InstallerOperationResult {
+  logPath?: string;
   message: string;
   status: InstallerStatus;
 }
@@ -53,6 +54,7 @@ export interface InstallerCheckUpdatesResult {
   assetName?: string;
   currentVersion: string;
   latestVersion?: string;
+  logPath?: string;
   message: string;
   releaseUrl?: string;
   status: InstallerStatus;
