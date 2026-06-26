@@ -11,6 +11,7 @@ import DataEditor, {
 } from "@glideapps/glide-data-grid";
 import {
   type ChangeEvent,
+  type FormEvent,
   type KeyboardEvent,
   lazy,
   Suspense,
@@ -49,6 +50,7 @@ import {
   type WorkbookChartLayout,
   type WorkbookTableSummary,
   type WorkbookSheetChartPreviewsResult,
+  type SheetSummary,
   type SheetDisplayRangeResult,
   type SheetRangeRequest,
   type SheetRangeResult,
@@ -58,6 +60,7 @@ import {
 } from "./workbook-core";
 import { ToastViewport } from "./ToastViewport";
 import { enqueueToast, removeToast, type ToastNotification } from "./toast-state";
+import { filterSheetQuickOpenResults } from "./sheet-quick-open";
 
 const LazyWorkbookChartOverlay = lazy(() =>
   import("./WorkbookChartOverlay").then((module) => ({
@@ -138,6 +141,173 @@ type RenameSheetSession = {
 type InstallationDialogMode = "check-updates" | "manage";
 
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
+
+interface SheetQuickOpenProps {
+  activeSheetId: string | null;
+  onClose: () => void;
+  onSelect: (sheetId: string) => void;
+  sheets: readonly SheetSummary[];
+}
+
+function SheetQuickOpen({ activeSheetId, onClose, onSelect, sheets }: SheetQuickOpenProps) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [highlightedSheetId, setHighlightedSheetId] = useState<string | null>(activeSheetId);
+  const [query, setQuery] = useState("");
+  const filteredSheets = useMemo(() => filterSheetQuickOpenResults(sheets, query), [query, sheets]);
+  const trimmedQuery = query.trim();
+  const suggestedSheetId = useMemo(() => {
+    if (filteredSheets.length === 0) {
+      return null;
+    }
+
+    if (!trimmedQuery) {
+      return filteredSheets.find((sheet) => sheet.id === activeSheetId)?.id ?? filteredSheets[0].id;
+    }
+
+    return filteredSheets[0].id;
+  }, [activeSheetId, filteredSheets, trimmedQuery]);
+  const highlightedSheet =
+    filteredSheets.find((sheet) => sheet.id === highlightedSheetId) ?? filteredSheets[0] ?? null;
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+
+    if (!dialog || dialog.open) {
+      return;
+    }
+
+    dialog.showModal();
+    inputRef.current?.focus();
+
+    return () => {
+      if (dialog.open) {
+        dialog.close();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setHighlightedSheetId(suggestedSheetId);
+  }, [suggestedSheetId]);
+
+  const moveHighlight = (direction: 1 | -1) => {
+    if (filteredSheets.length === 0) {
+      return;
+    }
+
+    const currentIndex = Math.max(
+      0,
+      filteredSheets.findIndex((sheet) => sheet.id === highlightedSheetId),
+    );
+    const nextIndex = (currentIndex + direction + filteredSheets.length) % filteredSheets.length;
+
+    setHighlightedSheetId(filteredSheets[nextIndex].id);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveHighlight(1);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveHighlight(-1);
+    }
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!highlightedSheet) {
+      return;
+    }
+
+    onSelect(highlightedSheet.id);
+  };
+
+  return (
+    <dialog
+      aria-label="Go to sheet"
+      className="sheet-quick-open-dialog"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+      ref={dialogRef}
+    >
+      <form className="sheet-quick-open" onKeyDown={handleKeyDown} onSubmit={handleSubmit}>
+        <label className="sheet-quick-open__label" htmlFor="sheet-quick-open-input">
+          Go to sheet
+        </label>
+        <input
+          aria-activedescendant={
+            highlightedSheet ? getSheetQuickOpenOptionId(highlightedSheet.id) : undefined
+          }
+          aria-controls="sheet-quick-open-results"
+          aria-expanded="true"
+          aria-label="Search sheets"
+          autoComplete="off"
+          className="sheet-quick-open__input"
+          id="sheet-quick-open-input"
+          onChange={(event) => {
+            setQuery(event.target.value);
+          }}
+          placeholder="Search sheets"
+          ref={inputRef}
+          role="combobox"
+          value={query}
+        />
+        <ul className="sheet-quick-open__results" id="sheet-quick-open-results" role="listbox">
+          {filteredSheets.length > 0 ? (
+            filteredSheets.map((sheet) => {
+              const isHighlighted = sheet.id === highlightedSheet?.id;
+
+              return (
+                <li
+                  aria-selected={isHighlighted}
+                  className={
+                    isHighlighted
+                      ? "sheet-quick-open__result is-highlighted"
+                      : "sheet-quick-open__result"
+                  }
+                  id={getSheetQuickOpenOptionId(sheet.id)}
+                  key={sheet.id}
+                  role="option"
+                >
+                  <button
+                    className="sheet-quick-open__result-button"
+                    onClick={() => {
+                      onSelect(sheet.id);
+                    }}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                    }}
+                    type="button"
+                  >
+                    <span className="sheet-quick-open__result-name">{sheet.name}</span>
+                    <span className="sheet-quick-open__result-meta">
+                      {`${sheet.rowCount}x${sheet.columnCount}`}
+                    </span>
+                  </button>
+                </li>
+              );
+            })
+          ) : (
+            <li className="sheet-quick-open__empty">No sheets found</li>
+          )}
+        </ul>
+      </form>
+    </dialog>
+  );
+}
+
+function getSheetQuickOpenOptionId(sheetId: string): string {
+  return `sheet-quick-open-option-${sheetId.replaceAll(/[^A-Za-z0-9_-]/g, "_")}`;
+}
+
 type StyleRangeCache = SheetStyleRangeResult;
 type TableSortControlPlacement = TableHeaderSortTarget & {
   height: number;
@@ -645,6 +815,7 @@ export default function App() {
   const [gridSelection, setGridSelection] = useState<GridSelection>(createEmptyGridSelection);
   const [gridViewportNonce, setGridViewportNonce] = useState(0);
   const [isSheetChartPreviewsLoading, setIsSheetChartPreviewsLoading] = useState(false);
+  const [isSheetQuickOpenOpen, setIsSheetQuickOpenOpen] = useState(false);
   const [renameSheetSession, setRenameSheetSession] = useState<RenameSheetSession | null>(null);
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
   const [selectedCellData, setSelectedCellData] = useState<CellDataResult | null>(null);
@@ -670,8 +841,13 @@ export default function App() {
   const isCellFormatOpen = cellFormatSession !== null;
   const isInstallationDialogOpen = installationDialogMode !== null;
   const isRenameSheetOpen = renameSheetSession !== null;
+  const isSheetQuickOpenDialogOpen = isSheetQuickOpenOpen;
   const isModalDialogOpen =
-    isChartEditorOpen || isCellFormatOpen || isInstallationDialogOpen || isRenameSheetOpen;
+    isChartEditorOpen ||
+    isCellFormatOpen ||
+    isInstallationDialogOpen ||
+    isRenameSheetOpen ||
+    isSheetQuickOpenDialogOpen;
 
   const activeSheet = useMemo(
     () => sheetSummary?.sheets.find((sheet) => sheet.id === sheetSummary.activeSheetId) ?? null,
@@ -1684,6 +1860,33 @@ export default function App() {
     [applyTransaction, pushErrorToast],
   );
 
+  const openSheetQuickOpen = useCallback(() => {
+    if (!sheetSummary || sheetSummary.sheets.length === 0 || isModalDialogOpen) {
+      return;
+    }
+
+    setIsSheetQuickOpenOpen(true);
+  }, [isModalDialogOpen, sheetSummary]);
+
+  const closeSheetQuickOpen = useCallback(() => {
+    setIsSheetQuickOpenOpen(false);
+  }, []);
+
+  const selectSheetFromQuickOpen = useCallback(
+    (sheetId: string) => {
+      setIsSheetQuickOpenOpen(false);
+      void applyTransaction([
+        {
+          sheetId,
+          type: "setActiveSheet",
+        },
+      ]).catch((error) => {
+        pushErrorToast(error);
+      });
+    },
+    [applyTransaction, pushErrorToast],
+  );
+
   const handleFormulaInputChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     setFormulaInputValue(event.target.value);
   }, []);
@@ -2316,6 +2519,17 @@ export default function App() {
       const isPrimaryModifier = event.ctrlKey || event.metaKey;
       const activeElement = document.activeElement;
       const isFormulaInputFocused = activeElement === formulaInputRef.current;
+      const normalizedKey = event.key.toLowerCase();
+
+      if (event.altKey) {
+        return;
+      }
+
+      if (isPrimaryModifier && !event.shiftKey && normalizedKey === "p") {
+        event.preventDefault();
+        openSheetQuickOpen();
+        return;
+      }
 
       if (
         isEditableShortcutTarget(event.target) &&
@@ -2328,12 +2542,6 @@ export default function App() {
       if (!isPrimaryModifier && event.key !== "Delete") {
         return;
       }
-
-      if (event.altKey) {
-        return;
-      }
-
-      const normalizedKey = event.key.toLowerCase();
 
       if (
         isPrimaryModifier &&
@@ -2379,6 +2587,7 @@ export default function App() {
     cutSelection,
     deleteSelection,
     isModalDialogOpen,
+    openSheetQuickOpen,
     pasteSelection,
     restoreWorkbookHistory,
   ]);
@@ -2541,6 +2750,15 @@ export default function App() {
           <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
         </div>
       </footer>
+
+      {isSheetQuickOpenOpen ? (
+        <SheetQuickOpen
+          activeSheetId={sheetSummary?.activeSheetId ?? null}
+          onClose={closeSheetQuickOpen}
+          onSelect={selectSheetFromQuickOpen}
+          sheets={sheetSummary?.sheets ?? []}
+        />
+      ) : null}
 
       {chartEditorSession ? (
         <ChartEditorDialog

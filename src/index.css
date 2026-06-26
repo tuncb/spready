@@ -426,6 +426,113 @@ select {
   backdrop-filter: blur(2px);
 }
 
+.sheet-quick-open-dialog {
+  width: min(640px, calc(100vw - 24px));
+  max-width: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  overflow: visible;
+}
+
+.sheet-quick-open-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.22);
+  backdrop-filter: blur(2px);
+}
+
+.sheet-quick-open {
+  display: grid;
+  grid-template-rows: auto auto;
+  border: 1px solid var(--color-neutral-line);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 24px 64px rgba(20, 32, 51, 0.18);
+}
+
+.sheet-quick-open__label {
+  padding: 12px 14px 6px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.sheet-quick-open__input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 14px 12px;
+  border: none;
+  border-bottom: 1px solid var(--color-neutral-line-soft);
+  color: var(--color-text-dark);
+  background: transparent;
+  font-size: 17px;
+}
+
+.sheet-quick-open__input:focus {
+  outline: none;
+}
+
+.sheet-quick-open__input::placeholder {
+  color: var(--color-text-soft);
+}
+
+.sheet-quick-open__results {
+  display: grid;
+  gap: 2px;
+  max-height: min(360px, calc(100vh - 180px));
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.sheet-quick-open__result {
+  min-width: 0;
+}
+
+.sheet-quick-open__result-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: var(--color-text-dark);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sheet-quick-open__result.is-highlighted .sheet-quick-open__result-button,
+.sheet-quick-open__result-button:hover,
+.sheet-quick-open__result-button:focus-visible {
+  border-color: var(--color-primary-soft-strong);
+  background: var(--color-primary-soft);
+  outline: none;
+}
+
+.sheet-quick-open__result-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-quick-open__result-meta {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.sheet-quick-open__empty {
+  padding: 18px 10px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
 .chart-editor-window {
   width: min(100vw - 24px, 620px);
   display: flex;
