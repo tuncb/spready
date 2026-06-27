@@ -41,6 +41,7 @@ import type {
   InstallerOptions,
   InstallerCheckUpdatesRequest,
   PasteRangeRequest,
+  SetWorkbookSearchQueryRequest,
   SheetRangeRequest,
   WorkbookHistoryRequest,
   WorkbookRedoRequest,
@@ -796,6 +797,16 @@ function buildAppMenu() {
         },
         { type: "separator" },
         {
+          accelerator: "CmdOrCtrl+F",
+          label: "Find",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.find);
+            });
+          },
+        },
+        { type: "separator" },
+        {
           label: "Delete",
           click: () => {
             runMenuCommand(() => {
@@ -1278,6 +1289,22 @@ ipcMain.handle("workbook:apply-transaction", (_event, args: ApplyTransactionRequ
 );
 
 ipcMain.handle("workbook:get-undo-tree", () => workbookController.getUndoTree());
+
+ipcMain.handle("workbook:get-search-state", () => workbookController.getSearchState());
+
+ipcMain.handle("workbook:search-set-query", (_event, args: SetWorkbookSearchQueryRequest) =>
+  workbookController.setSearchQuery(args),
+);
+
+ipcMain.handle("workbook:search-clear", () => workbookController.clearSearch());
+
+ipcMain.handle("workbook:search-next", () => workbookController.goToNextSearchResult());
+
+ipcMain.handle("workbook:search-previous", () => workbookController.goToPreviousSearchResult());
+
+ipcMain.handle("workbook:search-set-active", (_event, args: { index: number }) =>
+  workbookController.setActiveSearchResult(args.index),
+);
 
 ipcMain.handle("workbook:redo", (_event, args?: WorkbookRedoRequest) =>
   workbookController.redo(args ?? {}),

@@ -168,6 +168,136 @@ select {
   pointer-events: none;
 }
 
+.workbook-search {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) auto auto auto auto auto auto;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 16px);
+  padding: 5px;
+  border: 1px solid var(--color-neutral-line);
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.14);
+}
+
+.workbook-search__input {
+  min-width: 0;
+  height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-neutral-line-soft);
+  color: var(--color-text-dark);
+  background: var(--color-neutral-surface);
+  font-size: 12px;
+}
+
+.workbook-search__input:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+.workbook-search__input::placeholder {
+  color: var(--color-text-soft);
+}
+
+.workbook-search__scope {
+  display: inline-flex;
+  height: 30px;
+  border: 1px solid var(--color-neutral-line-soft);
+}
+
+.workbook-search__mode {
+  display: inline-flex;
+  height: 30px;
+  border: 1px solid var(--color-neutral-line-soft);
+}
+
+.workbook-search__scope-button,
+.workbook-search__mode-button,
+.workbook-search__button,
+.workbook-search__close {
+  height: 30px;
+  border: 1px solid var(--color-neutral-line-soft);
+  color: var(--color-text-medium);
+  background: var(--color-neutral-surface-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.workbook-search__scope-button {
+  min-width: 58px;
+  border: none;
+  border-right: 1px solid var(--color-neutral-line-soft);
+}
+
+.workbook-search__mode-button {
+  min-width: 38px;
+  border: none;
+  border-right: 1px solid var(--color-neutral-line-soft);
+}
+
+.workbook-search__scope-button:last-child {
+  border-right: none;
+}
+
+.workbook-search__mode-button:last-child {
+  border-right: none;
+}
+
+.workbook-search__scope-button.is-active {
+  color: #ffffff;
+  background: var(--color-primary);
+}
+
+.workbook-search__mode-button.is-active {
+  color: #ffffff;
+  background: var(--color-primary);
+}
+
+.workbook-search__button,
+.workbook-search__close {
+  min-width: 48px;
+  padding: 0 8px;
+}
+
+.workbook-search__button:hover:not(:disabled),
+.workbook-search__button:focus-visible:not(:disabled),
+.workbook-search__close:hover,
+.workbook-search__close:focus-visible,
+.workbook-search__scope-button:hover,
+.workbook-search__scope-button:focus-visible,
+.workbook-search__mode-button:hover,
+.workbook-search__mode-button:focus-visible {
+  border-color: var(--color-primary);
+  color: var(--color-primary-strong);
+  background: rgba(234, 241, 255, 0.94);
+  outline: none;
+}
+
+.workbook-search__scope-button.is-active:hover,
+.workbook-search__scope-button.is-active:focus-visible,
+.workbook-search__mode-button.is-active:hover,
+.workbook-search__mode-button.is-active:focus-visible {
+  color: #ffffff;
+  background: var(--color-primary-strong);
+}
+
+.workbook-search__button:disabled {
+  color: var(--color-text-soft);
+  cursor: default;
+}
+
+.workbook-search__count {
+  min-width: 48px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .table-sort-control {
   position: absolute;
   display: inline-grid;

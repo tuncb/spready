@@ -1,6 +1,7 @@
 import DataEditor, {
   CompactSelection,
   GridCellKind,
+  type DataEditorProps,
   type DataEditorRef,
   type EditableGridCell,
   type GridCell,
@@ -55,6 +56,10 @@ import {
   type SheetRangeRequest,
   type SheetRangeResult,
   type SheetStyleRangeResult,
+  type WorkbookSearchResult,
+  type WorkbookSearchScope,
+  type WorkbookSearchState,
+  type WorkbookSearchValueMode,
   type WorkbookSummary,
   type WorkbookTransactionOperation,
 } from "./workbook-core";
@@ -114,6 +119,24 @@ const GRID_THEME: Partial<Theme> = {
   textMedium: "#475569",
 };
 
+const SEARCH_MATCH_HIGHLIGHT_COLOR = "rgba(245, 158, 11, 0.24)";
+const SEARCH_ACTIVE_CELL_THEME: Partial<Theme> = {
+  accentColor: "#b45309",
+  accentLight: "rgba(245, 158, 11, 0.28)",
+  bgCell: "#fef3c7",
+  textDark: "#78350f",
+};
+const DEFAULT_SEARCH_STATE: WorkbookSearchState = {
+  activeResult: null,
+  query: {
+    activeResultIndex: -1,
+    scope: "sheet",
+    text: "",
+    valueMode: "display",
+  },
+  results: [],
+};
+
 type VisibleRegion = {
   height: number;
   width: number;
@@ -141,6 +164,143 @@ type RenameSheetSession = {
 type InstallationDialogMode = "check-updates" | "manage";
 
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
+type SearchHighlightRegions = NonNullable<DataEditorProps["highlightRegions"]>;
+
+interface WorkbookSearchBoxProps {
+  onChangeQuery: (
+    text: string,
+    scope: WorkbookSearchScope,
+    valueMode: WorkbookSearchValueMode,
+  ) => void;
+  onClose: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
+  state: WorkbookSearchState;
+}
+
+function WorkbookSearchBox({
+  onChangeQuery,
+  onClose,
+  onNext,
+  onPrevious,
+  state,
+}: WorkbookSearchBoxProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const resultLabel =
+    state.query.text.length === 0
+      ? ""
+      : state.results.length === 0
+        ? "0 / 0"
+        : `${state.query.activeResultIndex + 1} / ${state.results.length}`;
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onNext();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key === "Enter" && event.shiftKey) {
+      event.preventDefault();
+      onPrevious();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      onClose();
+    }
+  };
+
+  return (
+    <form
+      aria-label="Search workbook"
+      className="workbook-search"
+      onKeyDown={handleKeyDown}
+      onSubmit={handleSubmit}
+    >
+      <input
+        aria-label="Search cells"
+        autoComplete="off"
+        className="workbook-search__input"
+        onChange={(event) => {
+          onChangeQuery(event.target.value, state.query.scope, state.query.valueMode);
+        }}
+        placeholder="Find"
+        ref={inputRef}
+        value={state.query.text}
+      />
+      <div className="workbook-search__scope" role="group" aria-label="Search scope">
+        {(["sheet", "workbook"] as const).map((scope) => (
+          <button
+            aria-pressed={state.query.scope === scope}
+            className={
+              state.query.scope === scope
+                ? "workbook-search__scope-button is-active"
+                : "workbook-search__scope-button"
+            }
+            key={scope}
+            onClick={() => {
+              onChangeQuery(state.query.text, scope, state.query.valueMode);
+            }}
+            type="button"
+          >
+            {scope === "sheet" ? "Sheet" : "Workbook"}
+          </button>
+        ))}
+      </div>
+      <div className="workbook-search__mode" role="group" aria-label="Search values">
+        {(["display", "raw"] as const).map((valueMode) => (
+          <button
+            aria-pressed={state.query.valueMode === valueMode}
+            className={
+              state.query.valueMode === valueMode
+                ? "workbook-search__mode-button is-active"
+                : "workbook-search__mode-button"
+            }
+            key={valueMode}
+            onClick={() => {
+              onChangeQuery(state.query.text, state.query.scope, valueMode);
+            }}
+            type="button"
+          >
+            {valueMode === "display" ? "Displayed" : "Raw"}
+          </button>
+        ))}
+      </div>
+      <span className="workbook-search__count">{resultLabel}</span>
+      <button
+        aria-label="Previous search result"
+        className="workbook-search__button"
+        disabled={state.results.length === 0}
+        onClick={onPrevious}
+        type="button"
+      >
+        Prev
+      </button>
+      <button
+        aria-label="Next search result"
+        className="workbook-search__button"
+        disabled={state.results.length === 0}
+        type="submit"
+      >
+        Next
+      </button>
+      <button
+        aria-label="Close search"
+        className="workbook-search__close"
+        onClick={onClose}
+        type="button"
+      >
+        Close
+      </button>
+    </form>
+  );
+}
 
 interface SheetQuickOpenProps {
   activeSheetId: string | null;
@@ -426,7 +586,26 @@ function getCellThemeOverride(style: WorkbookCellStyle | undefined): Partial<The
   return Object.keys(theme).length > 0 ? theme : undefined;
 }
 
-function createTextCell(input: string, display: string, style?: WorkbookCellStyle): GridCell {
+function mergeCellThemeOverrides(
+  baseTheme: Partial<Theme> | undefined,
+  overlayTheme: Partial<Theme> | undefined,
+): Partial<Theme> | undefined {
+  if (!baseTheme && !overlayTheme) {
+    return undefined;
+  }
+
+  return {
+    ...(baseTheme ?? {}),
+    ...(overlayTheme ?? {}),
+  };
+}
+
+function createTextCell(
+  input: string,
+  display: string,
+  style?: WorkbookCellStyle,
+  themeOverride?: Partial<Theme>,
+): GridCell {
   return {
     allowOverlay: true,
     allowWrapping: style?.wrapText,
@@ -435,7 +614,7 @@ function createTextCell(input: string, display: string, style?: WorkbookCellStyl
     data: input,
     displayData: display,
     kind: GridCellKind.Text,
-    themeOverride: getCellThemeOverride(style),
+    themeOverride: mergeCellThemeOverrides(getCellThemeOverride(style), themeOverride),
   };
 }
 
@@ -557,6 +736,10 @@ function getSelectedCellAddress(selectedCell: Item | null): string {
   }
 
   return `${getColumnTitle(selectedCell[0])}${selectedCell[1] + 1}`;
+}
+
+function getSearchResultKey(result: WorkbookSearchResult): string {
+  return `${result.sheetId}:${result.rowIndex}:${result.columnIndex}`;
 }
 
 function getCurrentSelectionRange(
@@ -816,7 +999,9 @@ export default function App() {
   const [gridViewportNonce, setGridViewportNonce] = useState(0);
   const [isSheetChartPreviewsLoading, setIsSheetChartPreviewsLoading] = useState(false);
   const [isSheetQuickOpenOpen, setIsSheetQuickOpenOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [renameSheetSession, setRenameSheetSession] = useState<RenameSheetSession | null>(null);
+  const [searchState, setSearchState] = useState<WorkbookSearchState>(DEFAULT_SEARCH_STATE);
   const [selectedChartId, setSelectedChartId] = useState<string | null>(null);
   const [selectedCellData, setSelectedCellData] = useState<CellDataResult | null>(null);
   const [sheetChartPreviews, setSheetChartPreviews] =
@@ -833,6 +1018,7 @@ export default function App() {
   const lastVisibleRegionRef = useRef<VisibleRegion | null>(null);
   const pendingCellDataRequestIdRef = useRef(0);
   const pendingRangeRequestIdRef = useRef(0);
+  const pendingSearchResultRef = useRef<WorkbookSearchResult | null>(null);
   const pendingSheetChartPreviewsRequestIdRef = useRef(0);
   const rawRangeCacheRef = useRef<SheetRangeResult | null>(null);
   const sheetSurfaceRef = useRef<HTMLElement>(null);
@@ -905,6 +1091,35 @@ export default function App() {
     () => (activeSheet ? getCurrentSelectionRange(gridSelection, activeSheet.id) : null),
     [activeSheet, gridSelection],
   );
+  const activeSearchResultKey = useMemo(() => {
+    const result = searchState.activeResult;
+
+    if (!result || result.sheetId !== activeSheet?.id) {
+      return null;
+    }
+
+    return getSearchResultKey(result);
+  }, [activeSheet?.id, searchState.activeResult]);
+  const searchHighlightRegions = useMemo<SearchHighlightRegions>(() => {
+    if (!activeSheet || searchState.query.text.length === 0) {
+      return [];
+    }
+
+    return searchState.results
+      .filter(
+        (result) =>
+          result.sheetId === activeSheet.id && getSearchResultKey(result) !== activeSearchResultKey,
+      )
+      .map((result) => ({
+        color: SEARCH_MATCH_HIGHLIGHT_COLOR,
+        range: {
+          height: 1,
+          width: 1,
+          x: result.columnIndex,
+          y: result.rowIndex,
+        },
+      }));
+  }, [activeSearchResultKey, activeSheet, searchState.query.text.length, searchState.results]);
   const shouldRenderChartOverlay = (sheetChartPreviews?.previews.length ?? 0) > 0;
   useLayoutEffect(() => {
     const animationFrameId = window.requestAnimationFrame(() => {
@@ -982,6 +1197,116 @@ export default function App() {
       return result;
     },
     [],
+  );
+
+  const revealSearchResult = useCallback((result: WorkbookSearchResult) => {
+    const cell: Item = [result.columnIndex, result.rowIndex];
+
+    setGridSelection(createCellSelection(cell));
+    requestAnimationFrame(() => {
+      gridRef.current?.scrollTo(result.columnIndex, result.rowIndex, "both", 2, 4, {
+        hAlign: "center",
+        vAlign: "center",
+      });
+      gridRef.current?.focus();
+    });
+  }, []);
+
+  const focusSearchResult = useCallback(
+    (result: WorkbookSearchResult | null) => {
+      if (!result) {
+        return;
+      }
+
+      pendingSearchResultRef.current = result;
+
+      if (activeSheet?.id === result.sheetId) {
+        pendingSearchResultRef.current = null;
+        revealSearchResult(result);
+        return;
+      }
+
+      void applyTransaction([
+        {
+          sheetId: result.sheetId,
+          type: "setActiveSheet",
+        },
+      ]).catch((error) => {
+        pendingSearchResultRef.current = null;
+        pushErrorToast(error);
+      });
+    },
+    [activeSheet?.id, applyTransaction, pushErrorToast, revealSearchResult],
+  );
+
+  const updateSearchState = useCallback(
+    (nextSearchState: WorkbookSearchState, shouldFocusResult = true) => {
+      setSearchState(nextSearchState);
+      setViewNonce((current) => current + 1);
+
+      if (shouldFocusResult) {
+        focusSearchResult(nextSearchState.activeResult);
+      }
+    },
+    [focusSearchResult],
+  );
+
+  const openWorkbookSearch = useCallback(() => {
+    setIsSearchOpen(true);
+
+    void window.appShell
+      .getSearchState()
+      .then((nextSearchState) => {
+        updateSearchState(nextSearchState, false);
+      })
+      .catch((error) => {
+        pushErrorToast(error);
+      });
+  }, [pushErrorToast, updateSearchState]);
+
+  const closeWorkbookSearch = useCallback(() => {
+    setIsSearchOpen(false);
+
+    void window.appShell
+      .clearSearch()
+      .then((nextSearchState) => {
+        updateSearchState(nextSearchState, false);
+      })
+      .catch((error) => {
+        pushErrorToast(error);
+      });
+  }, [pushErrorToast, updateSearchState]);
+
+  const changeWorkbookSearchQuery = useCallback(
+    (text: string, scope: WorkbookSearchScope, valueMode: WorkbookSearchValueMode) => {
+      void window.appShell
+        .setSearchQuery({
+          scope,
+          text,
+          valueMode,
+        })
+        .then((nextSearchState) => {
+          updateSearchState(nextSearchState, false);
+        })
+        .catch((error) => {
+          pushErrorToast(error);
+        });
+    },
+    [pushErrorToast, updateSearchState],
+  );
+
+  const goToSearchResult = useCallback(
+    (direction: "next" | "previous") => {
+      const request =
+        direction === "next"
+          ? window.appShell.goToNextSearchResult()
+          : window.appShell.goToPreviousSearchResult();
+
+      void request.then(updateSearchState).catch((error) => {
+        pushErrorToast(error);
+      });
+    },
+    [pushErrorToast, updateSearchState],
   );
 
   const handleColumnResize = useCallback(
@@ -1148,9 +1473,17 @@ export default function App() {
         return createLoadingCell();
       }
 
-      return createTextCell(rawValue, displayValue, style);
+      const isActiveSearchResult =
+        activeSearchResultKey === `${activeSheet?.id}:${rowIndex}:${columnIndex}`;
+
+      return createTextCell(
+        rawValue,
+        displayValue,
+        style,
+        isActiveSearchResult ? SEARCH_ACTIVE_CELL_THEME : undefined,
+      );
     },
-    [activeSheet?.id, viewNonce],
+    [activeSearchResultKey, activeSheet?.id, viewNonce],
   );
 
   const getCellsForSelection = useCallback(
@@ -2299,6 +2632,49 @@ export default function App() {
   }, [activeSheet?.id]);
 
   useEffect(() => {
+    const pendingResult = pendingSearchResultRef.current;
+
+    if (!pendingResult || pendingResult.sheetId !== activeSheet?.id) {
+      return;
+    }
+
+    pendingSearchResultRef.current = null;
+    revealSearchResult(pendingResult);
+  }, [activeSheet?.id, revealSearchResult]);
+
+  useEffect(() => {
+    if (!isSearchOpen || searchState.query.text.length === 0) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void window.appShell
+      .getSearchState()
+      .then((nextSearchState) => {
+        if (!isCancelled) {
+          updateSearchState(nextSearchState, false);
+        }
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          pushErrorToast(error);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    isSearchOpen,
+    pushErrorToast,
+    searchState.query.text.length,
+    sheetSummary?.activeSheetId,
+    sheetSummary?.version,
+    updateSearchState,
+  ]);
+
+  useEffect(() => {
     if (!selectedCell || !activeSheet) {
       setSelectedCellData(null);
       setFormulaInputValue("");
@@ -2447,6 +2823,9 @@ export default function App() {
           case APP_MENU_ACTIONS.clearFormatting:
             clearSelectionFormatting();
             return;
+          case APP_MENU_ACTIONS.find:
+            openWorkbookSearch();
+            return;
           case APP_MENU_ACTIONS.deleteSelection:
             deleteSelection();
             return;
@@ -2505,6 +2884,7 @@ export default function App() {
     openCellFormatDialog,
     openCreateChartEditor,
     openRenameSheetDialog,
+    openWorkbookSearch,
     pasteSelection,
     restoreWorkbookHistory,
     sortSelectedTable,
@@ -2528,6 +2908,12 @@ export default function App() {
       if (isPrimaryModifier && !event.shiftKey && normalizedKey === "p") {
         event.preventDefault();
         openSheetQuickOpen();
+        return;
+      }
+
+      if (isPrimaryModifier && !event.shiftKey && normalizedKey === "f") {
+        event.preventDefault();
+        openWorkbookSearch();
         return;
       }
 
@@ -2588,6 +2974,7 @@ export default function App() {
     deleteSelection,
     isModalDialogOpen,
     openSheetQuickOpen,
+    openWorkbookSearch,
     pasteSelection,
     restoreWorkbookHistory,
   ]);
@@ -2635,6 +3022,7 @@ export default function App() {
             ref={gridRef}
             gridSelection={gridSelection}
             height="100%"
+            highlightRegions={searchHighlightRegions}
             onCellEdited={handleCellEdited}
             maxColumnWidth={MAX_COLUMN_WIDTH}
             minColumnWidth={MIN_COLUMN_WIDTH}
@@ -2667,6 +3055,19 @@ export default function App() {
             theme={GRID_THEME}
             width="100%"
           />
+          {isSearchOpen ? (
+            <WorkbookSearchBox
+              onChangeQuery={changeWorkbookSearchQuery}
+              onClose={closeWorkbookSearch}
+              onNext={() => {
+                goToSearchResult("next");
+              }}
+              onPrevious={() => {
+                goToSearchResult("previous");
+              }}
+              state={searchState}
+            />
+          ) : null}
           {tableSortControls.length > 0 ? (
             <div className="table-sort-overlay" aria-label="Table sort controls">
               {tableSortControls.map((control) => {

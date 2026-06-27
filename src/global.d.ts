@@ -15,6 +15,7 @@ import type {
   InstallerOptions,
   InstallerStatus,
   PasteRangeRequest,
+  SetWorkbookSearchQueryRequest,
   WorkbookChartPreview,
   WorkbookChartResult,
   SheetDisplayRangeResult,
@@ -28,6 +29,7 @@ import type {
   WorkbookRedoRequest,
   WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
+  WorkbookSearchState,
   WorkbookSummary,
   WorkbookUndoTree,
 } from "./workbook-core";
@@ -73,6 +75,9 @@ declare global {
       applyTransaction: (request: ApplyTransactionRequest) => Promise<ApplyTransactionResult>;
       copyRange: (request: CopyRangeRequest) => Promise<CopyRangeResult>;
       cutRange: (request: CutRangeRequest) => Promise<CutRangeResult>;
+      clearSearch: () => Promise<WorkbookSearchState>;
+      goToNextSearchResult: () => Promise<WorkbookSearchState>;
+      goToPreviousSearchResult: () => Promise<WorkbookSearchState>;
       getUndoTree: () => Promise<WorkbookUndoTree>;
       getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
       getChart: (chartId: string) => Promise<WorkbookChartResult>;
@@ -83,6 +88,7 @@ declare global {
       getSheetDisplayRange: (request: SheetRangeRequest) => Promise<SheetDisplayRangeResult>;
       getSheetRange: (request: SheetRangeRequest) => Promise<SheetRangeResult>;
       getSheetStyleRange: (request: SheetRangeRequest) => Promise<SheetStyleRangeResult>;
+      getSearchState: () => Promise<WorkbookSearchState>;
       getUsedRange: (sheetId?: string) => Promise<UsedRangeResult>;
       getWorkbookSummary: () => Promise<WorkbookSummary>;
       getInstallerStatus: () => Promise<InstallerStatus>;
@@ -101,7 +107,9 @@ declare global {
       openWorkbookFile: () => Promise<OpenWorkbookFileResult>;
       pasteRange: (request: PasteRangeRequest) => Promise<ApplyTransactionResult>;
       saveCsvFile: (content: string, defaultPath?: string) => Promise<SaveCsvFileResult>;
+      setActiveSearchResult: (index: number) => Promise<WorkbookSearchState>;
       setChartDialogOpen: (isOpen: boolean) => Promise<void>;
+      setSearchQuery: (request: SetWorkbookSearchQueryRequest) => Promise<WorkbookSearchState>;
       showCellContextMenu: (request: {
         canCopy: boolean;
         canCut: boolean;

@@ -677,6 +677,37 @@ export interface WorkbookHistoryResult extends ApplyTransactionResult {
   undoTree: WorkbookUndoTree;
 }
 
+export type WorkbookSearchScope = "sheet" | "workbook";
+export type WorkbookSearchValueMode = "display" | "raw";
+
+export interface WorkbookSearchQuery {
+  activeResultIndex: number;
+  scope: WorkbookSearchScope;
+  text: string;
+  valueMode: WorkbookSearchValueMode;
+}
+
+export interface WorkbookSearchResult {
+  address: string;
+  columnIndex: number;
+  matchedText: string;
+  rowIndex: number;
+  sheetId: string;
+  sheetName: string;
+}
+
+export interface WorkbookSearchState {
+  activeResult: WorkbookSearchResult | null;
+  query: WorkbookSearchQuery;
+  results: WorkbookSearchResult[];
+}
+
+export interface SetWorkbookSearchQueryRequest {
+  scope: WorkbookSearchScope;
+  text: string;
+  valueMode?: WorkbookSearchValueMode;
+}
+
 export interface ImportCsvFileRequest {
   filePath: string;
   name?: string;
@@ -1022,6 +1053,79 @@ export function getWorkbookSummary(workbook: WorkbookState): WorkbookSummary {
     tables: workbook.tables.map(createWorkbookTableSummary),
     version: workbook.version,
   };
+}
+
+export function createWorkbookSearchState(
+  query: WorkbookSearchQuery,
+  results: WorkbookSearchResult[],
+): WorkbookSearchState {
+  const activeResultIndex = clampSearchResultIndex(query.activeResultIndex, results.length);
+
+  return {
+    activeResult: activeResultIndex >= 0 ? results[activeResultIndex] : null,
+    query: {
+      activeResultIndex,
+      scope: query.scope,
+      text: query.text,
+      valueMode: query.valueMode,
+    },
+    results,
+  };
+}
+
+export function getWorkbookRawSearchResults(
+  workbook: WorkbookState,
+  text: string,
+  scope: WorkbookSearchScope,
+): WorkbookSearchResult[] {
+  const needle = text.toLocaleLowerCase();
+
+  if (needle.length === 0) {
+    return [];
+  }
+
+  const sheets =
+    scope === "workbook"
+      ? workbook.sheets
+      : workbook.sheets.filter((sheet) => sheet.id === workbook.activeSheetId);
+  const results: WorkbookSearchResult[] = [];
+
+  for (const sheet of sheets) {
+    for (let rowIndex = 0; rowIndex < sheet.cells.length; rowIndex += 1) {
+      const row = sheet.cells[rowIndex] ?? [];
+
+      for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
+        const cellValue = row[columnIndex] ?? "";
+
+        if (cellValue.length === 0 || !cellValue.toLocaleLowerCase().includes(needle)) {
+          continue;
+        }
+
+        results.push({
+          address: `${getColumnTitle(columnIndex)}${rowIndex + 1}`,
+          columnIndex,
+          matchedText: cellValue,
+          rowIndex,
+          sheetId: sheet.id,
+          sheetName: sheet.name,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+export function clampSearchResultIndex(index: number, resultCount: number): number {
+  if (resultCount <= 0) {
+    return -1;
+  }
+
+  if (!Number.isInteger(index)) {
+    return 0;
+  }
+
+  return Math.min(Math.max(index, 0), resultCount - 1);
 }
 
 export function normalizeWorkbookSheetName(name: string): string {

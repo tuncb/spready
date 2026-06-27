@@ -76,6 +76,157 @@ test("WorkbookController exposes raw range reads separately from display-range a
   assert.equal(controller.getSummary().hasUnsavedChanges, true);
 });
 
+test("WorkbookController searches displayed cell results by default and raw input on request", () => {
+  const controller = new WorkbookController();
+  const summary = controller.applyTransaction({
+    operations: [
+      {
+        sheetId: "sheet-data",
+        type: "addSheet",
+      },
+      {
+        sheetId: "sheet-data",
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [
+          ["Alpha", "10", "=SUM(B1:B2)"],
+          ["beta", "20", ""],
+        ],
+      },
+      {
+        sheetId: "sheet-notes",
+        type: "addSheet",
+      },
+      {
+        sheetId: "sheet-notes",
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["alpha note"]],
+      },
+      {
+        sheetId: "sheet-data",
+        type: "setActiveSheet",
+      },
+    ],
+  }).summary;
+
+  const displayedState = controller.setSearchQuery({
+    scope: "sheet",
+    text: "30",
+  });
+
+  assert.deepEqual(
+    displayedState.results.map((result) => ({
+      address: result.address,
+      matchedText: result.matchedText,
+      sheetId: result.sheetId,
+    })),
+    [
+      {
+        address: "C1",
+        matchedText: "30",
+        sheetId: "sheet-data",
+      },
+    ],
+  );
+  assert.equal(displayedState.query.valueMode, "display");
+
+  const rawState = controller.setSearchQuery({
+    scope: "sheet",
+    text: "sum",
+    valueMode: "raw",
+  });
+
+  assert.deepEqual(
+    rawState.results.map((result) => ({
+      address: result.address,
+      matchedText: result.matchedText,
+      sheetId: result.sheetId,
+    })),
+    [
+      {
+        address: "C1",
+        matchedText: "=SUM(B1:B2)",
+        sheetId: "sheet-data",
+      },
+    ],
+  );
+  assert.equal(rawState.query.valueMode, "raw");
+
+  const workbookState = controller.setSearchQuery({
+    scope: "workbook",
+    text: "ALPHA",
+    valueMode: "display",
+  });
+
+  assert.deepEqual(
+    workbookState.results.map((result) => ({
+      address: result.address,
+      matchedText: result.matchedText,
+      sheetName: result.sheetName,
+    })),
+    [
+      {
+        address: "A1",
+        matchedText: "Alpha",
+        sheetName: summary.sheets.find((sheet) => sheet.id === "sheet-data")?.name,
+      },
+      {
+        address: "A1",
+        matchedText: "alpha note",
+        sheetName: summary.sheets.find((sheet) => sheet.id === "sheet-notes")?.name,
+      },
+    ],
+  );
+});
+
+test("WorkbookController search navigation wraps and clear resets transient search state", () => {
+  const controller = new WorkbookController();
+  const initialSummary = controller.getSummary();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["target", "Target", "none"]],
+      },
+    ],
+  });
+
+  assert.equal(controller.getSummary().version, initialSummary.version + 1);
+
+  const searchState = controller.setSearchQuery({
+    scope: "sheet",
+    text: "target",
+  });
+
+  assert.equal(searchState.results.length, 2);
+  assert.equal(searchState.query.activeResultIndex, 0);
+  assert.equal(controller.getSummary().version, initialSummary.version + 1);
+  assert.equal(controller.getSummary().hasUnsavedChanges, true);
+
+  assert.equal(controller.goToNextSearchResult().query.activeResultIndex, 1);
+  assert.equal(controller.goToNextSearchResult().query.activeResultIndex, 0);
+  assert.equal(controller.goToPreviousSearchResult().query.activeResultIndex, 1);
+
+  const cleared = controller.clearSearch();
+
+  assert.deepEqual(cleared, {
+    activeResult: null,
+    query: {
+      activeResultIndex: -1,
+      scope: "sheet",
+      text: "",
+      valueMode: "display",
+    },
+    results: [],
+  });
+});
+
 test("WorkbookController emits opt-in evaluation trace logs for cold snapshots", () => {
   const traceLogs: string[] = [];
   const performanceTimes = [10, 17];

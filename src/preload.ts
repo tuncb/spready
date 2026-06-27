@@ -17,6 +17,7 @@ import type {
   InstallerOptions,
   InstallerStatus,
   PasteRangeRequest,
+  SetWorkbookSearchQueryRequest,
   WorkbookChartPreview,
   WorkbookChartResult,
   SheetDisplayRangeResult,
@@ -30,6 +31,7 @@ import type {
   WorkbookRedoRequest,
   WorkbookSheetChartPreviewsResult,
   WorkbookSheetChartsResult,
+  WorkbookSearchState,
   WorkbookSummary,
   WorkbookUndoTree,
 } from "./workbook-core";
@@ -165,6 +167,19 @@ contextBridge.exposeInMainWorld("appShell", {
   applyTransaction: (request: ApplyTransactionRequest) =>
     ipcRenderer.invoke("workbook:apply-transaction", request) as Promise<ApplyTransactionResult>,
   getUndoTree: () => ipcRenderer.invoke("workbook:get-undo-tree") as Promise<WorkbookUndoTree>,
+  getSearchState: () =>
+    ipcRenderer.invoke("workbook:get-search-state") as Promise<WorkbookSearchState>,
+  setSearchQuery: (request: SetWorkbookSearchQueryRequest) =>
+    ipcRenderer.invoke("workbook:search-set-query", request) as Promise<WorkbookSearchState>,
+  clearSearch: () => ipcRenderer.invoke("workbook:search-clear") as Promise<WorkbookSearchState>,
+  goToNextSearchResult: () =>
+    ipcRenderer.invoke("workbook:search-next") as Promise<WorkbookSearchState>,
+  goToPreviousSearchResult: () =>
+    ipcRenderer.invoke("workbook:search-previous") as Promise<WorkbookSearchState>,
+  setActiveSearchResult: (index: number) =>
+    ipcRenderer.invoke("workbook:search-set-active", {
+      index,
+    }) as Promise<WorkbookSearchState>,
   redo: (request?: WorkbookRedoRequest) =>
     ipcRenderer.invoke("workbook:redo", request) as Promise<WorkbookHistoryResult>,
   undo: (request?: WorkbookHistoryRequest) =>

@@ -8,11 +8,14 @@ import {
   buildCreateChartOperation,
   buildFormatCellsOperations,
   buildPasteRangeOperations,
+  clampSearchResultIndex,
   createClipboardRangePayload,
+  createWorkbookSearchState,
   cloneWorkbookChart,
   cloneWorkbookTable,
   createWorkbookState,
   getSheetColumnCount,
+  getColumnTitle,
   getWorkbookChartById,
   getWorkbookTableById,
   getWorkbookChartStatus,
@@ -25,6 +28,7 @@ import {
   getSheetStyleRange,
   getSheetUsedRange,
   getWorkbookSummary,
+  getWorkbookRawSearchResults,
   isFormulaInput,
   getSheetRowCount,
   type ApplyTransactionRequest,
@@ -47,6 +51,7 @@ import {
   type OpenWorkbookFileRequest,
   type PasteRangeRequest,
   type SaveWorkbookFileRequest,
+  type SetWorkbookSearchQueryRequest,
   type WorkbookChartPreview,
   type WorkbookChartResult,
   type WorkbookChartSheetReference,
@@ -64,6 +69,9 @@ import {
   type WorkbookRedoRequest,
   type WorkbookConsoleOutputResult,
   type WorkbookState,
+  type WorkbookSearchQuery,
+  type WorkbookSearchResult,
+  type WorkbookSearchState,
   type WorkbookTable,
   type WorkbookSummary,
   type WorkbookSheetTablesResult,
@@ -125,6 +133,12 @@ export class WorkbookController extends EventEmitter {
   #rootHistoryNodeId = "";
   #savedHistoryNodeId: string | undefined;
   #nextHistoryNodeNumber = 1;
+  #searchQuery: WorkbookSearchQuery = {
+    activeResultIndex: -1,
+    scope: "sheet",
+    text: "",
+    valueMode: "display",
+  };
 
   constructor(
     options: {
@@ -149,6 +163,51 @@ export class WorkbookController extends EventEmitter {
 
   getUndoTree(): WorkbookUndoTree {
     return this.#buildUndoTree();
+  }
+
+  getSearchState(): WorkbookSearchState {
+    return this.#buildSearchState();
+  }
+
+  setSearchQuery(request: SetWorkbookSearchQueryRequest): WorkbookSearchState {
+    this.#searchQuery = {
+      activeResultIndex: request.text.length > 0 ? 0 : -1,
+      scope: request.scope,
+      text: request.text,
+      valueMode: request.valueMode ?? this.#searchQuery.valueMode,
+    };
+
+    return this.#buildSearchState();
+  }
+
+  clearSearch(): WorkbookSearchState {
+    this.#searchQuery = {
+      activeResultIndex: -1,
+      scope: this.#searchQuery.scope,
+      text: "",
+      valueMode: this.#searchQuery.valueMode,
+    };
+
+    return this.#buildSearchState();
+  }
+
+  setActiveSearchResult(index: number): WorkbookSearchState {
+    const state = this.#buildSearchState();
+
+    this.#searchQuery = {
+      ...state.query,
+      activeResultIndex: clampSearchResultIndex(index, state.results.length),
+    };
+
+    return this.#buildSearchState();
+  }
+
+  goToNextSearchResult(): WorkbookSearchState {
+    return this.#moveSearchResult(1);
+  }
+
+  goToPreviousSearchResult(): WorkbookSearchState {
+    return this.#moveSearchResult(-1);
   }
 
   undo(request: WorkbookHistoryRequest = {}): WorkbookHistoryResult {
@@ -603,6 +662,79 @@ export class WorkbookController extends EventEmitter {
           operations,
         }
       : request;
+  }
+
+  #moveSearchResult(direction: 1 | -1): WorkbookSearchState {
+    const state = this.#buildSearchState();
+
+    if (state.results.length === 0) {
+      this.#searchQuery = state.query;
+      return state;
+    }
+
+    const currentIndex = state.query.activeResultIndex >= 0 ? state.query.activeResultIndex : 0;
+    const activeResultIndex =
+      (currentIndex + direction + state.results.length) % state.results.length;
+
+    this.#searchQuery = {
+      ...state.query,
+      activeResultIndex,
+    };
+
+    return this.#buildSearchState();
+  }
+
+  #buildSearchState(): WorkbookSearchState {
+    const state = createWorkbookSearchState(
+      this.#searchQuery,
+      this.#getSearchResults(this.#searchQuery),
+    );
+
+    this.#searchQuery = state.query;
+    return state;
+  }
+
+  #getSearchResults(query: WorkbookSearchQuery): WorkbookSearchResult[] {
+    if (query.valueMode === "raw") {
+      return getWorkbookRawSearchResults(this.#state, query.text, query.scope);
+    }
+
+    const needle = query.text.toLocaleLowerCase();
+
+    if (needle.length === 0) {
+      return [];
+    }
+
+    const sheets =
+      query.scope === "workbook"
+        ? this.#state.sheets
+        : this.#state.sheets.filter((sheet) => sheet.id === this.#state.activeSheetId);
+    const results: WorkbookSearchResult[] = [];
+
+    for (const sheet of sheets) {
+      const snapshot = this.#getEvaluationSnapshot(sheet.id, "getSearchState");
+
+      for (let rowIndex = 0; rowIndex < getSheetRowCount(sheet); rowIndex += 1) {
+        for (let columnIndex = 0; columnIndex < getSheetColumnCount(sheet); columnIndex += 1) {
+          const displayValue = getCellEvaluation(snapshot, rowIndex, columnIndex).display;
+
+          if (displayValue.length === 0 || !displayValue.toLocaleLowerCase().includes(needle)) {
+            continue;
+          }
+
+          results.push({
+            address: `${getColumnTitle(columnIndex)}${rowIndex + 1}`,
+            columnIndex,
+            matchedText: displayValue,
+            rowIndex,
+            sheetId: sheet.id,
+            sheetName: sheet.name,
+          });
+        }
+      }
+    }
+
+    return results;
   }
 
   #getDisplayTableSortBodyRowOrder(

@@ -10,6 +10,7 @@ export const APP_MENU_ACTIONS = {
   deleteSelection: "edit:delete-selection",
   deleteSheet: "sheet:delete-sheet",
   exportCsv: "csv:export",
+  find: "edit:find",
   importCsv: "csv:import",
   installation: "app:installation",
   insertChart: "insert:chart",
