@@ -806,6 +806,19 @@ function getSelectedCellAddress(selectedCell: Item | null): string {
   return `${getColumnTitle(selectedCell[0])}${selectedCell[1] + 1}`;
 }
 
+function isCellWithinSheetBounds(cell: Item, sheet: SheetSummary): boolean {
+  const [columnIndex, rowIndex] = cell;
+
+  return (
+    Number.isInteger(columnIndex) &&
+    Number.isInteger(rowIndex) &&
+    columnIndex >= 0 &&
+    rowIndex >= 0 &&
+    columnIndex < sheet.columnCount &&
+    rowIndex < sheet.rowCount
+  );
+}
+
 function getSearchResultKey(result: WorkbookSearchResult): string {
   return `${result.sheetId}:${result.rowIndex}:${result.columnIndex}`;
 }
@@ -1495,6 +1508,12 @@ export default function App() {
 
   const refreshSelectedCellData = useCallback(async () => {
     if (!activeSheet || !selectedCell) {
+      setSelectedCellData(null);
+      setFormulaInputValue("");
+      return;
+    }
+
+    if (!isCellWithinSheetBounds(selectedCell, activeSheet)) {
       setSelectedCellData(null);
       setFormulaInputValue("");
       return;
@@ -2752,6 +2771,12 @@ export default function App() {
 
   useEffect(() => {
     if (!selectedCell || !activeSheet) {
+      setSelectedCellData(null);
+      setFormulaInputValue("");
+      return;
+    }
+
+    if (!isCellWithinSheetBounds(selectedCell, activeSheet)) {
       setSelectedCellData(null);
       setFormulaInputValue("");
       return;
