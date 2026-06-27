@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { shouldCloseWorkbookSearchOnEscape } from "./app-keyboard";
+import { getCellEditArrowKeyMovement, shouldCloseWorkbookSearchOnEscape } from "./app-keyboard";
 
 function createKeyEvent(
   overrides: Partial<
@@ -76,5 +76,24 @@ test("shouldCloseWorkbookSearchOnEscape leaves formula editing alone", () => {
       isSearchOpen: true,
     }),
     false,
+  );
+});
+
+test("getCellEditArrowKeyMovement maps unmodified arrow keys to grid movement", () => {
+  assert.deepEqual(getCellEditArrowKeyMovement(createKeyEvent({ key: "ArrowDown" })), [0, 1]);
+  assert.deepEqual(getCellEditArrowKeyMovement(createKeyEvent({ key: "ArrowUp" })), [0, -1]);
+  assert.deepEqual(getCellEditArrowKeyMovement(createKeyEvent({ key: "ArrowRight" })), [1, 0]);
+  assert.deepEqual(getCellEditArrowKeyMovement(createKeyEvent({ key: "ArrowLeft" })), [-1, 0]);
+});
+
+test("getCellEditArrowKeyMovement ignores non-arrow and modified keys", () => {
+  assert.equal(getCellEditArrowKeyMovement(createKeyEvent({ key: "Enter" })), null);
+  assert.equal(
+    getCellEditArrowKeyMovement(createKeyEvent({ key: "ArrowDown", shiftKey: true })),
+    null,
+  );
+  assert.equal(
+    getCellEditArrowKeyMovement(createKeyEvent({ ctrlKey: true, key: "ArrowRight" })),
+    null,
   );
 });

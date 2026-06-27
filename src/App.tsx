@@ -1,6 +1,7 @@
 import DataEditor, {
   CompactSelection,
   GridCellKind,
+  TextCellEntry,
   type DataEditorProps,
   type DataEditorRef,
   type EditableGridCell,
@@ -8,6 +9,7 @@ import DataEditor, {
   type GridColumn,
   type GridSelection,
   type Item,
+  type TextCell,
   type Theme,
 } from "@glideapps/glide-data-grid";
 import {
@@ -26,7 +28,11 @@ import {
 import { flushSync } from "react-dom";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
-import { isEditableShortcutTarget, shouldCloseWorkbookSearchOnEscape } from "./app-keyboard";
+import {
+  getCellEditArrowKeyMovement,
+  isEditableShortcutTarget,
+  shouldCloseWorkbookSearchOnEscape,
+} from "./app-keyboard";
 import { CellFormatDialog } from "./CellFormatDialog";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
@@ -1600,6 +1606,54 @@ export default function App() {
     [activeSheet],
   );
 
+  const provideGridEditor = useCallback<NonNullable<DataEditorProps["provideEditor"]>>((cell) => {
+    if (cell.kind !== GridCellKind.Text) {
+      return undefined;
+    }
+
+    return {
+      disablePadding: cell.allowWrapping === true,
+      editor: (props) => {
+        const value = props.value as TextCell;
+
+        return (
+          <TextCellEntry
+            altNewline
+            autoFocus={value.readonly !== true}
+            disabled={value.readonly === true}
+            highlight={props.isHighlighted}
+            onChange={(event) => {
+              props.onChange({
+                ...value,
+                data: event.target.value,
+              });
+            }}
+            onKeyDown={(event) => {
+              const movement = getCellEditArrowKeyMovement(event);
+
+              if (!movement) {
+                return;
+              }
+
+              event.preventDefault();
+              event.stopPropagation();
+              props.onFinishedEditing(
+                {
+                  ...value,
+                  data: event.currentTarget.value,
+                },
+                movement,
+              );
+            }}
+            style={value.allowWrapping === true ? { padding: "3px 8.5px" } : undefined}
+            validatedSelection={props.validatedSelection}
+            value={value.data}
+          />
+        );
+      },
+    };
+  }, []);
+
   const handleCellEdited = useCallback(
     (cell: Item, newValue: EditableGridCell) => {
       if (newValue.kind !== GridCellKind.Text || !activeSheet) {
@@ -3135,6 +3189,7 @@ export default function App() {
             }}
             onGridSelectionChange={setGridSelection}
             onPaste={handlePaste}
+            provideEditor={provideGridEditor}
             onSelectionCleared={() => {
               setGridSelection(createEmptyGridSelection());
             }}
