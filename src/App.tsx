@@ -130,9 +130,11 @@ const DEFAULT_SEARCH_STATE: WorkbookSearchState = {
   activeResult: null,
   query: {
     activeResultIndex: -1,
+    caseSensitive: false,
     scope: "sheet",
     text: "",
     valueMode: "display",
+    wholeWord: false,
   },
   results: [],
 };
@@ -171,6 +173,8 @@ interface WorkbookSearchBoxProps {
     text: string,
     scope: WorkbookSearchScope,
     valueMode: WorkbookSearchValueMode,
+    caseSensitive: boolean,
+    wholeWord: boolean,
   ) => void;
   onClose: () => void;
   onNext: () => void;
@@ -228,12 +232,64 @@ function WorkbookSearchBox({
         autoComplete="off"
         className="workbook-search__input"
         onChange={(event) => {
-          onChangeQuery(event.target.value, state.query.scope, state.query.valueMode);
+          onChangeQuery(
+            event.target.value,
+            state.query.scope,
+            state.query.valueMode,
+            state.query.caseSensitive,
+            state.query.wholeWord,
+          );
         }}
         placeholder="Find"
         ref={inputRef}
         value={state.query.text}
       />
+      <div className="workbook-search__options" role="group" aria-label="Search match options">
+        <button
+          aria-label="Case sensitive search"
+          aria-pressed={state.query.caseSensitive}
+          className={
+            state.query.caseSensitive
+              ? "workbook-search__option-button is-active"
+              : "workbook-search__option-button"
+          }
+          onClick={() => {
+            onChangeQuery(
+              state.query.text,
+              state.query.scope,
+              state.query.valueMode,
+              !state.query.caseSensitive,
+              state.query.wholeWord,
+            );
+          }}
+          title="Case sensitive"
+          type="button"
+        >
+          Aa
+        </button>
+        <button
+          aria-label="Whole word search"
+          aria-pressed={state.query.wholeWord}
+          className={
+            state.query.wholeWord
+              ? "workbook-search__option-button is-active"
+              : "workbook-search__option-button"
+          }
+          onClick={() => {
+            onChangeQuery(
+              state.query.text,
+              state.query.scope,
+              state.query.valueMode,
+              state.query.caseSensitive,
+              !state.query.wholeWord,
+            );
+          }}
+          title="Whole word"
+          type="button"
+        >
+          W
+        </button>
+      </div>
       <div className="workbook-search__scope" role="group" aria-label="Search scope">
         {(["sheet", "workbook"] as const).map((scope) => (
           <button
@@ -245,7 +301,13 @@ function WorkbookSearchBox({
             }
             key={scope}
             onClick={() => {
-              onChangeQuery(state.query.text, scope, state.query.valueMode);
+              onChangeQuery(
+                state.query.text,
+                scope,
+                state.query.valueMode,
+                state.query.caseSensitive,
+                state.query.wholeWord,
+              );
             }}
             type="button"
           >
@@ -264,7 +326,13 @@ function WorkbookSearchBox({
             }
             key={valueMode}
             onClick={() => {
-              onChangeQuery(state.query.text, state.query.scope, valueMode);
+              onChangeQuery(
+                state.query.text,
+                state.query.scope,
+                valueMode,
+                state.query.caseSensitive,
+                state.query.wholeWord,
+              );
             }}
             type="button"
           >
@@ -1278,12 +1346,20 @@ export default function App() {
   }, [pushErrorToast, updateSearchState]);
 
   const changeWorkbookSearchQuery = useCallback(
-    (text: string, scope: WorkbookSearchScope, valueMode: WorkbookSearchValueMode) => {
+    (
+      text: string,
+      scope: WorkbookSearchScope,
+      valueMode: WorkbookSearchValueMode,
+      caseSensitive: boolean,
+      wholeWord: boolean,
+    ) => {
       void window.appShell
         .setSearchQuery({
+          caseSensitive,
           scope,
           text,
           valueMode,
+          wholeWord,
         })
         .then((nextSearchState) => {
           updateSearchState(nextSearchState, false);

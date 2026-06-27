@@ -682,9 +682,11 @@ export type WorkbookSearchValueMode = "display" | "raw";
 
 export interface WorkbookSearchQuery {
   activeResultIndex: number;
+  caseSensitive: boolean;
   scope: WorkbookSearchScope;
   text: string;
   valueMode: WorkbookSearchValueMode;
+  wholeWord: boolean;
 }
 
 export interface WorkbookSearchResult {
@@ -703,9 +705,11 @@ export interface WorkbookSearchState {
 }
 
 export interface SetWorkbookSearchQueryRequest {
+  caseSensitive?: boolean;
   scope: WorkbookSearchScope;
   text: string;
   valueMode?: WorkbookSearchValueMode;
+  wholeWord?: boolean;
 }
 
 export interface ImportCsvFileRequest {
@@ -1065,27 +1069,59 @@ export function createWorkbookSearchState(
     activeResult: activeResultIndex >= 0 ? results[activeResultIndex] : null,
     query: {
       activeResultIndex,
+      caseSensitive: query.caseSensitive,
       scope: query.scope,
       text: query.text,
       valueMode: query.valueMode,
+      wholeWord: query.wholeWord,
     },
     results,
   };
 }
 
+export function matchesWorkbookSearchText(
+  value: string,
+  text: string,
+  options: Pick<WorkbookSearchQuery, "caseSensitive" | "wholeWord">,
+): boolean {
+  const haystack = options.caseSensitive ? value : value.toLocaleLowerCase();
+  const needle = options.caseSensitive ? text : text.toLocaleLowerCase();
+
+  if (haystack.length === 0 || needle.length === 0) {
+    return false;
+  }
+
+  if (!options.wholeWord) {
+    return haystack.includes(needle);
+  }
+
+  let index = haystack.indexOf(needle);
+
+  while (index >= 0) {
+    const before = index > 0 ? haystack[index - 1] : "";
+    const afterIndex = index + needle.length;
+    const after = afterIndex < haystack.length ? haystack[afterIndex] : "";
+
+    if (!isWorkbookSearchWordCharacter(before) && !isWorkbookSearchWordCharacter(after)) {
+      return true;
+    }
+
+    index = haystack.indexOf(needle, index + Math.max(needle.length, 1));
+  }
+
+  return false;
+}
+
 export function getWorkbookRawSearchResults(
   workbook: WorkbookState,
-  text: string,
-  scope: WorkbookSearchScope,
+  query: WorkbookSearchQuery,
 ): WorkbookSearchResult[] {
-  const needle = text.toLocaleLowerCase();
-
-  if (needle.length === 0) {
+  if (query.text.length === 0) {
     return [];
   }
 
   const sheets =
-    scope === "workbook"
+    query.scope === "workbook"
       ? workbook.sheets
       : workbook.sheets.filter((sheet) => sheet.id === workbook.activeSheetId);
   const results: WorkbookSearchResult[] = [];
@@ -1097,7 +1133,7 @@ export function getWorkbookRawSearchResults(
       for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
         const cellValue = row[columnIndex] ?? "";
 
-        if (cellValue.length === 0 || !cellValue.toLocaleLowerCase().includes(needle)) {
+        if (!matchesWorkbookSearchText(cellValue, query.text, query)) {
           continue;
         }
 
@@ -1114,6 +1150,10 @@ export function getWorkbookRawSearchResults(
   }
 
   return results;
+}
+
+function isWorkbookSearchWordCharacter(value: string): boolean {
+  return value.length > 0 && /^[\p{L}\p{N}_]$/u.test(value);
 }
 
 export function clampSearchResultIndex(index: number, resultCount: number): number {

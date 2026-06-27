@@ -182,6 +182,66 @@ test("WorkbookController searches displayed cell results by default and raw inpu
   );
 });
 
+test("WorkbookController search supports case-sensitive and whole-word options", () => {
+  const controller = new WorkbookController();
+
+  controller.applyTransaction({
+    operations: [
+      {
+        startColumn: 0,
+        startRow: 0,
+        type: "setRange",
+        values: [["Alpha", "alpha", "alphabet", "alpha-beta", "=A1"]],
+      },
+    ],
+  });
+
+  const caseSensitiveState = controller.setSearchQuery({
+    caseSensitive: true,
+    scope: "sheet",
+    text: "alpha",
+  });
+
+  assert.deepEqual(
+    caseSensitiveState.results.map((result) => result.address),
+    ["B1", "C1", "D1"],
+  );
+  assert.equal(caseSensitiveState.query.caseSensitive, true);
+
+  const wholeWordState = controller.setSearchQuery({
+    caseSensitive: false,
+    scope: "sheet",
+    text: "alpha",
+    wholeWord: true,
+  });
+
+  assert.deepEqual(
+    wholeWordState.results.map((result) => result.address),
+    ["A1", "B1", "D1", "E1"],
+  );
+  assert.equal(wholeWordState.query.wholeWord, true);
+
+  const rawWholeWordState = controller.setSearchQuery({
+    scope: "sheet",
+    text: "A1",
+    valueMode: "raw",
+    wholeWord: true,
+  });
+
+  assert.deepEqual(
+    rawWholeWordState.results.map((result) => ({
+      address: result.address,
+      matchedText: result.matchedText,
+    })),
+    [
+      {
+        address: "E1",
+        matchedText: "=A1",
+      },
+    ],
+  );
+});
+
 test("WorkbookController search navigation wraps and clear resets transient search state", () => {
   const controller = new WorkbookController();
   const initialSummary = controller.getSummary();
@@ -219,9 +279,11 @@ test("WorkbookController search navigation wraps and clear resets transient sear
     activeResult: null,
     query: {
       activeResultIndex: -1,
+      caseSensitive: false,
       scope: "sheet",
       text: "",
       valueMode: "display",
+      wholeWord: false,
     },
     results: [],
   });

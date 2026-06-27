@@ -30,6 +30,7 @@ import {
   getWorkbookSummary,
   getWorkbookRawSearchResults,
   isFormulaInput,
+  matchesWorkbookSearchText,
   getSheetRowCount,
   type ApplyTransactionRequest,
   type ApplyTransactionResult,
@@ -135,9 +136,11 @@ export class WorkbookController extends EventEmitter {
   #nextHistoryNodeNumber = 1;
   #searchQuery: WorkbookSearchQuery = {
     activeResultIndex: -1,
+    caseSensitive: false,
     scope: "sheet",
     text: "",
     valueMode: "display",
+    wholeWord: false,
   };
 
   constructor(
@@ -172,9 +175,11 @@ export class WorkbookController extends EventEmitter {
   setSearchQuery(request: SetWorkbookSearchQueryRequest): WorkbookSearchState {
     this.#searchQuery = {
       activeResultIndex: request.text.length > 0 ? 0 : -1,
+      caseSensitive: request.caseSensitive ?? this.#searchQuery.caseSensitive,
       scope: request.scope,
       text: request.text,
       valueMode: request.valueMode ?? this.#searchQuery.valueMode,
+      wholeWord: request.wholeWord ?? this.#searchQuery.wholeWord,
     };
 
     return this.#buildSearchState();
@@ -183,9 +188,11 @@ export class WorkbookController extends EventEmitter {
   clearSearch(): WorkbookSearchState {
     this.#searchQuery = {
       activeResultIndex: -1,
+      caseSensitive: this.#searchQuery.caseSensitive,
       scope: this.#searchQuery.scope,
       text: "",
       valueMode: this.#searchQuery.valueMode,
+      wholeWord: this.#searchQuery.wholeWord,
     };
 
     return this.#buildSearchState();
@@ -696,12 +703,10 @@ export class WorkbookController extends EventEmitter {
 
   #getSearchResults(query: WorkbookSearchQuery): WorkbookSearchResult[] {
     if (query.valueMode === "raw") {
-      return getWorkbookRawSearchResults(this.#state, query.text, query.scope);
+      return getWorkbookRawSearchResults(this.#state, query);
     }
 
-    const needle = query.text.toLocaleLowerCase();
-
-    if (needle.length === 0) {
+    if (query.text.length === 0) {
       return [];
     }
 
@@ -718,7 +723,7 @@ export class WorkbookController extends EventEmitter {
         for (let columnIndex = 0; columnIndex < getSheetColumnCount(sheet); columnIndex += 1) {
           const displayValue = getCellEvaluation(snapshot, rowIndex, columnIndex).display;
 
-          if (displayValue.length === 0 || !displayValue.toLocaleLowerCase().includes(needle)) {
+          if (!matchesWorkbookSearchText(displayValue, query.text, query)) {
             continue;
           }
 

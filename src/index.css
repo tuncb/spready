@@ -174,7 +174,7 @@ select {
   right: 8px;
   z-index: 3;
   display: grid;
-  grid-template-columns: minmax(150px, 220px) auto auto auto auto auto auto;
+  grid-template-columns: minmax(150px, 220px) auto auto auto auto auto auto auto;
   align-items: center;
   gap: 4px;
   max-width: calc(100% - 16px);
@@ -209,6 +209,12 @@ select {
   border: 1px solid var(--color-neutral-line-soft);
 }
 
+.workbook-search__options {
+  display: inline-flex;
+  height: 30px;
+  border: 1px solid var(--color-neutral-line-soft);
+}
+
 .workbook-search__mode {
   display: inline-flex;
   height: 30px;
@@ -216,6 +222,7 @@ select {
 }
 
 .workbook-search__scope-button,
+.workbook-search__option-button,
 .workbook-search__mode-button,
 .workbook-search__button,
 .workbook-search__close {
@@ -233,6 +240,13 @@ select {
   border-right: 1px solid var(--color-neutral-line-soft);
 }
 
+.workbook-search__option-button {
+  min-width: 30px;
+  border: none;
+  border-right: 1px solid var(--color-neutral-line-soft);
+  font-weight: 600;
+}
+
 .workbook-search__mode-button {
   min-width: 38px;
   border: none;
@@ -243,11 +257,20 @@ select {
   border-right: none;
 }
 
+.workbook-search__option-button:last-child {
+  border-right: none;
+}
+
 .workbook-search__mode-button:last-child {
   border-right: none;
 }
 
 .workbook-search__scope-button.is-active {
+  color: #ffffff;
+  background: var(--color-primary);
+}
+
+.workbook-search__option-button.is-active {
   color: #ffffff;
   background: var(--color-primary);
 }
@@ -269,6 +292,8 @@ select {
 .workbook-search__close:focus-visible,
 .workbook-search__scope-button:hover,
 .workbook-search__scope-button:focus-visible,
+.workbook-search__option-button:hover,
+.workbook-search__option-button:focus-visible,
 .workbook-search__mode-button:hover,
 .workbook-search__mode-button:focus-visible {
   border-color: var(--color-primary);
@@ -279,6 +304,8 @@ select {
 
 .workbook-search__scope-button.is-active:hover,
 .workbook-search__scope-button.is-active:focus-visible,
+.workbook-search__option-button.is-active:hover,
+.workbook-search__option-button.is-active:focus-visible,
 .workbook-search__mode-button.is-active:hover,
 .workbook-search__mode-button.is-active:focus-visible {
   color: #ffffff;
