@@ -1113,31 +1113,6 @@ export default function App() {
   );
   const selectedCell = gridSelection.current?.cell ?? null;
   const selectedCellAddress = useMemo(() => getSelectedCellAddress(selectedCell), [selectedCell]);
-  const activeSheetChartEntries = useMemo(() => {
-    const activeSheetCharts = (sheetSummary?.charts ?? []).filter(
-      (chart) => chart.sheetId === activeSheet?.id,
-    );
-
-    if (!sheetChartPreviews) {
-      return activeSheetCharts.map((chart) => ({
-        chartType: chart.chartType,
-        id: chart.id,
-        layout: chart.layout,
-        name: chart.name,
-        status: chart.status,
-      }));
-    }
-
-    const chartStatuses = new Map(activeSheetCharts.map((chart) => [chart.id, chart.status]));
-
-    return sheetChartPreviews.previews.map((preview) => ({
-      chartType: preview.chart.spec.chartType,
-      id: preview.chart.id,
-      layout: preview.chart.layout,
-      name: preview.chart.name,
-      status: chartStatuses.get(preview.chart.id) ?? preview.status,
-    }));
-  }, [activeSheet?.id, sheetChartPreviews, sheetSummary?.charts]);
   const activeSheetTableEntries = useMemo(
     () => (sheetSummary?.tables ?? []).filter((table) => table.sheetId === activeSheet?.id),
     [activeSheet?.id, sheetSummary?.tables],
@@ -2313,20 +2288,6 @@ export default function App() {
     });
   }, [activeSheet, applyTransaction, pushErrorToast]);
 
-  const handleActiveSheetChange = useCallback(
-    (event: ChangeEvent<HTMLSelectElement>) => {
-      void applyTransaction([
-        {
-          sheetId: event.target.value,
-          type: "setActiveSheet",
-        },
-      ]).catch((error) => {
-        pushErrorToast(error);
-      });
-    },
-    [applyTransaction, pushErrorToast],
-  );
-
   const openSheetQuickOpen = useCallback(() => {
     if (!sheetSummary || sheetSummary.sheets.length === 0 || isModalDialogOpen) {
       return;
@@ -3285,32 +3246,6 @@ export default function App() {
           ) : null}
         </section>
       </div>
-
-      <footer className="app-shell__status-bar" aria-label="Workbook status">
-        <div className="app-shell__meta">
-          <label className="app-shell__selector">
-            <select
-              aria-label="Active sheet"
-              className="app-shell__select"
-              onChange={handleActiveSheetChange}
-              value={activeSheet?.id ?? ""}
-            >
-              {(sheetSummary?.sheets ?? []).map((sheet) => (
-                <option key={sheet.id} value={sheet.id}>
-                  {sheet.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="app-shell__stats" aria-label="Workbook state">
-          <span>{`${rowCount}x${columnCount}`}</span>
-          <span>{`${activeSheetTableEntries.length} tables`}</span>
-          <span>{`${activeSheetChartEntries.length} charts`}</span>
-          <span>{sheetSummary ? `v${sheetSummary.version}` : "syncing"}</span>
-        </div>
-      </footer>
 
       {isSheetQuickOpenOpen ? (
         <SheetQuickOpen
