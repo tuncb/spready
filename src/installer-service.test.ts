@@ -5,6 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 
 import {
+  buildDetachedPowerShellStartArguments,
   buildFileAssociationRegistryEntries,
   buildFileOpenCommand,
   buildFinishUpdateScript,
@@ -17,8 +18,8 @@ import {
   extractSha256FromText,
   getDefaultInstallDirectory,
   getInstalledExecutablePath,
+  getInstallerPowerShellLogPath,
   getStartMenuShortcutPath,
-  hasInstallerScriptStarted,
   InstallerService,
   type InstallerCommandRunner,
   type InstallerShortcutDetails,
@@ -503,8 +504,8 @@ test("installer PowerShell wrapper logs lifecycle details", () => {
     "Finish Spready update",
     "Invoke-SpreadyInstallerStep 'copy files' { Write-Host 'copying' }",
     {
-      exitOnCompletion: false,
       logPath: "C:\\Temp\\spready-installation-logs\\update.log",
+      terminalBehavior: "keep-open",
     },
   );
 
@@ -514,28 +515,25 @@ test("installer PowerShell wrapper logs lifecycle details", () => {
   );
   assert.match(script, /Write-Host \$line/u);
   assert.match(script, /Add-Content -LiteralPath \$spreadyInstallerLogPath -Value \$line/u);
+  assert.match(script, /for \(\$attempt = 1; \$attempt -le 20; \$attempt \+= 1\)/u);
+  assert.match(script, /Start-Sleep -Milliseconds 50/u);
   assert.match(script, /Starting: \$Name/u);
   assert.match(script, /Write-SpreadyInstallerError \$_/u);
   assert.match(script, /PowerShell window left open for review/u);
 });
 
-test("installer startup handoff recognizes the script startup log line", () => {
+test("detached installer PowerShell logs use a sibling file", () => {
   assert.equal(
-    hasInstallerScriptStarted(
-      [
-        "[2026-06-27T21:19:32.115Z] [INFO] Launching detached PowerShell: Uninstall Spready",
-        "[2026-06-27T21:19:32.146Z] [INFO] Detached PowerShell process started.",
-      ].join("\n"),
-      "Uninstall Spready",
+    getInstallerPowerShellLogPath(
+      "C:\\Temp\\spready-installation-logs\\2026-06-27-spready-uninstall.log",
     ),
-    false,
+    "C:\\Temp\\spready-installation-logs\\2026-06-27-spready-uninstall.powershell.log",
   );
   assert.equal(
-    hasInstallerScriptStarted(
-      "[2026-06-27T21:19:33.001Z] [INFO] Starting Uninstall Spready.",
-      "Uninstall Spready",
+    getInstallerPowerShellLogPath(
+      "C:\\Temp\\spready-installation-logs\\2026-06-27-spready-uninstall",
     ),
-    true,
+    "C:\\Temp\\spready-installation-logs\\2026-06-27-spready-uninstall.powershell.log",
   );
 });
 
@@ -558,6 +556,25 @@ test("PowerShell file arguments keep installer scripts off the command line", ()
     scriptPath,
   ]);
   assert.equal(buildPowerShellFileArguments(scriptPath).includes("-EncodedCommand"), false);
+});
+
+test("detached PowerShell start arguments use an independent Windows process handoff", () => {
+  const scriptPath = "C:\\Temp\\spready-installation-logs\\update.ps1";
+
+  assert.deepEqual(buildDetachedPowerShellStartArguments(scriptPath), [
+    "/d",
+    "/s",
+    "/c",
+    "start",
+    '""',
+    "/min",
+    "powershell.exe",
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    scriptPath,
+  ]);
 });
 
 test("uninstall script logs explicit steps and propagates failures", () => {

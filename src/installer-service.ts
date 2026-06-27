@@ -872,8 +872,8 @@ async function runPowerShellScript(
   const logPath = options.logPath ?? createInstallerLogPath(operationName);
   const scriptPath = createInstallerScriptPath(logPath);
   const wrappedScript = buildInstallerPowerShellScript(operationName, script, {
-    exitOnCompletion: true,
     logPath,
+    terminalBehavior: "exit",
   });
 
   try {
@@ -893,23 +893,24 @@ async function spawnPowerShellScript(
   options: { logPath?: string } = {},
 ) {
   const logPath = options.logPath ?? createInstallerLogPath(operationName);
+  const powerShellLogPath = getInstallerPowerShellLogPath(logPath);
   const scriptPath = createInstallerScriptPath(logPath);
   const wrappedScript = buildInstallerPowerShellScript(operationName, script, {
-    exitOnCompletion: false,
-    logPath,
+    logPath: powerShellLogPath,
+    terminalBehavior: "exit",
   });
 
   await writePowerShellScriptFile(scriptPath, wrappedScript);
   await appendInstallerLogLine(logPath, "INFO", `Launching detached PowerShell: ${operationName}`);
   await appendInstallerLogLine(logPath, "INFO", `PowerShell script file: ${scriptPath}`);
+  await appendInstallerLogLine(logPath, "INFO", `PowerShell log file: ${powerShellLogPath}`);
 
   let child: ReturnType<typeof spawn>;
 
   try {
-    child = spawn("powershell.exe", buildPowerShellFileArguments(scriptPath, { keepOpen: true }), {
-      detached: true,
+    child = spawn("cmd.exe", buildDetachedPowerShellStartArguments(scriptPath), {
       stdio: "ignore",
-      windowsHide: false,
+      windowsHide: true,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown spawn error.";
@@ -926,10 +927,10 @@ async function spawnPowerShellScript(
     void appendInstallerLogLine(
       logPath,
       "ERROR",
-      `PowerShell terminal launch exited with code ${code ?? "unknown"}.`,
+      `PowerShell launcher exited with code ${code ?? "unknown"}.`,
     );
   });
-  const handoff = waitForDetachedProcessHandoff(child, logPath, operationName);
+  const handoff = waitForDetachedProcessHandoff(child, logPath, powerShellLogPath);
 
   try {
     await handoff;
@@ -941,7 +942,7 @@ async function spawnPowerShellScript(
 async function waitForDetachedProcessHandoff(
   child: ReturnType<typeof spawn>,
   logPath: string,
-  operationName: string,
+  powerShellLogPath: string,
 ): Promise<void> {
   await new Promise<void>((resolve) => {
     const timeout = setTimeout(resolve, 500);
@@ -964,29 +965,19 @@ async function waitForDetachedProcessHandoff(
     });
   });
 
-  await waitForInstallerScriptStartup(logPath, operationName);
-}
-
-export function hasInstallerScriptStarted(logContents: string, operationName: string) {
-  return logContents.includes(`[INFO] Starting ${operationName}.`);
+  await waitForInstallerScriptStartup(logPath, powerShellLogPath);
 }
 
 async function waitForInstallerScriptStartup(
   logPath: string,
-  operationName: string,
+  powerShellLogPath: string,
   timeoutMilliseconds = 5000,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMilliseconds;
 
   while (Date.now() < deadline) {
-    try {
-      const logContents = await fs.readFile(logPath, "utf8");
-
-      if (hasInstallerScriptStarted(logContents, operationName)) {
-        return;
-      }
-    } catch {
-      // The parent creates the log before spawning PowerShell, but tolerate slow filesystem flushes.
+    if (await isRegularFile(powerShellLogPath)) {
+      return;
     }
 
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -995,7 +986,7 @@ async function waitForInstallerScriptStartup(
   const message = `Detached PowerShell script did not start within ${timeoutMilliseconds} ms.`;
 
   await appendInstallerLogLine(logPath, "ERROR", message);
-  throw new Error(`${message} Log file: ${logPath}`);
+  throw new Error(`${message} Log file: ${logPath} PowerShell log file: ${powerShellLogPath}`);
 }
 
 function createInstallerLogPath(operationName: string) {
@@ -1016,6 +1007,12 @@ function createInstallerScriptPath(logPath: string) {
   return logPath.toLowerCase().endsWith(".log") ? `${logPath.slice(0, -4)}.ps1` : `${logPath}.ps1`;
 }
 
+export function getInstallerPowerShellLogPath(logPath: string) {
+  return logPath.toLowerCase().endsWith(".log")
+    ? `${logPath.slice(0, -4)}.powershell.log`
+    : `${logPath}.powershell.log`;
+}
+
 export function buildPowerShellFileArguments(
   scriptPath: string,
   options: { keepOpen?: boolean } = {},
@@ -1027,6 +1024,19 @@ export function buildPowerShellFileArguments(
     "Bypass",
     "-File",
     scriptPath,
+  ];
+}
+
+export function buildDetachedPowerShellStartArguments(scriptPath: string) {
+  return [
+    "/d",
+    "/s",
+    "/c",
+    "start",
+    '""',
+    "/min",
+    "powershell.exe",
+    ...buildPowerShellFileArguments(scriptPath),
   ];
 }
 
@@ -1052,7 +1062,7 @@ async function appendInstallerLogLine(logPath: string, level: "ERROR" | "INFO", 
 export function buildInstallerPowerShellScript(
   operationName: string,
   script: string,
-  options: { exitOnCompletion: boolean; logPath: string },
+  options: { logPath: string; terminalBehavior: "exit" | "keep-open" },
 ) {
   return [
     "$ErrorActionPreference = 'Stop'",
@@ -1065,7 +1075,18 @@ export function buildInstallerPowerShellScript(
     "  $timestamp = Get-Date -Format o",
     '  $line = "[$timestamp] [$Level] $Message"',
     "  Write-Host $line",
-    "  Add-Content -LiteralPath $spreadyInstallerLogPath -Value $line",
+    "  for ($attempt = 1; $attempt -le 20; $attempt += 1) {",
+    "    try {",
+    "      Add-Content -LiteralPath $spreadyInstallerLogPath -Value $line",
+    "      return",
+    "    } catch {",
+    "      if ($attempt -eq 20) {",
+    '        Write-Host "[$timestamp] [ERROR] Failed to write installer log after ${attempt} attempts: $($_.Exception.Message)"',
+    "        return",
+    "      }",
+    "      Start-Sleep -Milliseconds 50",
+    "    }",
+    "  }",
     "}",
     "function Write-SpreadyInstallerError {",
     "  param([System.Management.Automation.ErrorRecord] $ErrorRecord)",
@@ -1100,7 +1121,7 @@ export function buildInstallerPowerShellScript(
     '  Write-SpreadyInstallerLog "$spreadyInstallerOperation failed." "ERROR"',
     "  Write-SpreadyInstallerError $_",
     "}",
-    options.exitOnCompletion
+    options.terminalBehavior === "exit"
       ? "exit $spreadyInstallerExitCode"
       : 'Write-SpreadyInstallerLog "PowerShell window left open for review. Close it when finished."',
   ].join("\n");
