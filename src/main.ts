@@ -860,6 +860,16 @@ function buildAppMenu() {
       label: "Sheet",
       submenu: [
         {
+          label: "Select Sheet...",
+          accelerator: "CmdOrCtrl+P",
+          click: () => {
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.selectSheet);
+            });
+          },
+        },
+        { type: "separator" },
+        {
           label: "Add Row",
           click: () => {
             runMenuCommand(() => {

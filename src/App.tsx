@@ -2984,6 +2984,9 @@ export default function App() {
           case APP_MENU_ACTIONS.deleteSheet:
             deleteSheet();
             return;
+          case APP_MENU_ACTIONS.selectSheet:
+            openSheetQuickOpen();
+            return;
           case APP_MENU_ACTIONS.insertChart:
             openCreateChartEditor();
             return;
@@ -3023,6 +3026,7 @@ export default function App() {
     isModalDialogOpen,
     openCellFormatDialog,
     openCreateChartEditor,
+    openSheetQuickOpen,
     openRenameSheetDialog,
     openWorkbookSearch,
     pasteSelection,

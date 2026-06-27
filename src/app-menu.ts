@@ -22,6 +22,7 @@ export const APP_MENU_ACTIONS = {
   paste: "edit:paste",
   pasteValues: "edit:paste-values",
   renameSheet: "sheet:rename-sheet",
+  selectSheet: "sheet:select-sheet",
   formatCells: "edit:format-cells",
   clearFormatting: "edit:clear-formatting",
   saveWorkbook: "workbook:save",
