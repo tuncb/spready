@@ -929,16 +929,19 @@ async function spawnPowerShellScript(
       `PowerShell terminal launch exited with code ${code ?? "unknown"}.`,
     );
   });
-  const handoff = waitForDetachedProcessHandoff(child, logPath);
+  const handoff = waitForDetachedProcessHandoff(child, logPath, operationName);
 
-  child.unref();
-
-  await handoff;
+  try {
+    await handoff;
+  } finally {
+    child.unref();
+  }
 }
 
 async function waitForDetachedProcessHandoff(
   child: ReturnType<typeof spawn>,
   logPath: string,
+  operationName: string,
 ): Promise<void> {
   await new Promise<void>((resolve) => {
     const timeout = setTimeout(resolve, 500);
@@ -960,6 +963,39 @@ async function waitForDetachedProcessHandoff(
       ).finally(finish);
     });
   });
+
+  await waitForInstallerScriptStartup(logPath, operationName);
+}
+
+export function hasInstallerScriptStarted(logContents: string, operationName: string) {
+  return logContents.includes(`[INFO] Starting ${operationName}.`);
+}
+
+async function waitForInstallerScriptStartup(
+  logPath: string,
+  operationName: string,
+  timeoutMilliseconds = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMilliseconds;
+
+  while (Date.now() < deadline) {
+    try {
+      const logContents = await fs.readFile(logPath, "utf8");
+
+      if (hasInstallerScriptStarted(logContents, operationName)) {
+        return;
+      }
+    } catch {
+      // The parent creates the log before spawning PowerShell, but tolerate slow filesystem flushes.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  const message = `Detached PowerShell script did not start within ${timeoutMilliseconds} ms.`;
+
+  await appendInstallerLogLine(logPath, "ERROR", message);
+  throw new Error(`${message} Log file: ${logPath}`);
 }
 
 function createInstallerLogPath(operationName: string) {

@@ -18,6 +18,7 @@ import {
   getDefaultInstallDirectory,
   getInstalledExecutablePath,
   getStartMenuShortcutPath,
+  hasInstallerScriptStarted,
   InstallerService,
   type InstallerCommandRunner,
   type InstallerShortcutDetails,
@@ -516,6 +517,26 @@ test("installer PowerShell wrapper logs lifecycle details", () => {
   assert.match(script, /Starting: \$Name/u);
   assert.match(script, /Write-SpreadyInstallerError \$_/u);
   assert.match(script, /PowerShell window left open for review/u);
+});
+
+test("installer startup handoff recognizes the script startup log line", () => {
+  assert.equal(
+    hasInstallerScriptStarted(
+      [
+        "[2026-06-27T21:19:32.115Z] [INFO] Launching detached PowerShell: Uninstall Spready",
+        "[2026-06-27T21:19:32.146Z] [INFO] Detached PowerShell process started.",
+      ].join("\n"),
+      "Uninstall Spready",
+    ),
+    false,
+  );
+  assert.equal(
+    hasInstallerScriptStarted(
+      "[2026-06-27T21:19:33.001Z] [INFO] Starting Uninstall Spready.",
+      "Uninstall Spready",
+    ),
+    true,
+  );
 });
 
 test("PowerShell file arguments keep installer scripts off the command line", () => {
