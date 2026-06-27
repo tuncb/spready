@@ -26,6 +26,7 @@ import {
 import { flushSync } from "react-dom";
 
 import { APP_MENU_ACTIONS, type AppMenuAction } from "./app-menu";
+import { isEditableShortcutTarget, shouldCloseWorkbookSearchOnEscape } from "./app-keyboard";
 import { CellFormatDialog } from "./CellFormatDialog";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
@@ -1042,22 +1043,6 @@ function replaceInputSelection(
     selectionStart: selectionStart + nextText.length,
     value,
   };
-}
-
-function isEditableShortcutTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  if (target.isContentEditable) {
-    return true;
-  }
-
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLSelectElement ||
-    target instanceof HTMLTextAreaElement
-  );
 }
 
 function getDefaultWorkbookFilePath(summary: WorkbookSummary | null): string {
@@ -3006,6 +2991,18 @@ export default function App() {
         return;
       }
 
+      if (
+        shouldCloseWorkbookSearchOnEscape(event, {
+          hasSearchQuery: searchState.query.text.length > 0,
+          isFormulaInputFocused,
+          isSearchOpen,
+        })
+      ) {
+        event.preventDefault();
+        closeWorkbookSearch();
+        return;
+      }
+
       if (isPrimaryModifier && !event.shiftKey && normalizedKey === "p") {
         event.preventDefault();
         openSheetQuickOpen();
@@ -3071,13 +3068,16 @@ export default function App() {
     };
   }, [
     copySelection,
+    closeWorkbookSearch,
     cutSelection,
     deleteSelection,
     isModalDialogOpen,
+    isSearchOpen,
     openSheetQuickOpen,
     openWorkbookSearch,
     pasteSelection,
     restoreWorkbookHistory,
+    searchState.query.text.length,
   ]);
 
   return (
