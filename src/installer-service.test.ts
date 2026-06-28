@@ -568,6 +568,8 @@ test("detached PowerShell start arguments use an independent Windows process han
     "start",
     '""',
     "/min",
+    "/D",
+    "C:\\Temp\\spready-installation-logs",
     "powershell.exe",
     "-NoProfile",
     "-ExecutionPolicy",
@@ -585,7 +587,10 @@ test("uninstall script logs explicit steps and propagates failures", () => {
 
   assert.match(script, /Invoke-SpreadyInstallerStep 'wait for Spready to exit'/u);
   assert.match(script, /Invoke-SpreadyInstallerStep 'remove install directory'/u);
+  assert.match(script, /for \(\$attempt = 1; \$attempt -le 60; \$attempt \+= 1\)/u);
   assert.match(script, /Remove-Item -LiteralPath/u);
+  assert.equal(script.includes("Install directory removal failed on attempt ${attempt}"), true);
+  assert.match(script, /Start-Sleep -Milliseconds 500/u);
   assert.doesNotMatch(script, /SilentlyContinue'\n/u);
 });
 
@@ -601,6 +606,9 @@ test("finish update script retries replacement and restores previous install on 
 
   assert.match(script, /Invoke-SpreadyUpdateStep 'rename current install'/u);
   assert.match(script, /Invoke-SpreadyUpdateStep 'move staged update'/u);
+  assert.match(script, /Invoke-SpreadyUpdateStep 'remove old install backup'/u);
+  assert.match(script, /Invoke-SpreadyUpdateStep 'remove temporary update files'/u);
+  assert.match(script, /Invoke-SpreadyUpdateStep 'restore previous install'/u);
   assert.match(script, /Write-SpreadyInstallerLog/u);
   assert.match(script, /Restored previous install after update failure/u);
   assert.match(
