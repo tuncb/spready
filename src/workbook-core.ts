@@ -130,7 +130,16 @@ export interface WorkbookTableSortState {
   valueMode: WorkbookTableSortValueMode;
 }
 
+export interface WorkbookTableColumnHighlightRule {
+  backgroundColor?: string;
+  bold?: boolean;
+  columnIndex: number;
+  textColor?: string;
+  threshold: number;
+}
+
 export interface WorkbookTable {
+  columnHighlightRules?: WorkbookTableColumnHighlightRule[];
   hasHeaderRow: boolean;
   id: string;
   name: string;
@@ -139,6 +148,7 @@ export interface WorkbookTable {
 }
 
 export interface WorkbookTableSummary {
+  columnHighlightRules?: WorkbookTableColumnHighlightRule[];
   hasHeaderRow: boolean;
   id: string;
   name: string;
@@ -468,6 +478,7 @@ export type WorkbookTransactionOperation =
       type: "addChart";
     }
   | {
+      columnHighlightRules?: WorkbookTableColumnHighlightRule[];
       hasHeaderRow?: boolean;
       name?: string;
       range: Omit<WorkbookTableRange, "sheetId"> & { sheetId?: string };
@@ -542,6 +553,11 @@ export type WorkbookTransactionOperation =
       name: string;
       tableId: string;
       type: "renameTable";
+    }
+  | {
+      columnHighlightRules?: WorkbookTableColumnHighlightRule[];
+      tableId: string;
+      type: "setTableColumnHighlightRules";
     }
   | {
       type: "replaceSheet";
@@ -757,7 +773,15 @@ export interface ClipboardTableSortState {
   valueMode: WorkbookTableSortValueMode;
 }
 
+export interface ClipboardTableColumnHighlightRule extends Omit<
+  WorkbookTableColumnHighlightRule,
+  "columnIndex"
+> {
+  columnOffset: number;
+}
+
 export interface ClipboardTable {
+  columnHighlightRules?: ClipboardTableColumnHighlightRule[];
   hasHeaderRow: boolean;
   name: string;
   range: ClipboardTableRange;
@@ -1208,6 +1232,9 @@ export function cloneWorkbookChart(chart: WorkbookChart): WorkbookChart {
 
 export function cloneWorkbookTable(table: WorkbookTable): WorkbookTable {
   return {
+    ...(table.columnHighlightRules
+      ? { columnHighlightRules: cloneWorkbookTableColumnHighlightRules(table.columnHighlightRules) }
+      : {}),
     hasHeaderRow: table.hasHeaderRow,
     id: table.id,
     name: table.name,
@@ -1278,6 +1305,14 @@ export function createClipboardRangePayload(
     }
 
     tables.push({
+      ...(table.columnHighlightRules
+        ? {
+            columnHighlightRules: table.columnHighlightRules.map((rule) => ({
+              ...rule,
+              columnOffset: rule.columnIndex - table.range.startColumn,
+            })),
+          }
+        : {}),
       hasHeaderRow: table.hasHeaderRow,
       name: table.name,
       range: {
@@ -1508,6 +1543,14 @@ export function buildPasteRangeOperations(
       const tableName = getAvailablePastedWorkbookTableName(usedNames, table.name);
 
       operations.push({
+        ...(table.columnHighlightRules
+          ? {
+              columnHighlightRules: table.columnHighlightRules.map((rule) => ({
+                ...rule,
+                columnIndex: tableRange.startColumn + rule.columnOffset,
+              })),
+            }
+          : {}),
         hasHeaderRow: table.hasHeaderRow,
         name: tableName,
         range: tableRange,
@@ -1899,6 +1942,9 @@ export function createWorkbookChartSummary(
 
 export function createWorkbookTableSummary(table: WorkbookTable): WorkbookTableSummary {
   return {
+    ...(table.columnHighlightRules
+      ? { columnHighlightRules: cloneWorkbookTableColumnHighlightRules(table.columnHighlightRules) }
+      : {}),
     hasHeaderRow: table.hasHeaderRow,
     id: table.id,
     name: table.name,
@@ -1989,17 +2035,35 @@ export function adjustWorkbookTableForInsertedColumns(
   const rangeEnd = table.range.startColumn + table.range.columnCount;
 
   if (columnIndex <= table.range.startColumn) {
-    return updateWorkbookTableRange(table, {
+    const nextTable = updateWorkbookTableRange(table, {
       ...table.range,
       startColumn: table.range.startColumn + count,
     });
+
+    return setWorkbookTableColumnHighlightRules(
+      nextTable,
+      adjustWorkbookTableColumnHighlightRulesForInsertedColumns(
+        table.columnHighlightRules,
+        columnIndex,
+        count,
+      ),
+    );
   }
 
   if (columnIndex < rangeEnd) {
-    return updateWorkbookTableRange(table, {
+    const nextTable = updateWorkbookTableRange(table, {
       ...table.range,
       columnCount: table.range.columnCount + count,
     });
+
+    return setWorkbookTableColumnHighlightRules(
+      nextTable,
+      adjustWorkbookTableColumnHighlightRulesForInsertedColumns(
+        table.columnHighlightRules,
+        columnIndex,
+        count,
+      ),
+    );
   }
 
   return table;
@@ -2029,12 +2093,21 @@ export function adjustWorkbookTableForDeletedColumns(
     return [];
   }
 
+  const nextTable = updateWorkbookTableRange(table, {
+    ...table.range,
+    columnCount: nextRangeAxis.count,
+    startColumn: nextRangeAxis.start,
+  });
+
   return [
-    updateWorkbookTableRange(table, {
-      ...table.range,
-      columnCount: nextRangeAxis.count,
-      startColumn: nextRangeAxis.start,
-    }),
+    setWorkbookTableColumnHighlightRules(
+      nextTable,
+      adjustWorkbookTableColumnHighlightRulesForDeletedColumns(
+        table.columnHighlightRules,
+        columnIndex,
+        count,
+      ),
+    ),
   ];
 }
 
@@ -2282,6 +2355,14 @@ export function applyWorkbookTransaction(
               );
         const nextTable: WorkbookTable = {
           ...table,
+          ...(operation.columnHighlightRules
+            ? {
+                columnHighlightRules: normalizeWorkbookTableColumnHighlightRules(
+                  table,
+                  operation.columnHighlightRules,
+                ),
+              }
+            : {}),
           ...(sortState ? { sortState } : {}),
         };
 
@@ -2616,6 +2697,42 @@ export function applyWorkbookTransaction(
         break;
       }
 
+      case "setTableColumnHighlightRules": {
+        const tableId = normalizeRequiredTableId(operation.tableId);
+        const tableIndex = findTableIndex(nextState, tableId);
+
+        if (tableIndex < 0) {
+          throw new Error(`Table "${tableId}" was not found.`);
+        }
+
+        const currentTable = nextState.tables[tableIndex];
+        const nextRules =
+          operation.columnHighlightRules === undefined ||
+          operation.columnHighlightRules.length === 0
+            ? undefined
+            : normalizeWorkbookTableColumnHighlightRules(
+                currentTable,
+                operation.columnHighlightRules,
+              );
+
+        if (workbookTableColumnHighlightRulesEqual(currentTable.columnHighlightRules, nextRules)) {
+          break;
+        }
+
+        nextState.tables = nextState.tables.map((table, index) =>
+          index === tableIndex
+            ? {
+                ...table,
+                ...(nextRules
+                  ? { columnHighlightRules: nextRules }
+                  : { columnHighlightRules: undefined }),
+              }
+            : table,
+        );
+        changed = true;
+        break;
+      }
+
       case "replaceSheet": {
         const sheet = getMutableSheet(nextState, clonedSheetIds, operation.sheetId);
         const nextName =
@@ -2750,15 +2867,25 @@ export function applyWorkbookTransaction(
           range,
           sortState: undefined,
         };
+        const nextHighlightRules = filterWorkbookTableColumnHighlightRules(
+          currentTable.columnHighlightRules,
+          nextTable,
+        );
+        const normalizedNextTable: WorkbookTable = {
+          ...nextTable,
+          ...(nextHighlightRules
+            ? { columnHighlightRules: nextHighlightRules }
+            : { columnHighlightRules: undefined }),
+        };
 
-        assertWorkbookTableRangeAvailable(nextState, nextTable, tableId);
+        assertWorkbookTableRangeAvailable(nextState, normalizedNextTable, tableId);
 
-        if (workbookTablesEqual(currentTable, nextTable)) {
+        if (workbookTablesEqual(currentTable, normalizedNextTable)) {
           break;
         }
 
         nextState.tables = nextState.tables.map((table, index) =>
-          index === tableIndex ? nextTable : table,
+          index === tableIndex ? normalizedNextTable : table,
         );
         changed = true;
         break;
@@ -3175,6 +3302,12 @@ function cloneWorkbookTableSortState(sortState: WorkbookTableSortState): Workboo
   };
 }
 
+function cloneWorkbookTableColumnHighlightRules(
+  rules: readonly WorkbookTableColumnHighlightRule[],
+): WorkbookTableColumnHighlightRule[] {
+  return rules.map((rule) => ({ ...rule }));
+}
+
 function cloneRangeValues(values: readonly (readonly string[])[]): string[][] {
   return values.map((row) => [...row]);
 }
@@ -3493,6 +3626,7 @@ function workbookChartsEqual(left: WorkbookChart, right: WorkbookChart): boolean
 
 function workbookTablesEqual(left: WorkbookTable, right: WorkbookTable): boolean {
   return (
+    workbookTableColumnHighlightRulesEqual(left.columnHighlightRules, right.columnHighlightRules) &&
     left.hasHeaderRow === right.hasHeaderRow &&
     left.id === right.id &&
     left.name === right.name &&
@@ -3527,6 +3661,31 @@ function workbookTableSortStatesEqual(
         key.columnIndex === right.keys[index]?.columnIndex &&
         key.direction === right.keys[index]?.direction,
     )
+  );
+}
+
+function workbookTableColumnHighlightRulesEqual(
+  left: readonly WorkbookTableColumnHighlightRule[] | undefined,
+  right: readonly WorkbookTableColumnHighlightRule[] | undefined,
+): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    left.length === right.length &&
+    left.every((rule, index) => {
+      const rightRule = right[index];
+
+      return (
+        rightRule !== undefined &&
+        rule.backgroundColor === rightRule.backgroundColor &&
+        rule.bold === rightRule.bold &&
+        rule.columnIndex === rightRule.columnIndex &&
+        rule.textColor === rightRule.textColor &&
+        rule.threshold === rightRule.threshold
+      );
+    })
   );
 }
 
@@ -3790,6 +3949,10 @@ function updateWorkbookTableRange(table: WorkbookTable, range: WorkbookTableRang
 
   return {
     ...table,
+    columnHighlightRules: filterWorkbookTableColumnHighlightRules(table.columnHighlightRules, {
+      ...table,
+      range,
+    }),
     range,
     sortState: undefined,
   };
@@ -3904,6 +4067,119 @@ function normalizeWorkbookTableSortState(
     }),
     valueMode,
   };
+}
+
+function normalizeWorkbookTableColumnHighlightRules(
+  table: WorkbookTable,
+  rules: readonly WorkbookTableColumnHighlightRule[],
+): WorkbookTableColumnHighlightRule[] | undefined {
+  const seenColumnIndexes = new Set<number>();
+  const normalizedRules = rules.map((rule) => {
+    const columnIndex = normalizeNonNegativeInteger(
+      rule.columnIndex,
+      "Table column highlight column index",
+    );
+
+    if (
+      columnIndex < table.range.startColumn ||
+      columnIndex >= table.range.startColumn + table.range.columnCount
+    ) {
+      throw new Error(
+        `Table column highlight column ${columnIndex} is outside table "${table.id}".`,
+      );
+    }
+
+    if (seenColumnIndexes.has(columnIndex)) {
+      throw new Error(`Table column highlight column ${columnIndex} is configured more than once.`);
+    }
+
+    seenColumnIndexes.add(columnIndex);
+
+    if (!Number.isFinite(rule.threshold)) {
+      throw new Error("Table column highlight threshold must be a finite number.");
+    }
+
+    const backgroundColor = rule.backgroundColor?.trim();
+    const textColor = rule.textColor?.trim();
+
+    return {
+      ...(backgroundColor ? { backgroundColor } : {}),
+      ...(rule.bold !== undefined ? { bold: rule.bold === true } : {}),
+      columnIndex,
+      ...(textColor ? { textColor } : {}),
+      threshold: rule.threshold,
+    };
+  });
+
+  return normalizedRules.length > 0 ? normalizedRules : undefined;
+}
+
+function filterWorkbookTableColumnHighlightRules(
+  rules: readonly WorkbookTableColumnHighlightRule[] | undefined,
+  table: WorkbookTable,
+): WorkbookTableColumnHighlightRule[] | undefined {
+  const filteredRules = (rules ?? []).filter(
+    (rule) =>
+      rule.columnIndex >= table.range.startColumn &&
+      rule.columnIndex < table.range.startColumn + table.range.columnCount,
+  );
+
+  return filteredRules.length > 0
+    ? normalizeWorkbookTableColumnHighlightRules(table, filteredRules)
+    : undefined;
+}
+
+function setWorkbookTableColumnHighlightRules(
+  table: WorkbookTable,
+  rules: readonly WorkbookTableColumnHighlightRule[] | undefined,
+): WorkbookTable {
+  const columnHighlightRules = filterWorkbookTableColumnHighlightRules(rules, table);
+
+  return {
+    ...table,
+    ...(columnHighlightRules ? { columnHighlightRules } : { columnHighlightRules: undefined }),
+  };
+}
+
+function adjustWorkbookTableColumnHighlightRulesForInsertedColumns(
+  rules: readonly WorkbookTableColumnHighlightRule[] | undefined,
+  columnIndex: number,
+  count: number,
+): WorkbookTableColumnHighlightRule[] | undefined {
+  if (!rules) {
+    return undefined;
+  }
+
+  return rules.map((rule) => ({
+    ...rule,
+    columnIndex: rule.columnIndex >= columnIndex ? rule.columnIndex + count : rule.columnIndex,
+  }));
+}
+
+function adjustWorkbookTableColumnHighlightRulesForDeletedColumns(
+  rules: readonly WorkbookTableColumnHighlightRule[] | undefined,
+  columnIndex: number,
+  count: number,
+): WorkbookTableColumnHighlightRule[] | undefined {
+  if (!rules) {
+    return undefined;
+  }
+
+  const deleteEndColumn = columnIndex + count;
+
+  return rules.flatMap((rule) => {
+    if (rule.columnIndex >= columnIndex && rule.columnIndex < deleteEndColumn) {
+      return [];
+    }
+
+    return [
+      {
+        ...rule,
+        columnIndex:
+          rule.columnIndex >= deleteEndColumn ? rule.columnIndex - count : rule.columnIndex,
+      },
+    ];
+  });
 }
 
 function sortWorkbookTableRows(

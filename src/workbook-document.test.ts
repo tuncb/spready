@@ -31,6 +31,12 @@ test("workbook documents round-trip sparse multi-sheet workbook state", () => {
         width: 220,
       },
       {
+        columnHighlightRules: [
+          {
+            columnIndex: 1,
+            threshold: 1000,
+          },
+        ],
         range: {
           columnCount: 3,
           rowCount: 2,

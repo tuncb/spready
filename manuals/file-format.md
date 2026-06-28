@@ -117,7 +117,8 @@ Tables persist rectangular sheet ranges:
   "sortState": {
     "keys": [{ "columnIndex": 1, "direction": "descending" }],
     "valueMode": "display"
-  }
+  },
+  "columnHighlightRules": [{ "columnIndex": 2, "threshold": 1000 }]
 }
 ```
 
@@ -125,7 +126,10 @@ Table ids must be unique. Table names must be unique case-insensitively. Ranges
 must fit inside their sheet and cannot overlap another table on the same sheet.
 `sortState` is optional. Sort keys use absolute sheet column indexes that must
 fall inside the table range; directions are `ascending` or `descending`, and
-`valueMode` is `raw` or `display`.
+`valueMode` is `raw` or `display`. `columnHighlightRules` is optional. Highlight
+rules use absolute sheet column indexes inside the table range, compare numeric
+displayed values with `threshold`, and may include `backgroundColor`,
+`textColor`, and `bold`.
 
 ## Charts
 
@@ -204,7 +208,8 @@ Spready rejects files that are not valid JSON, have the wrong `format`, use an
 unsupported `formatVersion`, contain duplicate sheet/chart/table ids, duplicate
 case-insensitive sheet or table names, out-of-bounds cells/styles/column widths,
 duplicate cell/style entries, missing active sheet, missing table sheet,
-out-of-bounds table ranges or sort keys, or overlapping tables.
+out-of-bounds table ranges, sort keys, or highlight columns, or overlapping
+tables.
 
 ## Access Through Automation
 

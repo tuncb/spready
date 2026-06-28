@@ -49,7 +49,22 @@ const workbookTableSortStateSchema = z.object({
   valueMode: z.enum(["display", "raw"]),
 });
 
+const workbookTableColumnHighlightRuleSchema = z.object({
+  backgroundColor: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Optional cell background color for values above the threshold."),
+  bold: z.boolean().optional().describe("Whether highlighted values should render bold."),
+  columnIndex: z.int().min(0).describe("Zero-based sheet column index within the table."),
+  textColor: z.string().min(1).optional().describe("Optional text color for highlighted values."),
+  threshold: z
+    .number()
+    .describe("Highlight cells whose numeric displayed value is greater than this."),
+});
+
 const workbookTableSchema = z.object({
+  columnHighlightRules: z.array(workbookTableColumnHighlightRuleSchema).optional(),
   hasHeaderRow: z.boolean(),
   id: z.string().min(1),
   name: z.string().min(1),
@@ -257,6 +272,17 @@ const clipboardTableSortStateSchema = z.object({
 });
 
 const clipboardTableSchema = z.object({
+  columnHighlightRules: z
+    .array(
+      workbookTableColumnHighlightRuleSchema
+        .omit({
+          columnIndex: true,
+        })
+        .extend({
+          columnOffset: z.int().min(0),
+        }),
+    )
+    .optional(),
   hasHeaderRow: z.boolean(),
   name: z.string().min(1),
   range: clipboardTableRangeSchema,
@@ -312,6 +338,7 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     type: z.literal("addChart"),
   }),
   z.object({
+    columnHighlightRules: z.array(workbookTableColumnHighlightRuleSchema).optional(),
     hasHeaderRow: z.boolean().optional(),
     name: z.string().min(1).optional(),
     range: workbookTableRangeSchema
@@ -392,6 +419,14 @@ const transactionOperationSchema = z.discriminatedUnion("type", [
     name: z.string().min(1),
     tableId: z.string().min(1),
     type: z.literal("renameTable"),
+  }),
+  z.object({
+    columnHighlightRules: z
+      .array(workbookTableColumnHighlightRuleSchema)
+      .optional()
+      .describe("Replacement table column highlight rules. Omit or pass an empty array to clear."),
+    tableId: z.string().min(1),
+    type: z.literal("setTableColumnHighlightRules"),
   }),
   z.object({
     name: z.string().min(1).optional(),
@@ -677,6 +712,11 @@ const transactionOperations = [
   {
     type: "renameTable",
     description: "Rename one persisted table. Table names must be unique case-insensitively.",
+  },
+  {
+    type: "setTableColumnHighlightRules",
+    description:
+      "Replace or clear table column threshold highlight rules. Rules target zero-based sheet column indexes inside the table and highlight body cells whose numeric displayed value is greater than the threshold.",
   },
   {
     type: "replaceSheet",
@@ -978,6 +1018,12 @@ const guideResource = {
       readOnly: false,
     },
     {
+      defaultsToActiveSheet: false,
+      description: "Replace or clear table column threshold highlight rules for body cells.",
+      name: "set_table_column_highlights",
+      readOnly: false,
+    },
+    {
       defaultsToActiveSheet: true,
       description: "Import a local CSV file into a sheet and update its source file metadata.",
       name: "import_csv_file",
@@ -1004,7 +1050,7 @@ const guideResource = {
     "Sheet names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook.",
     "Table names are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. addTable replaces fully contained existing tables, but partial table overlaps are rejected.",
     "Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated and formatted grid values, and get_sheet_style_range for rendered styles and number formats.",
-    "Use get_sheet_tables and get_table for table inspection. Define, rename, resize, delete, and sort tables through apply_transaction.",
+    "Use get_sheet_tables and get_table for table inspection. Define, rename, resize, delete, and sort tables through apply_transaction; configure table column threshold highlights with set_table_column_highlights.",
     "sortTable sorts table body rows only. Blank sort values are placed after nonblank values. Raw mode sorts stored input strings; display mode sorts evaluated typed values. Formula strings move with rows and are not rewritten; table structured references such as [@Score] keep current-row meaning after sort.",
     "Use get_undo_tree to inspect undo branches; undo moves to the parent node, redo follows the latest child unless nodeId selects a redo child, and checkout_undo_node jumps directly to any known history node.",
     "Use format_cells for common cell styling and number formatting; merge mode preserves existing style properties, replace mode overwrites each target style, and clear mode removes styling.",
@@ -1085,6 +1131,7 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 - clear_range: Clear one explicit rectangular range without resizing the sheet. Omitting sheetId uses the active sheet.
 - apply_transaction: Apply one atomic batch of workbook mutations. Supports dryRun.
   Optionally pass expectedVersion to reject stale writes when the workbook changed since you last read it.
+- set_table_column_highlights: Replace or clear table column threshold highlight rules without constructing a full transaction.
 - import_csv_file: Load a local CSV file into a sheet. Omitting sheetId uses the active sheet.
 - export_csv_file: Save one sheet as a local CSV file. Omitting sheetId uses the active sheet.
 
@@ -1207,7 +1254,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use get_workbook_console_output for a formula-aware human-readable dump, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use get_workbook_console_output for a formula-aware human-readable dump, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, use get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use set_table_column_highlights for table threshold highlights, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1811,6 +1858,14 @@ async function main() {
               "Use this for all writes, preferably in one batched request with dryRun first.",
           },
           {
+            defaultsToActiveSheet: false,
+            description: "Replace or clear table column threshold highlight rules for body cells.",
+            name: "set_table_column_highlights",
+            readOnly: false,
+            useWhen:
+              "Use this when a table column should visually highlight numeric display values above a threshold.",
+          },
+          {
             defaultsToActiveSheet: true,
             description:
               "Import a local CSV file into a sheet and update its source file metadata.",
@@ -2405,6 +2460,55 @@ async function main() {
       createTextResult(await controlConnection.requireConnectedClient().applyTransaction(args)),
   );
 
+  server.registerTool(
+    "set_table_column_highlights",
+    {
+      annotations: {
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Replace or clear threshold highlight rules for table columns. This is a thin helper over the setTableColumnHighlightRules transaction.",
+      inputSchema: z.object({
+        columnHighlightRules: z
+          .array(workbookTableColumnHighlightRuleSchema)
+          .optional()
+          .describe(
+            "Replacement rules. Omit or pass an empty array to clear highlights. columnIndex is a zero-based sheet column index inside the table; threshold highlights body cells whose numeric displayed value is greater than this number.",
+          ),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe("Validate and simulate the change without mutating the workbook."),
+        expectedVersion: z
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "Optional optimistic concurrency precondition. The request fails if the current workbook version does not match this value.",
+          ),
+        tableId: z.string().min(1).describe("Persisted table id to configure."),
+      }),
+      outputSchema: applyTransactionResultSchema,
+    },
+    async ({ columnHighlightRules, dryRun, expectedVersion, tableId }) =>
+      createTextResult(
+        await controlConnection.requireConnectedClient().applyTransaction({
+          ...(dryRun !== undefined ? { dryRun } : {}),
+          ...(expectedVersion !== undefined ? { expectedVersion } : {}),
+          operations: [
+            {
+              ...(columnHighlightRules !== undefined ? { columnHighlightRules } : {}),
+              tableId,
+              type: "setTableColumnHighlightRules",
+            },
+          ],
+        }),
+      ),
+  );
+
   server.registerPrompt(
     WORKBOOK_TASK_PROMPT_NAME,
     {
@@ -2432,7 +2536,7 @@ async function main() {
                 "- Use get_undo_tree before branch-aware undo or redo decisions.\n" +
                 "- Use zero-based row and column indexes.\n" +
                 "- Use get_sheet_range for raw workbook input, get_sheet_display_range for evaluated and formatted grid values, and get_sheet_style_range for rendered styles and number formats.\n" +
-                "- Use get_sheet_tables and get_table for table metadata; use sortTable through apply_transaction for table sorting.\n" +
+                "- Use get_sheet_tables and get_table for table metadata; use sortTable for table sorting and set_table_column_highlights for threshold highlights.\n" +
                 "- Use get_cell_data when one cell's raw formula text and display result both matter.\n" +
                 "- Read only the ranges you need with get_used_range, get_sheet_range, get_sheet_display_range, or get_sheet_style_range.\n" +
                 "- Use format_cells for common cell styling and number format changes; merge mode preserves existing style properties.\n" +

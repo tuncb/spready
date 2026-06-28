@@ -270,6 +270,7 @@ Supported transaction operations currently include:
 - `setChartLayout`
 - `setChartSpec`
 - `sortTable`
+- `setTableColumnHighlightRules`
 - `renameSheet`
 - `renameChart`
 - `renameTable`
@@ -294,7 +295,7 @@ Supported transaction operations currently include:
 
 Sheet names supplied to `addSheet`, `renameSheet`, `replaceSheet`, and `replaceSheetFromCsv` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. When `addSheet` omits `name`, Spready generates the next non-conflicting `Sheet N` name.
 Column widths are sparse per-sheet pixel overrides. Omitted columns use the default width, and `setColumnWidth` with the default width clears the override.
-Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet. `addTable` replaces fully contained existing tables, while partial table overlaps are rejected. `sortTable` sorts body rows only; blank sort values are placed after nonblank values; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated typed values. Formula strings move with sorted rows and are not rewritten.
+Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet. `addTable` replaces fully contained existing tables, while partial table overlaps are rejected. `sortTable` sorts body rows only; blank sort values are placed after nonblank values; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated typed values. Formula strings move with sorted rows and are not rewritten. `setTableColumnHighlightRules` replaces or clears threshold highlight rules for table body cells using zero-based sheet column indexes.
 
 ## MCP surface
 
@@ -332,11 +333,13 @@ The stdio MCP wrapper currently exposes:
 - `paste_range`
 - `clear_range`
 - `apply_transaction`
+- `set_table_column_highlights`
 
 `get_sheet_range` returns raw stored cell input, including formula strings like `=A1+B1`.
 `get_sheet_display_range` returns evaluated and formatted display values for the grid view.
 `get_sheet_style_range` returns sparse rendered cell styles and number formatting metadata for the grid view.
 `get_sheet_tables` returns persistent table definitions for a sheet, and `get_table` returns one table by id.
+`set_table_column_highlights` replaces or clears table column threshold highlight rules without requiring callers to construct a full transaction.
 `format_cells` applies common cell styling and number formatting without requiring callers to build transaction operations. Merge mode preserves omitted style properties.
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
@@ -344,7 +347,7 @@ The stdio MCP wrapper currently exposes:
 `list_manuals` returns the bundled manuals directory, each Markdown manual's absolute path, and
 ready-to-use `read_manual` arguments. Clients with local filesystem access can read those files
 directly; clients without that access can call `read_manual` with a listed relative path.
-`copy_range` and `cut_range` return structured clipboard payloads with raw/display values, styles, and complete table definitions. `paste_range` accepts those payloads to recreate copied tables, or plain text/values for cell-only paste.
+`copy_range` and `cut_range` return structured clipboard payloads with raw/display values, styles, and complete table definitions including table column highlight rules. `paste_range` accepts those payloads to recreate copied tables, or plain text/values for cell-only paste.
 
 Display reads evaluate the workbook formula engine used by the app UI, including arithmetic, comparisons, text operators, same-sheet and cross-sheet ranges, reference intersection, parenthesized reference union, core math/logical/text functions such as `LN`, date/time functions such as `TODAY`, `NOW`, `DATE`, `YEAR`, `MONTH`, and `DAY`, and lookup functions such as `INDEX`, `MATCH`, `XLOOKUP`, and `VLOOKUP`.
 Raw reads continue to preserve the stored input exactly as written.

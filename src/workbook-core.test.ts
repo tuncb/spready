@@ -1551,6 +1551,94 @@ test("applyWorkbookTransaction keeps blank table sort values at the end", () => 
   );
 });
 
+test("applyWorkbookTransaction configures table column highlight rules", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        columnHighlightRules: [
+          {
+            backgroundColor: " #fde68a ",
+            columnIndex: 1,
+            textColor: "#111827",
+            threshold: 100,
+          },
+        ],
+        range: {
+          columnCount: 3,
+          rowCount: 4,
+          startColumn: 0,
+          startRow: 0,
+        },
+        tableId: "table-scores",
+        type: "addTable",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getWorkbookSummary(workbook).tables[0]?.columnHighlightRules, [
+    {
+      backgroundColor: "#fde68a",
+      columnIndex: 1,
+      textColor: "#111827",
+      threshold: 100,
+    },
+  ]);
+
+  const updated = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        columnHighlightRules: [
+          {
+            bold: false,
+            columnIndex: 2,
+            threshold: 200,
+          },
+        ],
+        tableId: "table-scores",
+        type: "setTableColumnHighlightRules",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(getWorkbookSummary(updated).tables[0]?.columnHighlightRules, [
+    {
+      bold: false,
+      columnIndex: 2,
+      threshold: 200,
+    },
+  ]);
+
+  const cleared = applyWorkbookTransaction(updated, {
+    operations: [
+      {
+        columnHighlightRules: [],
+        tableId: "table-scores",
+        type: "setTableColumnHighlightRules",
+      },
+    ],
+  }).state;
+
+  assert.equal(getWorkbookSummary(cleared).tables[0]?.columnHighlightRules, undefined);
+  assert.throws(
+    () =>
+      applyWorkbookTransaction(workbook, {
+        operations: [
+          {
+            columnHighlightRules: [
+              {
+                columnIndex: 4,
+                threshold: 100,
+              },
+            ],
+            tableId: "table-scores",
+            type: "setTableColumnHighlightRules",
+          },
+        ],
+      }),
+    /Table column highlight column 4 is outside table "table-scores"\./,
+  );
+});
+
 test("addTable replaces fully contained tables and still rejects partial overlaps", () => {
   const workbook = applyWorkbookTransaction(createWorkbookState(), {
     operations: [
@@ -1670,6 +1758,58 @@ test("applyWorkbookTransaction adjusts table ranges for structural row and colum
   }).state;
 
   assert.equal(deleted.tables.length, 0);
+});
+
+test("applyWorkbookTransaction shifts table column highlight rules through column edits", () => {
+  const workbook = applyWorkbookTransaction(createWorkbookState(), {
+    operations: [
+      {
+        columnHighlightRules: [
+          {
+            columnIndex: 2,
+            threshold: 100,
+          },
+        ],
+        range: {
+          columnCount: 3,
+          rowCount: 4,
+          startColumn: 1,
+          startRow: 1,
+        },
+        tableId: "table-1",
+        type: "addTable",
+      },
+    ],
+  }).state;
+
+  const inserted = applyWorkbookTransaction(workbook, {
+    operations: [
+      {
+        columnIndex: 2,
+        count: 1,
+        type: "insertColumns",
+      },
+    ],
+  }).state;
+
+  assert.deepEqual(inserted.tables[0]?.columnHighlightRules, [
+    {
+      columnIndex: 3,
+      threshold: 100,
+    },
+  ]);
+
+  const deleted = applyWorkbookTransaction(inserted, {
+    operations: [
+      {
+        columnIndex: 3,
+        count: 1,
+        type: "deleteColumns",
+      },
+    ],
+  }).state;
+
+  assert.equal(deleted.tables[0]?.columnHighlightRules, undefined);
 });
 
 test("buildCreateChartOperation creates a valid chart from the used range by default", () => {

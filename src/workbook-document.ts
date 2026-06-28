@@ -218,7 +218,16 @@ const workbookDocumentTableSortStateSchema = z.object({
   valueMode: z.enum(["display", "raw"]),
 });
 
+const workbookDocumentTableColumnHighlightRuleSchema = z.object({
+  backgroundColor: z.string().min(1).optional(),
+  bold: z.boolean().optional(),
+  columnIndex: z.int().min(0),
+  textColor: z.string().min(1).optional(),
+  threshold: z.number(),
+});
+
 const workbookDocumentTableSchema = z.object({
+  columnHighlightRules: z.array(workbookDocumentTableColumnHighlightRuleSchema).optional(),
   hasHeaderRow: z.boolean(),
   id: z.string().min(1),
   name: z.string().min(1),
@@ -331,6 +340,29 @@ export function parseWorkbookDocument(content: string): WorkbookState {
       ) {
         throw new Error(`Workbook file table "${table.id}" has an out-of-bounds sort key.`);
       }
+    }
+
+    const highlightColumns = new Set<number>();
+
+    for (const rule of table.columnHighlightRules ?? []) {
+      if (!Number.isFinite(rule.threshold)) {
+        throw new Error(`Workbook file table "${table.id}" has a non-finite highlight threshold.`);
+      }
+
+      if (
+        rule.columnIndex < table.range.startColumn ||
+        rule.columnIndex >= table.range.startColumn + table.range.columnCount
+      ) {
+        throw new Error(`Workbook file table "${table.id}" has an out-of-bounds highlight column.`);
+      }
+
+      if (highlightColumns.has(rule.columnIndex)) {
+        throw new Error(
+          `Workbook file table "${table.id}" has duplicate highlight rules for column ${rule.columnIndex}.`,
+        );
+      }
+
+      highlightColumns.add(rule.columnIndex);
     }
   }
 
@@ -567,6 +599,9 @@ function restoreWorkbookChart(chart: WorkbookDocumentChart): WorkbookChart {
 
 function restoreWorkbookTable(table: WorkbookDocumentTable): WorkbookTable {
   return {
+    ...(table.columnHighlightRules
+      ? { columnHighlightRules: table.columnHighlightRules.map((rule) => ({ ...rule })) }
+      : {}),
     hasHeaderRow: table.hasHeaderRow,
     id: table.id,
     name: table.name,

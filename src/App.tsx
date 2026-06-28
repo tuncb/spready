@@ -49,6 +49,7 @@ import {
   getStickyTableHeader,
   getTableHeaderCacheKey,
 } from "./app-table-headers";
+import { getTableColumnHighlightStyle } from "./app-table-column-highlights";
 import {
   buildTableRowHintItems,
   buildTableRowHintRangeRequests,
@@ -1759,15 +1760,20 @@ export default function App() {
 
       const isActiveSearchResult =
         activeSearchResultKey === `${activeSheet?.id}:${rowIndex}:${columnIndex}`;
-
-      return createTextCell(
-        rawValue,
+      const tableHighlightStyle = getTableColumnHighlightStyle(
+        activeSheetTableEntries,
+        columnIndex,
+        rowIndex,
         displayValue,
-        style,
+      );
+      const themeOverride = mergeCellThemeOverrides(
+        getCellThemeOverride(tableHighlightStyle),
         isActiveSearchResult ? SEARCH_ACTIVE_CELL_THEME : undefined,
       );
+
+      return createTextCell(rawValue, displayValue, style, themeOverride);
     },
-    [activeSearchResultKey, activeSheet?.id, viewNonce],
+    [activeSearchResultKey, activeSheet?.id, activeSheetTableEntries, viewNonce],
   );
 
   const getCellsForSelection = useCallback(
@@ -1791,17 +1797,27 @@ export default function App() {
         ]);
 
         return displayRange.values.map((row, rowOffset) =>
-          row.map((displayValue, columnOffset) =>
-            createTextCell(
+          row.map((displayValue, columnOffset) => {
+            const columnIndex = selection.x + columnOffset;
+            const rowIndex = selection.y + rowOffset;
+            const tableHighlightStyle = getTableColumnHighlightStyle(
+              activeSheetTableEntries,
+              columnIndex,
+              rowIndex,
+              displayValue,
+            );
+
+            return createTextCell(
               rawRange.values[rowOffset]?.[columnOffset] ?? displayValue,
               displayValue,
               styleRange.styles[rowOffset]?.[columnOffset] ?? undefined,
-            ),
-          ),
+              getCellThemeOverride(tableHighlightStyle),
+            );
+          }),
         );
       };
     },
-    [activeSheet],
+    [activeSheet, activeSheetTableEntries],
   );
 
   const provideGridEditor = useCallback<NonNullable<DataEditorProps["provideEditor"]>>((cell) => {

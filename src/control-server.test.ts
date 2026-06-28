@@ -822,6 +822,16 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
     await client.applyTransaction({
       operations: [
         {
+          columnHighlightRules: [
+            {
+              columnIndex: 1,
+              threshold: 25,
+            },
+          ],
+          tableId: "table-scores",
+          type: "setTableColumnHighlightRules",
+        },
+        {
           keys: [
             {
               columnIndex: 1,
@@ -838,6 +848,12 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
     assert.ok((await client.call<string[]>("listMethods")).includes("getSheetTables"));
     assert.ok((await client.call<string[]>("listMethods")).includes("getTable"));
     assert.deepEqual((await client.getSheetTables()).tables[0], {
+      columnHighlightRules: [
+        {
+          columnIndex: 1,
+          threshold: 25,
+        },
+      ],
       hasHeaderRow: true,
       id: "table-scores",
       name: "Table 1",
