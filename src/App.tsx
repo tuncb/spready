@@ -45,6 +45,11 @@ import {
   type TableHeaderSortTarget,
 } from "./app-table-sort-controls";
 import {
+  buildStickyTableHeaderRangeRequest,
+  getStickyTableHeader,
+  getTableHeaderCacheKey,
+} from "./app-table-headers";
+import {
   DEFAULT_COLUMN_WIDTH,
   getColumnTitle,
   isFormulaInput,
@@ -581,12 +586,55 @@ function buildRangeRequest(
   };
 }
 
-function createColumns(columnCount: number, columnWidths: Record<string, number>): GridColumn[] {
+interface StickyTableHeaderColumns {
+  headerValues: Readonly<Record<string, string>>;
+  table: WorkbookTableSummary;
+}
+
+function createColumns(
+  columnCount: number,
+  columnWidths: Record<string, number>,
+  stickyHeader?: StickyTableHeaderColumns | null,
+): GridColumn[] {
   return Array.from({ length: columnCount }, (_, index) => ({
     id: `column-${index}`,
-    title: getColumnTitle(index),
+    ...(getStickyColumnTitle(index, stickyHeader) ?? { title: getColumnTitle(index) }),
     width: columnWidths[String(index)] ?? DEFAULT_COLUMN_WIDTH,
   }));
+}
+
+function getStickyColumnTitle(
+  columnIndex: number,
+  stickyHeader: StickyTableHeaderColumns | null | undefined,
+): Pick<GridColumn, "themeOverride" | "title"> | null {
+  if (!stickyHeader) {
+    return null;
+  }
+
+  const tableStartColumn = stickyHeader.table.range.startColumn;
+  const tableEndColumn =
+    stickyHeader.table.range.startColumn + stickyHeader.table.range.columnCount;
+
+  if (columnIndex < tableStartColumn || columnIndex >= tableEndColumn) {
+    return null;
+  }
+
+  const headerTitle = stickyHeader.headerValues[String(columnIndex)]?.trim();
+
+  if (!headerTitle) {
+    return null;
+  }
+
+  return {
+    themeOverride: {
+      bgHeader: "#e8f5f2",
+      bgHeaderHasFocus: "#d6eee8",
+      bgHeaderHovered: "#ddf2ed",
+      textHeader: "#0f3b34",
+      textHeaderSelected: "#092c27",
+    },
+    title: headerTitle,
+  };
 }
 
 function removeColumnResizeOverride(
@@ -1079,6 +1127,9 @@ export default function App() {
   const [sheetChartPreviews, setSheetChartPreviews] =
     useState<WorkbookSheetChartPreviewsResult | null>(null);
   const [sheetSummary, setSheetSummary] = useState<WorkbookSummary | null>(null);
+  const [tableHeaderCache, setTableHeaderCache] = useState<Record<string, Record<string, string>>>(
+    {},
+  );
   const [tableSortControls, setTableSortControls] = useState<TableSortControlPlacement[]>([]);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [viewNonce, setViewNonce] = useState(0);
@@ -1130,9 +1181,34 @@ export default function App() {
     }),
     [activeSheet?.columnWidths, columnResizeOverrides],
   );
+  const stickyTableHeader = useMemo(
+    () => getStickyTableHeader(activeSheetTableEntries, lastVisibleRegionRef.current),
+    [activeSheetTableEntries, gridViewportNonce],
+  );
+  const stickyTableHeaderRequest = useMemo(
+    () =>
+      stickyTableHeader
+        ? buildStickyTableHeaderRangeRequest(stickyTableHeader, lastVisibleRegionRef.current)
+        : null,
+    [gridViewportNonce, stickyTableHeader],
+  );
+  const stickyTableHeaderCacheKey =
+    activeSheet && stickyTableHeader && sheetSummary
+      ? getTableHeaderCacheKey(activeSheet.id, stickyTableHeader.id, sheetSummary.version)
+      : null;
+  const stickyTableHeaderColumns = useMemo<StickyTableHeaderColumns | null>(() => {
+    if (!stickyTableHeader || !stickyTableHeaderCacheKey) {
+      return null;
+    }
+
+    return {
+      headerValues: tableHeaderCache[stickyTableHeaderCacheKey] ?? {},
+      table: stickyTableHeader,
+    };
+  }, [stickyTableHeader, stickyTableHeaderCacheKey, tableHeaderCache]);
   const columns = useMemo(
-    () => createColumns(columnCount, effectiveColumnWidths),
-    [columnCount, effectiveColumnWidths],
+    () => createColumns(columnCount, effectiveColumnWidths, stickyTableHeaderColumns),
+    [columnCount, effectiveColumnWidths, stickyTableHeaderColumns],
   );
   const currentSelectionRange = useMemo(
     () => (activeSheet ? getCurrentSelectionRange(gridSelection, activeSheet.id) : null),
@@ -1234,6 +1310,64 @@ export default function App() {
       }),
     );
   }, []);
+
+  useEffect(() => {
+    if (!stickyTableHeaderCacheKey || !stickyTableHeaderRequest) {
+      return;
+    }
+
+    const cachedValues = tableHeaderCache[stickyTableHeaderCacheKey] ?? {};
+    let hasMissingHeader = false;
+
+    for (
+      let columnIndex = stickyTableHeaderRequest.startColumn;
+      columnIndex < stickyTableHeaderRequest.startColumn + stickyTableHeaderRequest.columnCount;
+      columnIndex += 1
+    ) {
+      if (cachedValues[String(columnIndex)] === undefined) {
+        hasMissingHeader = true;
+        break;
+      }
+    }
+
+    if (!hasMissingHeader) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    void window.appShell
+      .getSheetDisplayRange(stickyTableHeaderRequest)
+      .then((headerRange) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setTableHeaderCache((current) => {
+          const nextValues = { ...(current[stickyTableHeaderCacheKey] ?? {}) };
+          const headerRow = headerRange.values[0] ?? [];
+
+          for (let columnOffset = 0; columnOffset < headerRange.columnCount; columnOffset += 1) {
+            nextValues[String(headerRange.startColumn + columnOffset)] =
+              headerRow[columnOffset] ?? "";
+          }
+
+          return {
+            ...current,
+            [stickyTableHeaderCacheKey]: nextValues,
+          };
+        });
+      })
+      .catch((error) => {
+        if (!isCancelled) {
+          pushErrorToast(error);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [pushErrorToast, stickyTableHeaderCacheKey, stickyTableHeaderRequest, tableHeaderCache]);
 
   const applyTransaction = useCallback(
     async (operations: Parameters<typeof window.appShell.applyTransaction>[0]["operations"]) => {
