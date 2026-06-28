@@ -295,7 +295,7 @@ Supported transaction operations currently include:
 
 Sheet names supplied to `addSheet`, `renameSheet`, `replaceSheet`, and `replaceSheetFromCsv` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. When `addSheet` omits `name`, Spready generates the next non-conflicting `Sheet N` name.
 Column widths are sparse per-sheet pixel overrides. Omitted columns use the default width, and `setColumnWidth` with the default width clears the override.
-Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet. `addTable` replaces fully contained existing tables, while partial table overlaps are rejected. `sortTable` sorts body rows only; blank sort values are placed after nonblank values; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated typed values. Formula strings move with sorted rows and are not rewritten. `setTableColumnHighlightRules` replaces or clears threshold highlight rules for table body cells using zero-based sheet column indexes.
+Table names supplied to `addTable` and `renameTable` are trimmed, required when explicitly provided, and unique case-insensitively across the workbook. Table ranges must fit inside one sheet. `addTable` replaces fully contained existing tables, while partial table overlaps are rejected. `sortTable` sorts body rows only; blank sort values are placed after nonblank values; `valueMode: "raw"` uses stored input strings and `valueMode: "display"` uses evaluated typed values. Formula strings move with sorted rows and are not rewritten. `setTableColumnHighlightRules` replaces or clears threshold highlight rules for table body cells using zero-based sheet column indexes. `thresholdType` supports `lower`, `lowerOrEqual`, `equal`, `higherOrEqual`, and `higher`; multiple rules may target one column and matching rule styles merge in order.
 
 ## MCP surface
 
@@ -339,7 +339,7 @@ The stdio MCP wrapper currently exposes:
 `get_sheet_display_range` returns evaluated and formatted display values for the grid view.
 `get_sheet_style_range` returns sparse rendered cell styles and number formatting metadata for the grid view.
 `get_sheet_tables` returns persistent table definitions for a sheet, and `get_table` returns one table by id.
-`set_table_column_highlights` replaces or clears table column threshold highlight rules without requiring callers to construct a full transaction.
+`set_table_column_highlights` replaces or clears table column threshold highlight rules without requiring callers to construct a full transaction. Use `thresholdType` values `lower`, `lowerOrEqual`, `equal`, `higherOrEqual`, and `higher`; multiple rules can target one column.
 `format_cells` applies common cell styling and number formatting without requiring callers to build transaction operations. Merge mode preserves omitted style properties.
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.

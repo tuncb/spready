@@ -130,12 +130,20 @@ export interface WorkbookTableSortState {
   valueMode: WorkbookTableSortValueMode;
 }
 
+export type WorkbookTableColumnHighlightThresholdType =
+  | "equal"
+  | "higher"
+  | "higherOrEqual"
+  | "lower"
+  | "lowerOrEqual";
+
 export interface WorkbookTableColumnHighlightRule {
   backgroundColor?: string;
   bold?: boolean;
   columnIndex: number;
   textColor?: string;
   threshold: number;
+  thresholdType?: WorkbookTableColumnHighlightThresholdType;
 }
 
 export interface WorkbookTable {
@@ -3683,7 +3691,8 @@ function workbookTableColumnHighlightRulesEqual(
         rule.bold === rightRule.bold &&
         rule.columnIndex === rightRule.columnIndex &&
         rule.textColor === rightRule.textColor &&
-        rule.threshold === rightRule.threshold
+        rule.threshold === rightRule.threshold &&
+        (rule.thresholdType ?? "higher") === (rightRule.thresholdType ?? "higher")
       );
     })
   );
@@ -4073,7 +4082,6 @@ function normalizeWorkbookTableColumnHighlightRules(
   table: WorkbookTable,
   rules: readonly WorkbookTableColumnHighlightRule[],
 ): WorkbookTableColumnHighlightRule[] | undefined {
-  const seenColumnIndexes = new Set<number>();
   const normalizedRules = rules.map((rule) => {
     const columnIndex = normalizeNonNegativeInteger(
       rule.columnIndex,
@@ -4089,14 +4097,22 @@ function normalizeWorkbookTableColumnHighlightRules(
       );
     }
 
-    if (seenColumnIndexes.has(columnIndex)) {
-      throw new Error(`Table column highlight column ${columnIndex} is configured more than once.`);
-    }
-
-    seenColumnIndexes.add(columnIndex);
-
     if (!Number.isFinite(rule.threshold)) {
       throw new Error("Table column highlight threshold must be a finite number.");
+    }
+
+    const thresholdType = rule.thresholdType ?? "higher";
+
+    if (
+      thresholdType !== "equal" &&
+      thresholdType !== "higher" &&
+      thresholdType !== "higherOrEqual" &&
+      thresholdType !== "lower" &&
+      thresholdType !== "lowerOrEqual"
+    ) {
+      throw new Error(
+        'Table column highlight thresholdType must be "lower", "lowerOrEqual", "equal", "higherOrEqual", or "higher".',
+      );
     }
 
     const backgroundColor = rule.backgroundColor?.trim();
@@ -4108,6 +4124,7 @@ function normalizeWorkbookTableColumnHighlightRules(
       columnIndex,
       ...(textColor ? { textColor } : {}),
       threshold: rule.threshold,
+      thresholdType,
     };
   });
 

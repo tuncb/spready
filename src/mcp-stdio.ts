@@ -58,9 +58,13 @@ const workbookTableColumnHighlightRuleSchema = z.object({
   bold: z.boolean().optional().describe("Whether highlighted values should render bold."),
   columnIndex: z.int().min(0).describe("Zero-based sheet column index within the table."),
   textColor: z.string().min(1).optional().describe("Optional text color for highlighted values."),
-  threshold: z
-    .number()
-    .describe("Highlight cells whose numeric displayed value is greater than this."),
+  threshold: z.number().describe("Numeric threshold to compare against the displayed cell value."),
+  thresholdType: z
+    .enum(["equal", "higher", "higherOrEqual", "lower", "lowerOrEqual"])
+    .optional()
+    .describe(
+      'Comparison to apply. Defaults to "higher". Use "lower" for <, "lowerOrEqual" for <=, "equal" for =, "higherOrEqual" for >=, and "higher" for >.',
+    ),
 });
 
 const workbookTableSchema = z.object({
@@ -716,7 +720,7 @@ const transactionOperations = [
   {
     type: "setTableColumnHighlightRules",
     description:
-      "Replace or clear table column threshold highlight rules. Rules target zero-based sheet column indexes inside the table and highlight body cells whose numeric displayed value is greater than the threshold.",
+      "Replace or clear table column threshold highlight rules. Rules target zero-based sheet column indexes inside the table and compare body cells with thresholdType: lower, lowerOrEqual, equal, higherOrEqual, or higher. Multiple rules may target the same column; matching rule styles merge in order.",
   },
   {
     type: "replaceSheet",
@@ -2476,7 +2480,7 @@ async function main() {
           .array(workbookTableColumnHighlightRuleSchema)
           .optional()
           .describe(
-            "Replacement rules. Omit or pass an empty array to clear highlights. columnIndex is a zero-based sheet column index inside the table; threshold highlights body cells whose numeric displayed value is greater than this number.",
+            'Replacement rules. Omit or pass an empty array to clear highlights. columnIndex is a zero-based sheet column index inside the table. thresholdType defaults to "higher" and can be "lower", "lowerOrEqual", "equal", "higherOrEqual", or "higher". Multiple rules can target the same column; matching rule styles merge in order.',
           ),
         dryRun: z
           .boolean()

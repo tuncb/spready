@@ -118,7 +118,7 @@ Tables persist rectangular sheet ranges:
     "keys": [{ "columnIndex": 1, "direction": "descending" }],
     "valueMode": "display"
   },
-  "columnHighlightRules": [{ "columnIndex": 2, "threshold": 1000 }]
+  "columnHighlightRules": [{ "columnIndex": 2, "threshold": 1000, "thresholdType": "higher" }]
 }
 ```
 
@@ -127,9 +127,12 @@ must fit inside their sheet and cannot overlap another table on the same sheet.
 `sortState` is optional. Sort keys use absolute sheet column indexes that must
 fall inside the table range; directions are `ascending` or `descending`, and
 `valueMode` is `raw` or `display`. `columnHighlightRules` is optional. Highlight
-rules use absolute sheet column indexes inside the table range, compare numeric
-displayed values with `threshold`, and may include `backgroundColor`,
-`textColor`, and `bold`.
+rules use absolute sheet column indexes inside the table range and compare
+numeric displayed values with `threshold`. `thresholdType` is optional and
+defaults to `higher`; valid values are `lower`, `lowerOrEqual`, `equal`,
+`higherOrEqual`, and `higher`. Multiple rules may target one column. Matching
+rule styles merge in order, and later rules override earlier style fields.
+Rules may include `backgroundColor`, `textColor`, and `bold`.
 
 ## Charts
 

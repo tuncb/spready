@@ -35,6 +35,71 @@ test("getTableColumnHighlightStyle highlights table body values above the thresh
   assert.equal(getTableColumnHighlightStyle([table], 1, 2, "125"), undefined);
 });
 
+test("getTableColumnHighlightStyle supports threshold comparison types", () => {
+  const createTable = (
+    thresholdType: NonNullable<
+      WorkbookTableSummary["columnHighlightRules"]
+    >[number]["thresholdType"],
+  ): WorkbookTableSummary => ({
+    ...table,
+    columnHighlightRules: [
+      {
+        columnIndex: 2,
+        threshold: 100,
+        thresholdType,
+      },
+    ],
+  });
+
+  assert.equal(getTableColumnHighlightStyle([createTable("lower")], 2, 2, "99")?.bold, true);
+  assert.equal(getTableColumnHighlightStyle([createTable("lower")], 2, 2, "100"), undefined);
+  assert.equal(
+    getTableColumnHighlightStyle([createTable("lowerOrEqual")], 2, 2, "100")?.bold,
+    true,
+  );
+  assert.equal(getTableColumnHighlightStyle([createTable("equal")], 2, 2, "100")?.bold, true);
+  assert.equal(getTableColumnHighlightStyle([createTable("equal")], 2, 2, "101"), undefined);
+  assert.equal(
+    getTableColumnHighlightStyle([createTable("higherOrEqual")], 2, 2, "100")?.bold,
+    true,
+  );
+  assert.equal(getTableColumnHighlightStyle([createTable("higher")], 2, 2, "100"), undefined);
+});
+
+test("getTableColumnHighlightStyle merges matching rules on one column in order", () => {
+  assert.deepEqual(
+    getTableColumnHighlightStyle(
+      [
+        {
+          ...table,
+          columnHighlightRules: [
+            {
+              backgroundColor: "#fee2e2",
+              columnIndex: 2,
+              threshold: 100,
+              thresholdType: "higherOrEqual",
+            },
+            {
+              columnIndex: 2,
+              textColor: "#991b1b",
+              threshold: 150,
+              thresholdType: "higherOrEqual",
+            },
+          ],
+        },
+      ],
+      2,
+      2,
+      "175",
+    ),
+    {
+      backgroundColor: "#fee2e2",
+      bold: true,
+      textColor: "#991b1b",
+    },
+  );
+});
+
 test("getTableColumnHighlightStyle uses configured highlight styling", () => {
   assert.deepEqual(
     getTableColumnHighlightStyle(

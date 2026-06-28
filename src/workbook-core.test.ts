@@ -1561,6 +1561,7 @@ test("applyWorkbookTransaction configures table column highlight rules", () => {
             columnIndex: 1,
             textColor: "#111827",
             threshold: 100,
+            thresholdType: "lowerOrEqual",
           },
         ],
         range: {
@@ -1581,6 +1582,7 @@ test("applyWorkbookTransaction configures table column highlight rules", () => {
       columnIndex: 1,
       textColor: "#111827",
       threshold: 100,
+      thresholdType: "lowerOrEqual",
     },
   ]);
 
@@ -1592,6 +1594,13 @@ test("applyWorkbookTransaction configures table column highlight rules", () => {
             bold: false,
             columnIndex: 2,
             threshold: 200,
+            thresholdType: "higherOrEqual",
+          },
+          {
+            backgroundColor: "#fee2e2",
+            columnIndex: 2,
+            threshold: 500,
+            thresholdType: "higher",
           },
         ],
         tableId: "table-scores",
@@ -1605,6 +1614,13 @@ test("applyWorkbookTransaction configures table column highlight rules", () => {
       bold: false,
       columnIndex: 2,
       threshold: 200,
+      thresholdType: "higherOrEqual",
+    },
+    {
+      backgroundColor: "#fee2e2",
+      columnIndex: 2,
+      threshold: 500,
+      thresholdType: "higher",
     },
   ]);
 
@@ -1796,6 +1812,7 @@ test("applyWorkbookTransaction shifts table column highlight rules through colum
     {
       columnIndex: 3,
       threshold: 100,
+      thresholdType: "higher",
     },
   ]);
 

@@ -852,6 +852,7 @@ test("SpreadyControlServer applies table lifecycle and sort transactions over TC
         {
           columnIndex: 1,
           threshold: 25,
+          thresholdType: "higher",
         },
       ],
       hasHeaderRow: true,
