@@ -514,6 +514,105 @@ select {
   color: var(--color-text-muted);
 }
 
+.formula-row-context {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  padding-top: 6px;
+  border-top: 1px solid rgba(203, 213, 225, 0.72);
+}
+
+.formula-row-context__summary {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 8px;
+  border: 1px solid rgba(15, 118, 110, 0.28);
+  background: rgba(232, 245, 242, 0.86);
+}
+
+.formula-row-context__summary strong,
+.formula-row-context__summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formula-row-context__summary strong {
+  color: #0f3b34;
+  font-size: 12px;
+}
+
+.formula-row-context__summary span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.formula-row-context__items {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.formula-row-context__item {
+  flex: 0 0 180px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 7px;
+  border: 1px solid var(--color-neutral-line-soft);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.formula-row-context__item dt,
+.formula-row-context__item dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.formula-row-context__item dt {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.formula-row-context__item dd {
+  color: var(--color-text-dark);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.formula-row-context__item.is-active {
+  border-color: rgba(37, 99, 235, 0.42);
+  background: rgba(234, 241, 255, 0.94);
+}
+
+.formula-row-context__item.is-active dt {
+  color: var(--color-primary-strong);
+}
+
+.formula-row-context__item.is-active dd {
+  font-weight: 700;
+}
+
+.formula-row-context__blank {
+  color: var(--color-text-soft);
+  font-style: italic;
+}
+
 .chart-editor-dialog {
   padding: 0;
   border: none;
@@ -1111,5 +1210,13 @@ select {
   .formula-bar {
     --formula-bar-side-width: 68px;
     gap: 6px;
+  }
+
+  .formula-row-context {
+    grid-template-columns: 1fr;
+  }
+
+  .formula-row-context__item {
+    flex-basis: 160px;
   }
 }

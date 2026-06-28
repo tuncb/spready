@@ -50,6 +50,15 @@ import {
   getTableHeaderCacheKey,
 } from "./app-table-headers";
 import {
+  buildTableRowHintItems,
+  buildTableRowHintRangeRequests,
+  getTableRowHintTarget,
+  getTableRowHintTableKey,
+  getTableRowHintTargetKey,
+  type TableRowHintItem,
+  type TableRowHintTarget,
+} from "./app-table-row-hints";
+import {
   DEFAULT_COLUMN_WIDTH,
   getColumnTitle,
   isFormulaInput,
@@ -555,6 +564,13 @@ type TableSortControlPlacement = TableHeaderSortTarget & {
   top: number;
   width: number;
 };
+
+interface TableRowHintState {
+  items: TableRowHintItem[];
+  tableKey: string;
+  tableName: string;
+  tableRowNumber: number;
+}
 
 function buildRangeRequest(
   activeSheetId: string,
@@ -1130,17 +1146,21 @@ export default function App() {
   const [tableHeaderCache, setTableHeaderCache] = useState<Record<string, Record<string, string>>>(
     {},
   );
+  const [tableRowHint, setTableRowHint] = useState<TableRowHintState | null>(null);
   const [tableSortControls, setTableSortControls] = useState<TableSortControlPlacement[]>([]);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
   const [viewNonce, setViewNonce] = useState(0);
 
   const exportPathRef = useRef<string>();
   const formulaInputRef = useRef<HTMLInputElement>(null);
+  const formulaRowContextItemsRef = useRef<HTMLDListElement>(null);
+  const formulaRowContextScrollLeftRef = useRef(0);
   const displayRangeCacheRef = useRef<SheetDisplayRangeResult | null>(null);
   const gridRef = useRef<DataEditorRef>(null);
   const lastVisibleRegionRef = useRef<VisibleRegion | null>(null);
   const pendingCellDataRequestIdRef = useRef(0);
   const pendingRangeRequestIdRef = useRef(0);
+  const pendingTableRowHintRequestIdRef = useRef(0);
   const pendingSearchResultRef = useRef<WorkbookSearchResult | null>(null);
   const pendingSheetChartPreviewsRequestIdRef = useRef(0);
   const rawRangeCacheRef = useRef<SheetRangeResult | null>(null);
@@ -1172,6 +1192,14 @@ export default function App() {
     () => getTableContainingCell(activeSheetTableEntries, selectedCell),
     [activeSheetTableEntries, selectedCell],
   );
+  const tableRowHintTarget = useMemo<TableRowHintTarget | null>(
+    () => getTableRowHintTarget(activeSheetTableEntries, selectedCell),
+    [activeSheetTableEntries, selectedCell],
+  );
+  const tableRowHintTargetKey =
+    tableRowHintTarget && sheetSummary
+      ? getTableRowHintTargetKey(tableRowHintTarget, sheetSummary.version)
+      : null;
   const rowCount = activeSheet?.rowCount ?? 1;
   const columnCount = activeSheet?.columnCount ?? 1;
   const effectiveColumnWidths = useMemo(
@@ -1299,6 +1327,17 @@ export default function App() {
       window.cancelAnimationFrame(animationFrameId);
     };
   }, [activeSheet, activeSheetTableEntries, effectiveColumnWidths, gridViewportNonce]);
+
+  useLayoutEffect(() => {
+    const items = formulaRowContextItemsRef.current;
+
+    if (!items || !tableRowHint) {
+      return;
+    }
+
+    items.scrollLeft = formulaRowContextScrollLeftRef.current;
+  }, [tableRowHint]);
+
   const dismissToast = useCallback((toastId: string) => {
     setToasts((current) => removeToast(current, toastId));
   }, []);
@@ -1368,6 +1407,56 @@ export default function App() {
       isCancelled = true;
     };
   }, [pushErrorToast, stickyTableHeaderCacheKey, stickyTableHeaderRequest, tableHeaderCache]);
+
+  useEffect(() => {
+    if (!tableRowHintTarget || !tableRowHintTargetKey) {
+      pendingTableRowHintRequestIdRef.current += 1;
+      setTableRowHint(null);
+      formulaRowContextScrollLeftRef.current = 0;
+      return;
+    }
+
+    const requestId = pendingTableRowHintRequestIdRef.current + 1;
+    const requests = buildTableRowHintRangeRequests(tableRowHintTarget);
+    const tableKey = getTableRowHintTableKey(tableRowHintTarget);
+
+    pendingTableRowHintRequestIdRef.current = requestId;
+
+    setTableRowHint((current) => {
+      if (current?.tableKey === tableKey) {
+        return current;
+      }
+
+      formulaRowContextScrollLeftRef.current = 0;
+      return null;
+    });
+
+    void Promise.all([
+      window.appShell.getSheetDisplayRange(requests.header),
+      window.appShell.getSheetDisplayRange(requests.row),
+    ])
+      .then(([headerRange, rowRange]) => {
+        if (pendingTableRowHintRequestIdRef.current !== requestId) {
+          return;
+        }
+
+        setTableRowHint({
+          items: buildTableRowHintItems(
+            tableRowHintTarget,
+            headerRange.values[0] ?? [],
+            rowRange.values[0] ?? [],
+          ),
+          tableKey,
+          tableName: tableRowHintTarget.table.name,
+          tableRowNumber: tableRowHintTarget.tableRowNumber,
+        });
+      })
+      .catch((error) => {
+        if (pendingTableRowHintRequestIdRef.current === requestId) {
+          pushErrorToast(error);
+        }
+      });
+  }, [pushErrorToast, tableRowHintTarget, tableRowHintTargetKey]);
 
   const applyTransaction = useCallback(
     async (operations: Parameters<typeof window.appShell.applyTransaction>[0]["operations"]) => {
@@ -3257,6 +3346,40 @@ export default function App() {
             value={selectedCell ? formulaInputValue : ""}
           />
         </div>
+        {tableRowHint ? (
+          <section
+            aria-label={`Table row context for ${tableRowHint.tableName}`}
+            className="formula-row-context"
+          >
+            <div className="formula-row-context__summary">
+              <strong>{tableRowHint.tableName}</strong>
+              <span>{`Row ${tableRowHint.tableRowNumber}`}</span>
+            </div>
+            <dl
+              className="formula-row-context__items"
+              onScroll={(event) => {
+                formulaRowContextScrollLeftRef.current = event.currentTarget.scrollLeft;
+              }}
+              ref={formulaRowContextItemsRef}
+            >
+              {tableRowHint.items.map((item) => (
+                <div
+                  className={`formula-row-context__item${item.isActive ? " is-active" : ""}`}
+                  key={item.columnIndex}
+                >
+                  <dt>{item.label}</dt>
+                  <dd>
+                    {item.value ? (
+                      item.value
+                    ) : (
+                      <span className="formula-row-context__blank">Blank</span>
+                    )}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ) : null}
       </section>
 
       <div className="app-shell__workspace">
