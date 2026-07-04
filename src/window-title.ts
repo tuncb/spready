@@ -10,5 +10,5 @@ export function formatWorkbookWindowTitle(summary: WorkbookSummary, appName: str
     : UNTITLED_WORKBOOK_LABEL;
   const dirtyPrefix = summary.hasUnsavedChanges ? "*" : "";
 
-  return `${appName} - ${dirtyPrefix}${fileName}`;
+  return `${appName} - ${dirtyPrefix}${fileName} - ${summary.activeSheetName}`;
 }

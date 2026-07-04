@@ -33,7 +33,7 @@ test("formatWorkbookWindowTitle uses the workbook file name when available", () 
     "Spready",
   );
 
-  assert.equal(title, "Spready - budget.spready");
+  assert.equal(title, "Spready - budget.spready - Sheet 1");
 });
 
 test("formatWorkbookWindowTitle prefixes dirty workbooks with an asterisk", () => {
@@ -45,13 +45,13 @@ test("formatWorkbookWindowTitle prefixes dirty workbooks with an asterisk", () =
     "Spready",
   );
 
-  assert.equal(title, "Spready - *budget.spready");
+  assert.equal(title, "Spready - *budget.spready - Sheet 1");
 });
 
 test("formatWorkbookWindowTitle falls back to Untitled for unsaved workbooks", () => {
   const title = formatWorkbookWindowTitle(createSummary(), "Spready");
 
-  assert.equal(title, "Spready - Untitled");
+  assert.equal(title, "Spready - Untitled - Sheet 1");
 });
 
 test("formatWorkbookWindowTitle shows a dirty untitled workbook clearly", () => {
@@ -62,5 +62,17 @@ test("formatWorkbookWindowTitle shows a dirty untitled workbook clearly", () => 
     "Spready",
   );
 
-  assert.equal(title, "Spready - *Untitled");
+  assert.equal(title, "Spready - *Untitled - Sheet 1");
+});
+
+test("formatWorkbookWindowTitle appends the active sheet name", () => {
+  const title = formatWorkbookWindowTitle(
+    createSummary({
+      activeSheetName: "Forecast",
+      documentFilePath: path.join("workbooks", "budget.spready"),
+    }),
+    "Spready",
+  );
+
+  assert.equal(title, "Spready - budget.spready - Forecast");
 });
