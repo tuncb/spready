@@ -22,6 +22,14 @@ export interface ControlAppStatus {
   windowCount: number;
 }
 
+export interface ControlQuitAppRequest {
+  discardUnsavedChanges?: boolean;
+}
+
+export interface ControlQuitAppResult {
+  quitRequested: boolean;
+}
+
 export interface InstallerOptions {
   fileAssociation: boolean;
   startMenuShortcut: boolean;

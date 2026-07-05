@@ -149,12 +149,15 @@ On connect, the server sends a `hello` event. Workbook mutations also emit `work
 - `openWorkbookFile`
 - `saveWorkbookFile`
 - `showApp`
+- `quitApp`
 - `importCsvFile`
 - `exportCsvFile`
 - `applyTransaction`
 
 `getAppStatus` reports whether the Electron frontend has a visible window. `showApp` asks the
 desktop app to create, restore, show, and focus a window, then returns the latest app status.
+`quitApp` asks the desktop app to exit. Pass `discardUnsavedChanges: true` to close without the
+unsaved-changes prompt; otherwise the normal prompt can cancel the quit request.
 
 For workbook-targeted methods, including `importCsvFile` and `exportCsvFile`, you can pass
 `sheetId` explicitly. If you omit `sheetId`, the active sheet is used.
@@ -305,6 +308,7 @@ The stdio MCP wrapper currently exposes:
 
 - `get_spready_connection_status`
 - `open_spready_app`
+- `quit_spready_app`
 - `describe_capabilities`
 - `list_manuals`
 - `read_manual`
@@ -344,6 +348,8 @@ The stdio MCP wrapper currently exposes:
 `get_cell_data` returns the raw input, evaluated display value, and rendered style for one cell.
 `create_chart` creates a chart from a used range or explicit source range without requiring callers to build the full persisted chart spec.
 `open_spready_app` now returns success only after TCP reports that an Electron frontend window is visible.
+`quit_spready_app` asks the desktop app to exit. Pass `discardUnsavedChanges: true` only when
+losing unsaved workbook changes is intended.
 `list_manuals` returns the bundled manuals directory, each Markdown manual's absolute path, and
 ready-to-use `read_manual` arguments. Clients with local filesystem access can read those files
 directly; clients without that access can call `read_manual` with a listed relative path.

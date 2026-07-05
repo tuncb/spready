@@ -9,6 +9,8 @@ import type {
   CellDataResult,
   ClearRangeRequest,
   ControlAppStatus,
+  ControlQuitAppRequest,
+  ControlQuitAppResult,
   ControlServerInfo,
   CopyRangeRequest,
   CopyRangeResult,
@@ -277,6 +279,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async pasteRange(request: PasteRangeRequest) {
     return this.call<ApplyTransactionResult>("pasteRange", request);
+  }
+
+  async quitApp(request?: ControlQuitAppRequest) {
+    return this.call<ControlQuitAppResult>("quitApp", request);
   }
 
   async openWorkbookFile(request: OpenWorkbookFileRequest) {

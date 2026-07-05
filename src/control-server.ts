@@ -6,6 +6,8 @@ import type {
   ApplyTransactionRequest,
   ClearRangeRequest,
   ControlAppStatus,
+  ControlQuitAppRequest,
+  ControlQuitAppResult,
   ControlServerInfo,
   CopyRangeRequest,
   CreateChartRequest,
@@ -51,6 +53,9 @@ const CONTROL_PROTOCOL = "spready-control-v1";
 
 type SpreadyControlServerOptions = {
   getAppStatus?: () => ControlAppStatus;
+  quitApp?: (
+    request: ControlQuitAppRequest,
+  ) => ControlQuitAppResult | Promise<ControlQuitAppResult>;
   showApp?: () => ControlAppStatus | Promise<ControlAppStatus | void> | void;
   startupTimer?: StartupTimingLogger;
 };
@@ -64,7 +69,8 @@ const DEFAULT_APP_STATUS: ControlAppStatus = {
 
 function shouldLogControlRequest(method: string, durationMs: number) {
   return (
-    ["getAppStatus", "getControlInfo", "ping", "showApp"].includes(method) || durationMs >= 1000
+    ["getAppStatus", "getControlInfo", "ping", "quitApp", "showApp"].includes(method) ||
+    durationMs >= 1000
   );
 }
 
@@ -78,6 +84,9 @@ export class SpreadyControlServer {
   #getAppStatus: () => ControlAppStatus;
   #host: string;
   #port: number;
+  #quitApp?: (
+    request: ControlQuitAppRequest,
+  ) => ControlQuitAppResult | Promise<ControlQuitAppResult>;
   #server?: net.Server;
   #showApp?: () => ControlAppStatus | Promise<ControlAppStatus | void> | void;
   #startupTimer?: StartupTimingLogger;
@@ -92,6 +101,7 @@ export class SpreadyControlServer {
     this.#getAppStatus = options.getAppStatus ?? (() => DEFAULT_APP_STATUS);
     this.#host = host;
     this.#port = port;
+    this.#quitApp = options.quitApp;
     this.#showApp = options.showApp;
     this.#startupTimer = options.startupTimer;
   }
@@ -373,6 +383,13 @@ export class SpreadyControlServer {
         return this.#controller.openWorkbookFile(params as OpenWorkbookFileRequest);
       case "pasteRange":
         return this.#controller.pasteRange(params as PasteRangeRequest);
+      case "quitApp": {
+        if (!this.#quitApp) {
+          throw new Error("Quit app is not available in this process.");
+        }
+
+        return this.#quitApp((params as ControlQuitAppRequest | undefined) ?? {});
+      }
       case "redo":
         return this.#controller.redo((params as WorkbookRedoRequest | undefined) ?? {});
       case "saveWorkbookFile":
@@ -417,6 +434,7 @@ export class SpreadyControlServer {
           "openWorkbookFile",
           "pasteRange",
           "ping",
+          "quitApp",
           "redo",
           "saveWorkbookFile",
           "showApp",

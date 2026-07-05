@@ -626,6 +626,10 @@ const openSpreadyAppResultSchema = connectionStatusSchema.extend({
   launched: z.boolean(),
 });
 
+const quitSpreadyAppResultSchema = z.object({
+  quitRequested: z.boolean(),
+});
+
 const manualEntrySchema = z.object({
   absolutePath: z.string(),
   path: z.string(),
@@ -849,6 +853,13 @@ const guideResource = {
       description:
         "Connect to a running Spready desktop app, or launch one, show the frontend window, and connect to its TCP control server.",
       name: "open_spready_app",
+      readOnly: false,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description:
+        "Ask the connected Spready desktop app to quit, optionally discarding unsaved changes.",
+      name: "quit_spready_app",
       readOnly: false,
     },
     {
@@ -1109,6 +1120,7 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 
 - get_spready_connection_status: Return whether this MCP wrapper is connected to a Spready desktop app.
 - open_spready_app: Connect to a running Spready desktop app, or launch one, show the frontend window, and connect to its TCP control server.
+- quit_spready_app: Ask the connected Spready desktop app to quit. Pass discardUnsavedChanges to skip the unsaved-changes prompt.
 - list_manuals: List bundled Spready manuals and return installed filesystem paths plus read_manual arguments.
 - read_manual: Read one bundled Spready manual by relative path when direct filesystem access is unavailable or inconvenient.
 - get_workbook_summary: Return workbook metadata including active sheet, version, and sheet sizes.
@@ -1248,7 +1260,7 @@ async function main() {
   const server = new McpServer(
     {
       name: "spready-stdio",
-      version: "0.0.6",
+      version: "0.0.7",
     },
     {
       capabilities: {
@@ -1258,7 +1270,7 @@ async function main() {
         },
       },
       instructions:
-        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use get_workbook_console_output for a formula-aware human-readable dump, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, use get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use set_table_column_highlights for table threshold highlights, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
+        "Spready workbook tools require a connected desktop app. Start with get_spready_connection_status and call open_spready_app if disconnected. Call quit_spready_app when automation should close the desktop app. Then use describe_capabilities or read spready://guide. For deeper documentation, call list_manuals; if your client can read the returned manualsDirectory or absolutePath values, use those files directly, otherwise call read_manual. Use open_workbook_file and save_workbook_file for native workbook documents, inspect with get_workbook_summary before large edits, use get_workbook_console_output for a formula-aware human-readable dump, use zero-based indexes, use get_sheet_range for raw input, get_sheet_display_range for evaluated and formatted grid values, use get_sheet_style_range for rendered styles and number formats, use get_sheet_tables/get_table for table metadata, use set_table_column_highlights for table threshold highlights, use format_cells for common style and number format changes, use create_chart for common chart creation, and prefer apply_transaction with batched operations plus dryRun for risky changes.",
     },
   );
   const subscribedResourceUris = new Set<string>();
@@ -1411,6 +1423,31 @@ async function main() {
         launched: result.launched,
       });
     },
+  );
+
+  server.registerTool(
+    "quit_spready_app",
+    {
+      annotations: {
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+        readOnlyHint: false,
+      },
+      description:
+        "Ask the connected Spready desktop app to quit. By default, unsaved changes use the normal prompt; pass discardUnsavedChanges to close without prompting.",
+      inputSchema: z.object({
+        discardUnsavedChanges: z
+          .boolean()
+          .optional()
+          .describe(
+            "Set to true to close Spready even when the current workbook has unsaved changes.",
+          ),
+      }),
+      outputSchema: quitSpreadyAppResultSchema,
+    },
+    async (args) =>
+      createTextResult(await controlConnection.requireConnectedClient().quitApp(args)),
   );
 
   server.registerTool(
@@ -1645,6 +1682,15 @@ async function main() {
             readOnly: false,
             useWhen:
               "Use this when connection status is disconnected or a workbook tool says Spready is not connected.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description:
+              "Ask the connected Spready desktop app to quit, optionally discarding unsaved changes.",
+            name: "quit_spready_app",
+            readOnly: false,
+            useWhen:
+              "Use this when automation is finished and should close Spready; pass discardUnsavedChanges only when losing unsaved workbook changes is intended.",
           },
           {
             defaultsToActiveSheet: false,

@@ -36,6 +36,8 @@ import type {
   ApplyTransactionRequest,
   CellDataRequest,
   ControlAppStatus,
+  ControlQuitAppRequest,
+  ControlQuitAppResult,
   CopyRangeRequest,
   CutRangeRequest,
   InstallerOptions,
@@ -64,6 +66,7 @@ const configuredControlPort = Number.parseInt(
 );
 let isChartDialogOpen = false;
 let isAppShowRequested = false;
+let isAppQuitAuthorized = false;
 const isInstallerUninstallCommand = process.argv.includes("--spready-uninstall");
 const isConsoleExitMode =
   mainStartupOptions.help || mainStartupOptions.consoleOutputFilePath !== undefined;
@@ -243,12 +246,32 @@ function showAppWindow() {
   return status;
 }
 
+async function quitAppFromControl(
+  request: ControlQuitAppRequest = {},
+): Promise<ControlQuitAppResult> {
+  if (!request.discardUnsavedChanges) {
+    const resolution = await resolveUnsavedChanges();
+
+    if (resolution === "cancel") {
+      return { quitRequested: false };
+    }
+  }
+
+  isAppQuitAuthorized = true;
+  setTimeout(() => {
+    app.quit();
+  }, 100);
+
+  return { quitRequested: true };
+}
+
 const controlServer = new SpreadyControlServer(
   workbookController,
   DEFAULT_CONTROL_HOST,
   Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
   {
     getAppStatus: getControlAppStatus,
+    quitApp: quitAppFromControl,
     showApp: showAppWindow,
     startupTimer,
   },
@@ -1047,7 +1070,7 @@ const createWindow = () => {
   });
 
   mainWindow.on("close", (event) => {
-    if (isCloseAuthorized) {
+    if (isCloseAuthorized || isAppQuitAuthorized) {
       return;
     }
 

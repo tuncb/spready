@@ -20,6 +20,41 @@ test("SpreadyControlServer stop is idempotent after startup", async () => {
   await server.stop();
 });
 
+test("SpreadyControlServer exposes app quit requests over TCP", async () => {
+  const controller = new WorkbookController();
+  const quitRequests: unknown[] = [];
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0, {
+    quitApp: (request) => {
+      quitRequests.push(request);
+
+      return { quitRequested: true };
+    },
+  });
+
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    const methods = await client.call<string[]>("listMethods");
+    const result = await client.quitApp({ discardUnsavedChanges: true });
+
+    assert.ok(methods.includes("quitApp"));
+    assert.deepEqual(result, { quitRequested: true });
+    assert.deepEqual(quitRequests, [{ discardUnsavedChanges: true }]);
+  } finally {
+    await client.close();
+    await server.stop();
+  }
+});
+
 test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
   const controller = new WorkbookController();
   const server = new SpreadyControlServer(controller, "127.0.0.1", 0);
@@ -166,6 +201,7 @@ test("SpreadyControlServer exposes formula-aware reads over TCP", async () => {
     assert.ok(methods.includes("redo"));
     assert.ok(methods.includes("checkoutUndoNode"));
     assert.ok(methods.includes("showApp"));
+    assert.ok(methods.includes("quitApp"));
     assert.deepEqual(appStatus, {
       focusedWindowCount: 0,
       frontendVisible: false,
