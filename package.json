@@ -12,6 +12,7 @@
     "build:mcp:cli": "node scripts/build-mcp-cli.mjs",
     "prepare:release": "node scripts/prepare-release-bundle.mjs",
     "test": "node --import tsx --test src/**/*.test.ts",
+    "test:installer-lifecycle": "node scripts/test-installer-lifecycle.mjs",
     "test:watch": "node --import tsx --test --watch src/**/*.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

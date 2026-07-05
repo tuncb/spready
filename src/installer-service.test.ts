@@ -30,6 +30,7 @@ import {
   runWithAsarFilesystemDisabled,
   selectSha256Asset,
   selectWindowsReleaseAsset,
+  UPDATE_RELEASE_URL_ENV_VAR,
   isVersionNewer,
 } from "./installer-service";
 
@@ -99,6 +100,62 @@ test("release parsing and asset selection target Windows bundles", () => {
   assert.equal(asset?.name, "spready-windows-x64-1.2.3.zip");
   assert.equal(selectSha256Asset(release, asset?.name ?? "")?.name, `${asset?.name}.sha256`);
   assert.equal(release.html_url, "https://example.test/releases/v1.2.3");
+});
+
+test("update checks use the configured release feed URL", async () => {
+  const tempDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "spready-update-feed-"));
+  const releaseUrl = "http://127.0.0.1:45678/latest";
+  const env = {
+    LOCALAPPDATA: tempDirectory,
+    [UPDATE_RELEASE_URL_ENV_VAR]: releaseUrl,
+  };
+  const installDirectory = getDefaultInstallDirectory(env, "win32");
+  const executablePath = getInstalledExecutablePath(installDirectory);
+  const requestedUrls: string[] = [];
+
+  try {
+    await fs.mkdir(installDirectory, { recursive: true });
+    await fs.writeFile(executablePath, "");
+
+    const service = new InstallerService({
+      arch: "x64",
+      commandRunner: async () => {
+        throw new Error("not found");
+      },
+      currentAppDirectory: installDirectory,
+      currentExecutablePath: executablePath,
+      currentVersion: "1.2.3",
+      env,
+      fetch: async (input) => {
+        requestedUrls.push(String(input));
+
+        return new Response(
+          JSON.stringify({
+            assets: [
+              {
+                browser_download_url: "http://127.0.0.1:45678/spready-windows-x64-1.2.4.zip",
+                digest: `sha256:${"c".repeat(64)}`,
+                name: "spready-windows-x64-1.2.4.zip",
+              },
+            ],
+            html_url: "http://127.0.0.1:45678/releases/v1.2.4",
+            tag_name: "v1.2.4",
+          }),
+          { status: 200 },
+        );
+      },
+      isPackaged: true,
+      platform: "win32",
+    });
+
+    const result = await service.checkForUpdates();
+
+    assert.deepEqual(requestedUrls, [releaseUrl]);
+    assert.equal(result.updateAvailable, true);
+    assert.equal(result.assetName, "spready-windows-x64-1.2.4.zip");
+  } finally {
+    await fs.rm(tempDirectory, { force: true, recursive: true });
+  }
 });
 
 test("install paths are derived from Windows local app data", () => {

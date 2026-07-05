@@ -18,6 +18,7 @@ const FILE_ASSOCIATION_DESCRIPTION = "Spready Workbook";
 const FILE_ASSOCIATION_EXTENSION = ".spready";
 const FILE_ASSOCIATION_PROG_ID = "Spready.Workbook";
 const GITHUB_LATEST_RELEASE_URL = "https://api.github.com/repos/tuncb/spready/releases/latest";
+export const UPDATE_RELEASE_URL_ENV_VAR = "SPREADY_UPDATE_RELEASE_URL";
 const PUBLISHER = "tuncb";
 const FILE_ASSOCIATION_EXTENSION_KEY = `HKCU\\Software\\Classes\\${FILE_ASSOCIATION_EXTENSION}`;
 const FILE_ASSOCIATION_PROG_ID_KEY = `HKCU\\Software\\Classes\\${FILE_ASSOCIATION_PROG_ID}`;
@@ -57,6 +58,7 @@ interface InstallerServiceDependencies {
   fetch?: typeof fetch;
   isPackaged: boolean;
   platform?: NodeJS.Platform;
+  releaseUrl?: string;
   requestQuit?: () => void;
   writeShortcut?: (
     shortcutPath: string,
@@ -310,6 +312,7 @@ export class InstallerService {
   #fetch: typeof fetch;
   #isPackaged: boolean;
   #platform: NodeJS.Platform;
+  #releaseUrl: string;
   #requestQuit?: () => void;
   #writeShortcut?: (
     shortcutPath: string,
@@ -328,6 +331,8 @@ export class InstallerService {
     this.#fetch = dependencies.fetch ?? fetch;
     this.#isPackaged = dependencies.isPackaged;
     this.#platform = dependencies.platform ?? process.platform;
+    this.#releaseUrl =
+      dependencies.releaseUrl ?? this.#env[UPDATE_RELEASE_URL_ENV_VAR] ?? GITHUB_LATEST_RELEASE_URL;
     this.#requestQuit = dependencies.requestQuit;
     this.#writeShortcut = dependencies.writeShortcut;
   }
@@ -596,7 +601,7 @@ export class InstallerService {
   }
 
   async #fetchLatestRelease() {
-    const response = await this.#fetch(GITHUB_LATEST_RELEASE_URL, {
+    const response = await this.#fetch(this.#releaseUrl, {
       headers: {
         Accept: "application/vnd.github+json",
         "User-Agent": "Spready updater",
