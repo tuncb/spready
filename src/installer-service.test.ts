@@ -12,6 +12,7 @@ import {
   buildInstallerPowerShellScript,
   buildPowerShellFileArguments,
   buildStartMenuShortcutDetails,
+  buildWaitForInstallProcessesExitScript,
   buildUninstallScript,
   buildWaitForProcessExitScript,
   extractSha256FromDigest,
@@ -594,6 +595,19 @@ test("uninstall script logs explicit steps and propagates failures", () => {
   assert.doesNotMatch(script, /SilentlyContinue'\n/u);
 });
 
+test("install process wait script checks processes launched from install directory", () => {
+  const script = buildWaitForInstallProcessesExitScript(
+    "C:\\Users\\person\\AppData\\Local\\Programs\\Spready",
+    12,
+  );
+
+  assert.match(script, /Get-CimInstance Win32_Process/u);
+  assert.match(script, /ExecutablePath\.StartsWith\(\$installRoot/u);
+  assert.match(script, /OrdinalIgnoreCase/u);
+  assert.match(script, /Spready processes are still running from the install directory/u);
+  assert.match(script, /AddSeconds\(12\)/u);
+});
+
 test("finish update script retries replacement and restores previous install on failure", () => {
   const script = buildFinishUpdateScript({
     installDirectory: "C:\\Users\\person\\AppData\\Local\\Programs\\Spready",
@@ -604,6 +618,11 @@ test("finish update script retries replacement and restores previous install on 
     updateDirectory: "C:\\Temp\\spready-update",
   });
 
+  assert.match(
+    script,
+    /Invoke-SpreadyInstallerStep 'wait for installed Spready processes to exit'/u,
+  );
+  assert.match(script, /Get-CimInstance Win32_Process/u);
   assert.match(script, /Invoke-SpreadyUpdateStep 'rename current install'/u);
   assert.match(script, /Invoke-SpreadyUpdateStep 'move staged update'/u);
   assert.match(script, /Invoke-SpreadyUpdateStep 'remove old install backup'/u);

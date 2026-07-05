@@ -1145,6 +1145,32 @@ export function buildWaitForProcessExitScript(pid: number, timeoutSeconds = 60) 
   ].join("\n");
 }
 
+export function buildWaitForInstallProcessesExitScript(
+  installDirectory: string,
+  timeoutSeconds = 120,
+) {
+  return [
+    `$installRoot = [System.IO.Path]::GetFullPath(${quotePowerShellString(
+      installDirectory,
+    )}).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar`,
+    `$deadline = (Get-Date).AddSeconds(${timeoutSeconds})`,
+    "$lastProcessSummary = ''",
+    "while ((Get-Date) -lt $deadline) {",
+    "  $runningProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {",
+    "    $_.ExecutablePath -and $_.ExecutablePath.StartsWith($installRoot, [System.StringComparison]::OrdinalIgnoreCase)",
+    "  })",
+    "  if ($runningProcesses.Count -eq 0) {",
+    "    return",
+    "  }",
+    "  $lastProcessSummary = (($runningProcesses | ForEach-Object { \"$($_.Name)[$($_.ProcessId)]\" }) -join ', ')",
+    "  Start-Sleep -Milliseconds 500",
+    "}",
+    `throw (${quotePowerShellString(
+      `${APP_NAME} processes are still running from the install directory: `,
+    )} + $lastProcessSummary)`,
+  ].join("\n");
+}
+
 export function buildUninstallScript(pid: number, installDirectory: string) {
   return [
     "Invoke-SpreadyInstallerStep 'wait for Spready to exit' {",
@@ -1218,6 +1244,9 @@ export function buildFinishUpdateScript(args: {
     "try {",
     "  Invoke-SpreadyInstallerStep 'wait for Spready to exit' {",
     indentPowerShellScript(buildWaitForProcessExitScript(args.pid)),
+    "  }",
+    "  Invoke-SpreadyInstallerStep 'wait for installed Spready processes to exit' {",
+    indentPowerShellScript(buildWaitForInstallProcessesExitScript(args.installDirectory)),
     "  }",
     `  if (Test-Path -LiteralPath ${quotePowerShellString(backupDirectory)}) {`,
     `    Invoke-SpreadyUpdateStep 'remove stale backup' { Remove-Item -LiteralPath ${quotePowerShellString(
