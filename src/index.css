@@ -737,14 +737,10 @@ select {
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 10px;
-  background:
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 34%),
-    linear-gradient(180deg, #f6f8fb, #eef2f7);
 }
 
 .chart-editor-panel {
-  width: min(100%, 620px);
+  width: 100%;
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-height: 0;
@@ -1172,7 +1168,6 @@ select {
 
   .chart-editor-window {
     width: min(100vw - 12px, 620px);
-    padding: 6px;
   }
 
   .chart-editor-panel {
