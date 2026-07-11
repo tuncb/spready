@@ -187,8 +187,6 @@ type RenameSheetSession = {
   sheetId: string;
 };
 
-type InstallationDialogMode = "check-updates" | "manage";
-
 type RangeCache = SheetDisplayRangeResult | SheetRangeResult;
 type SearchHighlightRegions = NonNullable<DataEditorProps["highlightRegions"]>;
 
@@ -1134,8 +1132,7 @@ export default function App() {
   }
 
   const [cellFormatSession, setCellFormatSession] = useState<CellFormatSession | null>(null);
-  const [installationDialogMode, setInstallationDialogMode] =
-    useState<InstallationDialogMode | null>(null);
+  const [isInstallationDialogOpen, setIsInstallationDialogOpen] = useState(false);
   const [chartEditorSession, setChartEditorSession] = useState<ChartEditorSession | null>(null);
   const [columnResizeOverrides, setColumnResizeOverrides] = useState<Record<string, number>>({});
   const [formulaInputValue, setFormulaInputValue] = useState("");
@@ -1178,7 +1175,6 @@ export default function App() {
   const isChartEditorOpen = chartEditorSession !== null;
   const isCellFormatOpen = cellFormatSession !== null;
   const isAboutOpen = isAboutDialogOpen;
-  const isInstallationDialogOpen = installationDialogMode !== null;
   const isRenameSheetOpen = renameSheetSession !== null;
   const isSheetQuickOpenDialogOpen = isSheetQuickOpenOpen;
   const isModalDialogOpen =
@@ -2690,7 +2686,7 @@ export default function App() {
   }, []);
 
   const closeInstallationDialog = useCallback(() => {
-    setInstallationDialogMode(null);
+    setIsInstallationDialogOpen(false);
   }, []);
 
   const closeAboutDialog = useCallback(() => {
@@ -2709,7 +2705,7 @@ export default function App() {
     (message: string) => {
       setChartEditorSession(null);
       setCellFormatSession(null);
-      setInstallationDialogMode(null);
+      setIsInstallationDialogOpen(false);
       setRenameSheetSession(null);
       pushErrorToast(new Error(message));
     },
@@ -3163,10 +3159,7 @@ export default function App() {
             void handleExport();
             return;
           case APP_MENU_ACTIONS.installation:
-            setInstallationDialogMode("manage");
-            return;
-          case APP_MENU_ACTIONS.checkUpdates:
-            setInstallationDialogMode("check-updates");
+            setIsInstallationDialogOpen(true);
             return;
           case APP_MENU_ACTIONS.paste:
             void pasteSelection("raw");
@@ -3590,13 +3583,7 @@ export default function App() {
         />
       ) : null}
 
-      {installationDialogMode ? (
-        <InstallationDialog
-          initialMode={installationDialogMode}
-          key={`installation:${installationDialogMode}`}
-          onClose={closeInstallationDialog}
-        />
-      ) : null}
+      {isInstallationDialogOpen ? <InstallationDialog onClose={closeInstallationDialog} /> : null}
 
       <ToastViewport onDismiss={dismissToast} toasts={toasts} />
     </main>

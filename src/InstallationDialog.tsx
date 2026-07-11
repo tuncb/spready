@@ -9,13 +9,11 @@ import type {
 } from "./workbook-core";
 
 interface InstallationDialogProps {
-  initialMode: "check-updates" | "manage";
   onClose: () => void;
 }
 
-export function InstallationDialog({ initialMode, onClose }: InstallationDialogProps) {
+export function InstallationDialog({ onClose }: InstallationDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const didAutoCheckUpdatesRef = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [options, setOptions] = useState<InstallerOptions>({
@@ -70,15 +68,6 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
       isMounted = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (initialMode !== "check-updates" || !status || didAutoCheckUpdatesRef.current) {
-      return;
-    }
-
-    didAutoCheckUpdatesRef.current = true;
-    void checkUpdates(false);
-  }, [initialMode, status]);
 
   const updateOption = (option: keyof InstallerOptions, value: boolean) => {
     setOptions((current) => ({

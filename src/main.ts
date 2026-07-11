@@ -704,14 +704,6 @@ function buildAppMenu() {
             });
           },
         },
-        {
-          label: "Check for Updates...",
-          click: () => {
-            runMenuCommand(() => {
-              sendMenuAction(APP_MENU_ACTIONS.checkUpdates);
-            });
-          },
-        },
         { type: "separator" },
         {
           label: "Exit",

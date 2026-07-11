@@ -16,7 +16,6 @@ export const APP_MENU_ACTIONS = {
   installation: "app:installation",
   insertChart: "insert:chart",
   insertTable: "insert:table",
-  checkUpdates: "app:check-updates",
   deleteTable: "table:delete",
   newSheet: "sheet:new-sheet",
   openWorkbook: "workbook:open",
