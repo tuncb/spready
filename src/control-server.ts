@@ -5,6 +5,7 @@ import type { WorkbookController } from "./workbook-controller";
 import type {
   ApplyTransactionRequest,
   ClearRangeRequest,
+  ControlAppInfo,
   ControlAppStatus,
   ControlQuitAppRequest,
   ControlQuitAppResult,
@@ -52,6 +53,7 @@ type ControlEvent = {
 const CONTROL_PROTOCOL = "spready-control-v1";
 
 type SpreadyControlServerOptions = {
+  appInfo?: Pick<ControlAppInfo, "name" | "version">;
   getAppStatus?: () => ControlAppStatus;
   quitApp?: (
     request: ControlQuitAppRequest,
@@ -69,8 +71,9 @@ const DEFAULT_APP_STATUS: ControlAppStatus = {
 
 function shouldLogControlRequest(method: string, durationMs: number) {
   return (
-    ["getAppStatus", "getControlInfo", "ping", "quitApp", "showApp"].includes(method) ||
-    durationMs >= 1000
+    ["getAppInfo", "getAppStatus", "getControlInfo", "ping", "quitApp", "showApp"].includes(
+      method,
+    ) || durationMs >= 1000
   );
 }
 
@@ -79,6 +82,7 @@ function isServerNotRunningError(error: Error | undefined): boolean {
 }
 
 export class SpreadyControlServer {
+  #appInfo: Pick<ControlAppInfo, "name" | "version">;
   #clients = new Set<Socket>();
   #controller: WorkbookController;
   #getAppStatus: () => ControlAppStatus;
@@ -97,6 +101,7 @@ export class SpreadyControlServer {
     port: number,
     options: SpreadyControlServerOptions = {},
   ) {
+    this.#appInfo = options.appInfo ?? { name: "Spready", version: "unknown" };
     this.#controller = controller;
     this.#getAppStatus = options.getAppStatus ?? (() => DEFAULT_APP_STATUS);
     this.#host = host;
@@ -115,6 +120,13 @@ export class SpreadyControlServer {
       host: this.#host,
       port: activePort,
       protocol: "jsonl",
+    };
+  }
+
+  getAppInfo(): ControlAppInfo {
+    return {
+      ...this.#appInfo,
+      controlServer: this.getInfo(),
     };
   }
 
@@ -343,6 +355,8 @@ export class SpreadyControlServer {
         return this.#controller.getChart((params as { chartId: string }).chartId);
       case "getChartPreview":
         return this.#controller.getChartPreview((params as { chartId: string }).chartId);
+      case "getAppInfo":
+        return this.getAppInfo();
       case "getControlInfo":
         return this.getInfo();
       case "getAppStatus":
@@ -415,6 +429,7 @@ export class SpreadyControlServer {
           "getCellData",
           "getChart",
           "getChartPreview",
+          "getAppInfo",
           "getAppStatus",
           "getConsoleOutput",
           "getControlInfo",

@@ -8,6 +8,7 @@ import {
   type ChartEditorFormState,
   type ChartEditorWindowRequest,
 } from "./chart-editor-state";
+import { isDialogBackdropClick } from "./dialog-events";
 import { type WorkbookChart, type WorkbookSummary } from "./workbook-core";
 
 interface ChartEditorDialogProps {
@@ -187,6 +188,11 @@ export function ChartEditorDialog({
       onCancel={(event) => {
         event.preventDefault();
         onClose();
+      }}
+      onClick={(event) => {
+        if (isDialogBackdropClick(event)) {
+          onClose();
+        }
       }}
       ref={dialogRef}
     >

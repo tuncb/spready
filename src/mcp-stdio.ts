@@ -614,6 +614,16 @@ const controlAppStatusSchema = z.object({
   windowCount: z.int().min(0),
 });
 
+const controlAppInfoSchema = z.object({
+  controlServer: z.object({
+    host: z.string(),
+    port: z.int().min(1).max(65535),
+    protocol: z.literal("jsonl"),
+  }),
+  name: z.string(),
+  version: z.string(),
+});
+
 const connectionStatusSchema = z.object({
   appStatus: controlAppStatusSchema.optional(),
   connected: z.boolean(),
@@ -846,6 +856,12 @@ const guideResource = {
       defaultsToActiveSheet: false,
       description: "Return whether this MCP wrapper is connected to a Spready desktop app.",
       name: "get_spready_connection_status",
+      readOnly: true,
+    },
+    {
+      defaultsToActiveSheet: false,
+      description: "Return the connected Spready app name, version, and TCP endpoint.",
+      name: "get_spready_app_info",
       readOnly: true,
     },
     {
@@ -1119,6 +1135,7 @@ ${guideResource.workflow.map((step, index) => `${index + 1}. ${step}`).join("\n"
 ## Tools
 
 - get_spready_connection_status: Return whether this MCP wrapper is connected to a Spready desktop app.
+- get_spready_app_info: Return the connected Spready app name, version, and TCP endpoint.
 - open_spready_app: Connect to a running Spready desktop app, or launch one, show the frontend window, and connect to its TCP control server.
 - quit_spready_app: Ask the connected Spready desktop app to quit. Pass discardUnsavedChanges to skip the unsaved-changes prompt.
 - list_manuals: List bundled Spready manuals and return installed filesystem paths plus read_manual arguments.
@@ -1404,6 +1421,19 @@ async function main() {
   );
 
   server.registerTool(
+    "get_spready_app_info",
+    {
+      annotations: {
+        openWorldHint: false,
+        readOnlyHint: true,
+      },
+      description: "Return the connected Spready app name, version, and TCP endpoint.",
+      outputSchema: controlAppInfoSchema,
+    },
+    async () => createTextResult(await controlConnection.requireConnectedClient().getAppInfo()),
+  );
+
+  server.registerTool(
     "open_spready_app",
     {
       annotations: {
@@ -1673,6 +1703,13 @@ async function main() {
             readOnly: true,
             useWhen:
               "Use this before workbook operations if you are unsure whether Spready is open.",
+          },
+          {
+            defaultsToActiveSheet: false,
+            description: "Return the connected Spready app name, version, and TCP endpoint.",
+            name: "get_spready_app_info",
+            readOnly: true,
+            useWhen: "Use this to inspect the running app details shown in the About dialog.",
           },
           {
             defaultsToActiveSheet: false,

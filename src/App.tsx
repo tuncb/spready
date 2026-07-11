@@ -33,9 +33,11 @@ import {
   isEditableShortcutTarget,
   shouldCloseWorkbookSearchOnEscape,
 } from "./app-keyboard";
+import { AboutDialog } from "./AboutDialog";
 import { CellFormatDialog } from "./CellFormatDialog";
 import { type ChartEditorWindowRequest } from "./chart-editor-state";
 import { ChartEditorDialog } from "./ChartEditorWindow";
+import { isDialogBackdropClick } from "./dialog-events";
 import { InstallationDialog } from "./InstallationDialog";
 import { RenameSheetDialog } from "./RenameSheetDialog";
 import {
@@ -485,6 +487,11 @@ function SheetQuickOpen({ activeSheetId, onClose, onSelect, sheets }: SheetQuick
       onCancel={(event) => {
         event.preventDefault();
         onClose();
+      }}
+      onClick={(event) => {
+        if (isDialogBackdropClick(event)) {
+          onClose();
+        }
       }}
       ref={dialogRef}
     >
@@ -1135,6 +1142,7 @@ export default function App() {
   const [gridSelection, setGridSelection] = useState<GridSelection>(createEmptyGridSelection);
   const [gridViewportNonce, setGridViewportNonce] = useState(0);
   const [isSheetChartPreviewsLoading, setIsSheetChartPreviewsLoading] = useState(false);
+  const [isAboutDialogOpen, setIsAboutDialogOpen] = useState(false);
   const [isSheetQuickOpenOpen, setIsSheetQuickOpenOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [renameSheetSession, setRenameSheetSession] = useState<RenameSheetSession | null>(null);
@@ -1169,10 +1177,12 @@ export default function App() {
   const styleRangeCacheRef = useRef<SheetStyleRangeResult | null>(null);
   const isChartEditorOpen = chartEditorSession !== null;
   const isCellFormatOpen = cellFormatSession !== null;
+  const isAboutOpen = isAboutDialogOpen;
   const isInstallationDialogOpen = installationDialogMode !== null;
   const isRenameSheetOpen = renameSheetSession !== null;
   const isSheetQuickOpenDialogOpen = isSheetQuickOpenOpen;
   const isModalDialogOpen =
+    isAboutOpen ||
     isChartEditorOpen ||
     isCellFormatOpen ||
     isInstallationDialogOpen ||
@@ -2683,6 +2693,10 @@ export default function App() {
     setInstallationDialogMode(null);
   }, []);
 
+  const closeAboutDialog = useCallback(() => {
+    setIsAboutDialogOpen(false);
+  }, []);
+
   const closeRenameSheetDialog = useCallback(() => {
     setRenameSheetSession(null);
   }, []);
@@ -3112,6 +3126,9 @@ export default function App() {
 
       const handleMenuAction = (nextAction: AppMenuAction) => {
         switch (nextAction) {
+          case APP_MENU_ACTIONS.about:
+            setIsAboutDialogOpen(true);
+            return;
           case APP_MENU_ACTIONS.cut:
             void cutSelection("raw");
             return;
@@ -3528,6 +3545,8 @@ export default function App() {
           sheets={sheetSummary?.sheets ?? []}
         />
       ) : null}
+
+      {isAboutDialogOpen ? <AboutDialog onClose={closeAboutDialog} /> : null}
 
       {chartEditorSession ? (
         <ChartEditorDialog

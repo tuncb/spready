@@ -5,6 +5,7 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
+  ControlAppInfo,
   CopyRangeRequest,
   CopyRangeResult,
   CutRangeRequest,
@@ -78,6 +79,7 @@ declare global {
       clearSearch: () => Promise<WorkbookSearchState>;
       goToNextSearchResult: () => Promise<WorkbookSearchState>;
       goToPreviousSearchResult: () => Promise<WorkbookSearchState>;
+      getAppInfo: () => Promise<ControlAppInfo>;
       getUndoTree: () => Promise<WorkbookUndoTree>;
       getCellData: (request: CellDataRequest) => Promise<CellDataResult>;
       getChart: (chartId: string) => Promise<WorkbookChartResult>;

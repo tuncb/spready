@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
+import { isDialogBackdropClick } from "./dialog-events";
 import type { WorkbookSummary } from "./workbook-core";
 
 interface RenameSheetDialogProps {
@@ -88,6 +89,11 @@ export function RenameSheetDialog({
       onCancel={(event) => {
         event.preventDefault();
         onClose();
+      }}
+      onClick={(event) => {
+        if (isDialogBackdropClick(event)) {
+          onClose();
+        }
       }}
       ref={dialogRef}
     >

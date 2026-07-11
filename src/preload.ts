@@ -7,6 +7,7 @@ import type {
   ApplyTransactionResult,
   CellDataRequest,
   CellDataResult,
+  ControlAppInfo,
   CopyRangeRequest,
   CopyRangeResult,
   CutRangeRequest,
@@ -166,6 +167,7 @@ if (typeof PerformanceObserver !== "undefined") {
 contextBridge.exposeInMainWorld("appShell", {
   applyTransaction: (request: ApplyTransactionRequest) =>
     ipcRenderer.invoke("workbook:apply-transaction", request) as Promise<ApplyTransactionResult>,
+  getAppInfo: () => ipcRenderer.invoke("app:get-info") as Promise<ControlAppInfo>,
   getUndoTree: () => ipcRenderer.invoke("workbook:get-undo-tree") as Promise<WorkbookUndoTree>,
   getSearchState: () =>
     ipcRenderer.invoke("workbook:get-search-state") as Promise<WorkbookSearchState>,

@@ -15,6 +15,12 @@ export interface ControlServerInfo {
   protocol: "jsonl";
 }
 
+export interface ControlAppInfo {
+  controlServer: ControlServerInfo;
+  name: string;
+  version: string;
+}
+
 export interface ControlAppStatus {
   focusedWindowCount: number;
   frontendVisible: boolean;

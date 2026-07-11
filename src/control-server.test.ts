@@ -20,6 +20,42 @@ test("SpreadyControlServer stop is idempotent after startup", async () => {
   await server.stop();
 });
 
+test("SpreadyControlServer exposes About details over TCP", async () => {
+  const controller = new WorkbookController();
+  const server = new SpreadyControlServer(controller, "127.0.0.1", 0, {
+    appInfo: {
+      name: "Spready",
+      version: "1.2.3",
+    },
+  });
+
+  await server.start();
+
+  const controlInfo = server.getInfo();
+  const client = new SpreadyControlClient({
+    host: controlInfo.host,
+    port: controlInfo.port,
+    source: "argv",
+  });
+
+  try {
+    await client.connect();
+
+    const methods = await client.call<string[]>("listMethods");
+    const appInfo = await client.getAppInfo();
+
+    assert.ok(methods.includes("getAppInfo"));
+    assert.deepEqual(appInfo, {
+      controlServer: controlInfo,
+      name: "Spready",
+      version: "1.2.3",
+    });
+  } finally {
+    await client.close();
+    await server.stop();
+  }
+});
+
 test("SpreadyControlServer exposes app quit requests over TCP", async () => {
   const controller = new WorkbookController();
   const quitRequests: unknown[] = [];

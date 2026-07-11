@@ -270,6 +270,10 @@ const controlServer = new SpreadyControlServer(
   DEFAULT_CONTROL_HOST,
   Number.isNaN(configuredControlPort) ? DEFAULT_CONTROL_PORT : configuredControlPort,
   {
+    appInfo: {
+      name: APP_DISPLAY_NAME,
+      version: app.getVersion(),
+    },
     getAppStatus: getControlAppStatus,
     quitApp: quitAppFromControl,
     showApp: showAppWindow,
@@ -330,25 +334,6 @@ function runMenuCommand(command: () => void | Promise<void>) {
   }
 
   void command();
-}
-
-async function showAboutDialog(browserWindow?: BrowserWindow | null) {
-  const targetWindow = getTargetWindow(browserWindow);
-  const controlInfo = controlServer.getInfo();
-  const options = {
-    type: "info" as const,
-    buttons: ["OK"],
-    title: `About ${APP_DISPLAY_NAME}`,
-    message: APP_DISPLAY_NAME,
-    detail: `Version ${app.getVersion()}\n\ntcp://${controlInfo.host}:${controlInfo.port}`,
-  };
-
-  if (targetWindow) {
-    await dialog.showMessageBox(targetWindow, options);
-    return;
-  }
-
-  await dialog.showMessageBox(options);
 }
 
 function buildCellContextMenu(browserWindow: BrowserWindow, args: ShowCellContextMenuArgs) {
@@ -949,7 +934,9 @@ function buildAppMenu() {
         {
           label: "About...",
           click: () => {
-            runMenuCommand(() => showAboutDialog());
+            runMenuCommand(() => {
+              sendMenuAction(APP_MENU_ACTIONS.about);
+            });
           },
         },
       ],
@@ -1259,6 +1246,8 @@ ipcMain.handle("clipboard:write", (_event, request: ClipboardWriteRequest) => {
     text: request.text,
   });
 });
+
+ipcMain.handle("app:get-info", () => controlServer.getAppInfo());
 
 ipcMain.handle("menu:show-cell-context-menu", async (event, args: ShowCellContextMenuArgs) => {
   const browserWindow = BrowserWindow.fromWebContents(event.sender);

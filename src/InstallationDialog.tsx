@@ -1,5 +1,6 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 
+import { isDialogBackdropClick } from "./dialog-events";
 import type {
   InstallerCheckUpdatesResult,
   InstallerOperationResult,
@@ -150,6 +151,11 @@ export function InstallationDialog({ initialMode, onClose }: InstallationDialogP
       onCancel={(event) => {
         event.preventDefault();
         onClose();
+      }}
+      onClick={(event) => {
+        if (isDialogBackdropClick(event)) {
+          onClose();
+        }
       }}
       ref={dialogRef}
     >

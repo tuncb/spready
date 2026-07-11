@@ -1,4 +1,5 @@
 export const APP_MENU_ACTIONS = {
+  about: "app:about",
   cut: "edit:cut",
   cutValues: "edit:cut-values",
   copy: "edit:copy",

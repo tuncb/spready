@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { isDialogBackdropClick } from "./dialog-events";
 import type {
   SheetRangeRequest,
   WorkbookCellNumberFormat,
@@ -98,6 +99,11 @@ export function CellFormatDialog({
       onCancel={(event) => {
         event.preventDefault();
         onClose();
+      }}
+      onClick={(event) => {
+        if (isDialogBackdropClick(event)) {
+          onClose();
+        }
       }}
       ref={dialogRef}
     >

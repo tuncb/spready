@@ -758,6 +758,33 @@ select {
   width: min(100%, 420px);
 }
 
+.about-window {
+  width: min(100vw - 24px, 480px);
+}
+
+.about__section {
+  grid-template-columns: 1fr;
+}
+
+.about__detail {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 12px;
+  color: var(--color-text-medium);
+  font-size: 12px;
+}
+
+.about__detail strong {
+  min-width: 0;
+  color: var(--color-text-dark);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.about__footer {
+  justify-content: flex-end;
+}
+
 .rename-sheet__section {
   padding-bottom: 0;
   border-bottom: none;

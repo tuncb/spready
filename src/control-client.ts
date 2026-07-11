@@ -8,6 +8,7 @@ import type {
   CellDataRequest,
   CellDataResult,
   ClearRangeRequest,
+  ControlAppInfo,
   ControlAppStatus,
   ControlQuitAppRequest,
   ControlQuitAppResult,
@@ -271,6 +272,10 @@ export class SpreadyControlClient extends EventEmitter {
 
   async getAppStatus() {
     return this.call<ControlAppStatus>("getAppStatus");
+  }
+
+  async getAppInfo() {
+    return this.call<ControlAppInfo>("getAppInfo");
   }
 
   async importCsvFile(request: ImportCsvFileRequest) {
